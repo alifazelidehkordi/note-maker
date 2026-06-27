@@ -47,6 +47,8 @@ EXIT_CODE=$?
 if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; }; then
   mkdir -p "${PDF_DIR}"
   echo ""
+  echo "Ensuring PDF dependencies..."
+  "${PYTHON}" -c "import weasyprint, markdown" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown
   echo "Generating styled PDFs..."
   "${PYTHON}" scripts/convert_md_to_pdf.py \
     --batch \
