@@ -175,6 +175,20 @@ DO_PDF=1 CREATE_COMBINED=1 ./run_pdf_to_notes.sh --overwrite
 DO_PDF=1 CREATE_COMBINED=1 COMBINED_OUTPUT=outputs/My_Complete_Notes.pdf ./run_pdf_to_notes.sh
 ```
 
+**With original page mapping + rich فهرست (for your STUDY_INDEX style parts):**
+
+```bash
+ORIGINAL_PARTS_DIR=/path/to/parts \
+NOTES_DIR=outputs/clean-notes \
+PDF_DIR=outputs/pdfs \
+DO_PDF=1 CREATE_COMBINED=1 \
+ENRICH_SOURCE=1 GENERATE_RICH_INDEX=1 \
+./run_pdf_to_notes.sh --overwrite
+```
+
+This will enrich the notes with `pdf_pages`, generate a rich `STUDY_INDEX-rewritten.md` (modeled on your phisiopath index), and the combined PDF.
+```
+
 Standalone (if you already have the PDFs):
 
 ```bash

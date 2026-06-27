@@ -25,6 +25,9 @@ DO_PDF="${DO_PDF:-0}"
 PDF_DIR="${PDF_DIR:-${NOTES_DIR}/pdfs}"
 CREATE_COMBINED="${CREATE_COMBINED:-0}"
 COMBINED_OUTPUT="${COMBINED_OUTPUT:-${NOTES_DIR}/../COMBINED_NOTES.pdf}"
+ENRICH_SOURCE="${ENRICH_SOURCE:-0}"
+GENERATE_RICH_INDEX="${GENERATE_RICH_INDEX:-0}"
+ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-}"
 
 echo ""
 echo "Input dir : ${INPUT_DIR}"
@@ -67,6 +70,27 @@ if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "
       --notes-dir "${NOTES_DIR}" \
       --pdf-dir "${PDF_DIR}" \
       --output "${COMBINED_OUTPUT}"
+  fi
+
+  if [[ "$ENRICH_SOURCE" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
+    echo ""
+    echo "Enriching rewritten notes with original page info..."
+    "${PYTHON}" scripts/enrich_rewritten_notes.py \
+      --original-parts "$ORIGINAL_PARTS_DIR" \
+      --rewritten-dir "${NOTES_DIR}" \
+      --inplace
+  fi
+
+  if [[ "$GENERATE_RICH_INDEX" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
+    echo ""
+    echo "Generating rich STUDY_INDEX (فهرست)..."
+    RICH_INDEX_OUT="${NOTES_DIR}/../STUDY_INDEX-rewritten.md"
+    "${PYTHON}" scripts/generate_study_index.py \
+      --parts-dir "$ORIGINAL_PARTS_DIR" \
+      --clean-dir "${NOTES_DIR}" \
+      --output "$RICH_INDEX_OUT" \
+      --title "Rewritten Study Notes"
+    echo "Rich index saved to: $RICH_INDEX_OUT"
   fi
 fi
 
