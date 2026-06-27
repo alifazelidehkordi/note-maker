@@ -161,10 +161,26 @@ def build_index_md(parts: list[dict], clean_dir: Path | None = None, course_titl
     return "\n".join(lines)
 
 
+def load_original_index(original_index_path: Path) -> dict:
+    """Parse the user's original STUDY_INDEX to get study focus per filename."""
+    focus_map = {}
+    if not original_index_path.exists():
+        return focus_map
+    text = original_index_path.read_text(encoding="utf-8", errors="ignore")
+    # Look for lines like: | ۱ | [title](parts/01_01_....md) | ۱–۸ | ... | focus |
+    for line in text.splitlines():
+        m = re.search(r'\|\s*\d+\s*\|\s*\[([^\]]+)\]\(parts/([^)]+\.md)\)\s*\|\s*([^|]+)\|\s*[^|]*\|\s*(.+?)\s*\|', line)
+        if m:
+            filename = m.group(2)
+            focus = m.group(4).strip()
+            focus_map[filename] = focus
+    return focus_map
+
 def main():
     parser = argparse.ArgumentParser(description="Generate rich STUDY_INDEX.md from topic-split parts (preserving original pages)")
     parser.add_argument("--parts-dir", required=True, help="Directory containing the original or source .md parts with frontmatter (pdf_pages etc.)")
     parser.add_argument("--clean-dir", help="Directory with the rewritten clean notes (optional, for links)")
+    parser.add_argument("--original-index", help="Path to your original STUDY_INDEX-phisiopath.md to copy study focus")
     parser.add_argument("--output", required=True, help="Output path for the generated STUDY_INDEX.md")
     parser.add_argument("--title", default="Pathophysiology", help="Course title")
     args = parser.parse_args()
@@ -174,12 +190,17 @@ def main():
 
     part_files = sorted([p for p in parts_dir.glob("*.md") if p.is_file()])
 
+    focus_map = {}
+    if args.original_index:
+        focus_map = load_original_index(Path(args.original_index))
+
     parsed = []
     for pf in part_files:
         fm = parse_frontmatter(pf)
         fm["path"] = pf
         if "title" not in fm:
             fm["title"] = extract_title_from_content(pf)
+        fm["study_focus"] = focus_map.get(pf.name, fm.get("study_focus", "مطالعهٔ مکانیسم‌ها، ویژگی‌های بالینی و تشخیص"))
         parsed.append(fm)
 
     index_md = build_index_md(parsed, clean_dir=clean_dir, course_title=args.title)
