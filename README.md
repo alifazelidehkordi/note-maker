@@ -142,9 +142,37 @@ The original mind-map functionality is still fully supported. This project was f
 
 ---
 
+## PDF Export (Integrated)
+
+You can now generate both clean `.md` **and** beautiful study PDFs in one go:
+
+```bash
+# PDF/MD files → notes + PDFs
+DO_PDF=1 ./run_pdf_to_notes.sh --overwrite
+
+# Or using flag (passed through)
+./run_pdf_to_notes.sh --pdf --overwrite
+
+# Markdown sections → notes + PDFs
+DO_PDF=1 MARKDOWN_FILE=your_notes.md ./run_md_to_notes.sh --overwrite
+
+# Or explicitly set output dirs
+INPUT_DIR=inputs NOTES_DIR=outputs/notes PDF_DIR=outputs/pdfs DO_PDF=1 ./run_pdf_to_notes.sh
+```
+
+Standalone (for already-generated notes):
+
+```bash
+./run_notes_to_pdf.sh
+```
+
+Uses WeasyPrint + clean academic styling (A4, readable typography, highlighted "Key Points" box, page numbers).
+
+This produces PDFs in a similar professional style to your Obsidian study material exports.
+
 ## Customizing / Extending
 
 - Main prompt for notes: `prompts/prompt-rewrite-notes.md`
 - You can add new prompts and use `--prompt your-prompt.md --output-ext md`
 
-The core automation (file upload + prompt + download detection) works for any prompt that makes ChatGPT produce a downloadable file.
+The core automation works for any prompt that makes ChatGPT produce a downloadable file.

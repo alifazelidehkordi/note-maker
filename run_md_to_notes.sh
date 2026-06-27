@@ -22,6 +22,8 @@ MARKDOWN_FILE="${MARKDOWN_FILE:-}"
 NOTES_DIR="${NOTES_DIR:-outputs/notes}"
 PROMPT_FILE="${PROMPT_FILE:-prompts/prompt-rewrite-notes.md}"
 SECTIONS="${SECTIONS:-}"
+DO_PDF="${DO_PDF:-0}"
+PDF_DIR="${PDF_DIR:-${NOTES_DIR}/pdfs}"
 
 if [[ -z "${MARKDOWN_FILE}" ]]; then
   echo "ERROR: Set MARKDOWN_FILE=/path/to/your/notes.md"
@@ -34,6 +36,9 @@ echo "Notes dir     : ${NOTES_DIR}"
 echo "Prompt        : ${PROMPT_FILE}"
 if [[ -n "${SECTIONS}" ]]; then
   echo "Sections      : ${SECTIONS}"
+fi
+if [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; then
+  echo "PDF dir       : ${PDF_DIR}  (will generate PDFs too)"
 fi
 echo ""
 
@@ -53,7 +58,21 @@ fi
   "$@"
 
 EXIT_CODE=$?
+
+if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; }; then
+  mkdir -p "${PDF_DIR}"
+  echo ""
+  echo "Generating styled PDFs..."
+  "${PYTHON}" scripts/convert_md_to_pdf.py \
+    --batch \
+    "${NOTES_DIR}" \
+    --output "${PDF_DIR}"
+fi
+
 echo ""
 echo "Done. Exit code: ${EXIT_CODE}"
 echo "Rewritten notes are in: ${NOTES_DIR}/"
+if [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; then
+  echo "PDFs are in: ${PDF_DIR}/"
+fi
 exit $EXIT_CODE
