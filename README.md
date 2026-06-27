@@ -160,10 +160,28 @@ DO_PDF=1 MARKDOWN_FILE=your_notes.md ./run_md_to_notes.sh --overwrite
 INPUT_DIR=inputs NOTES_DIR=outputs/notes PDF_DIR=outputs/pdfs DO_PDF=1 ./run_pdf_to_notes.sh
 ```
 
-Standalone (for already-generated notes):
+### Combined PDF with فهرست (Index)
+
+When processing a whole folder, automatically create **one big PDF**:
+
+- First page: clean **Table of Contents / فهرست** listing all titles
+- Then all the individual notes combined in order
 
 ```bash
-./run_notes_to_pdf.sh
+# Full flow: .md + individual PDFs + combined with index
+DO_PDF=1 CREATE_COMBINED=1 ./run_pdf_to_notes.sh --overwrite
+
+# Custom combined file name
+DO_PDF=1 CREATE_COMBINED=1 COMBINED_OUTPUT=outputs/My_Complete_Notes.pdf ./run_pdf_to_notes.sh
+```
+
+Standalone (if you already have the PDFs):
+
+```bash
+python scripts/create_combined_pdf.py \
+  --notes-dir outputs/notes \
+  --pdf-dir outputs/pdfs \
+  --output outputs/COMBINED_NOTES.pdf
 ```
 
 Uses WeasyPrint + clean academic styling (A4, readable typography, highlighted "Key Points" box, page numbers).

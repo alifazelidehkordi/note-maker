@@ -24,6 +24,8 @@ PROMPT_FILE="${PROMPT_FILE:-prompts/prompt-rewrite-notes.md}"
 SECTIONS="${SECTIONS:-}"
 DO_PDF="${DO_PDF:-0}"
 PDF_DIR="${PDF_DIR:-${NOTES_DIR}/pdfs}"
+CREATE_COMBINED="${CREATE_COMBINED:-0}"
+COMBINED_OUTPUT="${COMBINED_OUTPUT:-${NOTES_DIR}/../COMBINED_NOTES.pdf}"
 
 if [[ -z "${MARKDOWN_FILE}" ]]; then
   echo "ERROR: Set MARKDOWN_FILE=/path/to/your/notes.md"
@@ -39,6 +41,9 @@ if [[ -n "${SECTIONS}" ]]; then
 fi
 if [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; then
   echo "PDF dir       : ${PDF_DIR}  (will generate PDFs too)"
+  if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
+    echo "Combined      : ${COMBINED_OUTPUT}"
+  fi
 fi
 echo ""
 
@@ -69,6 +74,15 @@ if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "
     --batch \
     "${NOTES_DIR}" \
     --output "${PDF_DIR}"
+
+  if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
+    echo ""
+    echo "Creating combined PDF with index page..."
+    "${PYTHON}" scripts/create_combined_pdf.py \
+      --notes-dir "${NOTES_DIR}" \
+      --pdf-dir "${PDF_DIR}" \
+      --output "${COMBINED_OUTPUT}"
+  fi
 fi
 
 echo ""
