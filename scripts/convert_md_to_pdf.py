@@ -30,7 +30,7 @@ DEFAULT_CSS = """
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
   font-size: 10.2pt;
-  line-height: 1.35;
+  line-height: 1.4;
   color: #1a202c;
   max-width: 100%;
 }
@@ -106,6 +106,22 @@ hr {
   border: none;
   border-top: 1px solid #e2e8f0;
   margin: 10pt 0;
+}
+
+/* Force page breaks between major sections in combined documents */
+.page-break, div[style*="page-break-before"] {
+  page-break-before: always;
+  break-before: page;
+  display: block;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* Force each major note to start on a fresh page in combined documents */
+.note-heading {
+  page-break-before: always;
+  break-before: page;
 }
 """
 
