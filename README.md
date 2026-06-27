@@ -158,6 +158,9 @@ DO_PDF=1 MARKDOWN_FILE=your_notes.md ./run_md_to_notes.sh --overwrite
 
 # Or explicitly set output dirs
 INPUT_DIR=inputs NOTES_DIR=outputs/notes PDF_DIR=outputs/pdfs DO_PDF=1 ./run_pdf_to_notes.sh
+
+# Use your own Obsidian-like CSS (recommended for matching your export style)
+CSS_FILE=~/.obsidian/print.css DO_PDF=1 ./run_pdf_to_notes.sh --overwrite
 ```
 
 ### Combined PDF with فهرست (Index)
@@ -198,9 +201,22 @@ python scripts/create_combined_pdf.py \
   --output outputs/COMBINED_NOTES.pdf
 ```
 
-Uses WeasyPrint + clean academic styling (A4, readable typography, highlighted "Key Points" box, page numbers).
+Uses WeasyPrint with styling tuned to feel like Obsidian PDF exports:
+- Proper heading hierarchy (h1 > h2 > h3 with different sizes/weights)
+- Good spacing and readability
+- Key Points section highlighted
 
-This produces PDFs in a similar professional style to your Obsidian study material exports.
+**To match your exact Obsidian theme/export:**
+
+Export one note from Obsidian to PDF, or save the print CSS (in Obsidian dev tools or by inspecting a PDF export), then use:
+
+```bash
+CSS_FILE=/path/to/your-obsidian-print.css ./run_notes_to_pdf.sh
+```
+
+You can also pass it via the main runners.
+
+The default CSS was updated to fix issues like h2 size being too close to body text.
 
 ## Customizing / Extending
 

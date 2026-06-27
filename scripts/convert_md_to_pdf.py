@@ -30,7 +30,7 @@ DEFAULT_CSS = """
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
   font-size: 10.2pt;
-  line-height: 1.55;
+  line-height: 1.35;
   color: #1a202c;
   max-width: 100%;
 }
@@ -45,7 +45,7 @@ h1 {
 }
 
 h2 {
-  font-size: 12.5pt;
+  font-size: 13.5pt;
   margin: 16pt 0 6pt 0;
   color: #2b6cb0;
   border-left: 5px solid #63b3ed;
@@ -54,13 +54,14 @@ h2 {
 }
 
 h3 {
-  font-size: 10.8pt;
-  margin: 11pt 0 4pt 0;
-  color: #2d3748;
+  font-size: 12pt;
+  font-weight: 600;
+  margin: 10pt 0 3pt 0;
+  color: #1e3a8a;
   page-break-after: avoid;
 }
 
-p { margin: 5pt 0; }
+p { margin: 3pt 0; }
 
 strong, b {
   color: #1a365d;
@@ -97,7 +98,8 @@ pre, code {
   color: #2b6cb0;
   border: none;
   padding-left: 0;
-  font-size: 11.5pt;
+  font-size: 13pt;
+  font-weight: 600;
 }
 
 hr {
@@ -109,6 +111,22 @@ hr {
 
 def md_to_html(md_text: str) -> str:
     """Convert the note Markdown to clean HTML."""
+    # Strip YAML frontmatter if present (to keep PDF clean, no "book_pages: ..." junk)
+    if md_text.lstrip().startswith('---'):
+        match = re.search(r'^---\s*\n.*?\n---\s*\n', md_text, re.DOTALL | re.MULTILINE)
+        if match:
+            md_text = md_text[match.end():].lstrip()
+
+    # Remove the source info line if present (added by enrich, but pollutes top of PDF like "منبع اصلی" or file info)
+    # This makes output clean like the good PDF you liked
+    md_text = re.sub(r'(?m)^\s*\*\*منبع اصلی:\*\*.*$', '', md_text)
+    md_text = re.sub(r'(?m)^book_pages:.*$', '', md_text)
+    md_text = re.sub(r'(?m)^chapter:.*$', '', md_text)
+    md_text = re.sub(r'(?m)^part:.*$', '', md_text)
+    md_text = re.sub(r'(?m)^pdf_pages:.*$', '', md_text)
+    md_text = re.sub(r'(?m)^source:.*$', '', md_text)
+    md_text = md_text.strip()
+
     # Use useful extensions
     html_body = markdown.markdown(
         md_text,
@@ -125,8 +143,11 @@ def md_to_html(md_text: str) -> str:
 
     return html_body
 
-def make_pdf(md_path: Path, output_pdf: Path | None = None, extra_css: str | None = None) -> Path:
-    """Convert one Markdown note to a beautiful PDF."""
+def make_pdf(md_path: Path, output_pdf: Path | None = None, extra_css: str | None = None, css_file: Path | None = None) -> Path:
+    """Convert one Markdown note to a beautiful PDF.
+
+    css_file: optional path to a .css file to append (for Obsidian-like custom styles).
+    """
     md_text = md_path.read_text(encoding="utf-8")
     body_html = md_to_html(md_text)
 
@@ -134,13 +155,18 @@ def make_pdf(md_path: Path, output_pdf: Path | None = None, extra_css: str | Non
     title_match = re.search(r"^#\s+(.+)$", md_text, re.MULTILINE)
     title = title_match.group(1).strip() if title_match else md_path.stem
 
+    css = DEFAULT_CSS
+    if css_file and css_file.exists():
+        css += "\n" + css_file.read_text(encoding="utf-8")
+    if extra_css:
+        css += "\n" + extra_css
+
     full_html = f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>{title}</title>
-  <style>{DEFAULT_CSS}</style>
-  {f'<style>{extra_css}</style>' if extra_css else ''}
+  <style>{css}</style>
 </head>
 <body>
 {body_html}
@@ -156,7 +182,7 @@ def make_pdf(md_path: Path, output_pdf: Path | None = None, extra_css: str | Non
 
     return output_pdf
 
-def batch_convert(input_dir: Path, output_dir: Path, pattern: str = "*.md") -> list[Path]:
+def batch_convert(input_dir: Path, output_dir: Path, pattern: str = "*.md", css_file: Path | None = None) -> list[Path]:
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -166,7 +192,7 @@ def batch_convert(input_dir: Path, output_dir: Path, pattern: str = "*.md") -> l
         if md.is_file():
             pdf = output_dir / (md.stem + ".pdf")
             try:
-                out = make_pdf(md, pdf)
+                out = make_pdf(md, pdf, css_file=css_file)
                 print(f"✓ {md.name} → {pdf.name}")
                 results.append(out)
             except Exception as exc:
@@ -174,20 +200,22 @@ def batch_convert(input_dir: Path, output_dir: Path, pattern: str = "*.md") -> l
     return results
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Markdown notes → styled study PDFs (WeasyPrint)")
+    parser = argparse.ArgumentParser(description="Markdown notes → styled study PDFs (WeasyPrint, Obsidian-like by default)")
     parser.add_argument("input", help="Single .md file or directory")
     parser.add_argument("--output", help="Output PDF path (single) or directory (batch)")
     parser.add_argument("--batch", action="store_true", help="Process a whole directory")
+    parser.add_argument("--css", help="Path to additional CSS file (to customize like your Obsidian theme)")
     args = parser.parse_args()
 
     inp = Path(args.input)
+    css_file = Path(args.css) if args.css else None
 
     if args.batch or inp.is_dir():
         out_dir = Path(args.output) if args.output else inp / "pdfs"
-        batch_convert(inp, out_dir)
+        batch_convert(inp, out_dir, css_file=css_file)
     else:
         out = Path(args.output) if args.output else inp.with_suffix(".pdf")
-        result = make_pdf(inp, out)
+        result = make_pdf(inp, out, css_file=css_file)
         print(f"Created PDF: {result}")
 
     return 0

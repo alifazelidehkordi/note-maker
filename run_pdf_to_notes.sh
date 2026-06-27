@@ -28,6 +28,7 @@ COMBINED_OUTPUT="${COMBINED_OUTPUT:-${NOTES_DIR}/../COMBINED_NOTES.pdf}"
 ENRICH_SOURCE="${ENRICH_SOURCE:-0}"
 GENERATE_RICH_INDEX="${GENERATE_RICH_INDEX:-0}"
 ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-}"
+CSS_FILE="${CSS_FILE:-}"
 
 echo ""
 echo "Input dir : ${INPUT_DIR}"
@@ -58,10 +59,15 @@ if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "
   echo "Ensuring PDF dependencies..."
   "${PYTHON}" -c "import weasyprint, markdown" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown
   echo "Generating styled PDFs..."
+  CSS_ARG=()
+  if [[ -n "$CSS_FILE" ]]; then
+    CSS_ARG=(--css "$CSS_FILE")
+  fi
   "${PYTHON}" scripts/convert_md_to_pdf.py \
     --batch \
     "${NOTES_DIR}" \
-    --output "${PDF_DIR}"
+    --output "${PDF_DIR}" \
+    "${CSS_ARG[@]}"
 
   if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
     echo ""
