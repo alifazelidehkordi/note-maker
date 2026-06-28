@@ -68,8 +68,8 @@ if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "
   mkdir -p "${PDF_DIR}"
   echo ""
   echo "Ensuring PDF dependencies..."
-  "${PYTHON}" -c "import weasyprint, markdown" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown
-  echo "Generating styled PDFs..."
+  "${PYTHON}" -c "import weasyprint, markdown, pypdf" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown pypdf
+  echo "Generating styled PDFs (topic notes only)..."
   "${PYTHON}" scripts/convert_md_to_pdf.py \
     --batch \
     "${NOTES_DIR}" \
@@ -77,11 +77,17 @@ if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "
 
   if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
     echo ""
-    echo "Creating combined PDF with index page..."
+    echo "Creating combined PDF with rich index front matter..."
+    INDEX_MD="${INDEX_MD:-${NOTES_DIR}/../STUDY_INDEX-rewritten.md}"
+    INDEX_ARG=()
+    if [[ -f "$INDEX_MD" ]]; then
+      INDEX_ARG=(--index-md "$INDEX_MD")
+    fi
     "${PYTHON}" scripts/create_combined_pdf.py \
       --notes-dir "${NOTES_DIR}" \
       --pdf-dir "${PDF_DIR}" \
-      --output "${COMBINED_OUTPUT}"
+      --output "${COMBINED_OUTPUT}" \
+      "${INDEX_ARG[@]}"
   fi
 fi
 

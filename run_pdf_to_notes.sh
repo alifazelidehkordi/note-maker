@@ -55,28 +55,6 @@ EXIT_CODE=$?
 
 if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; }; then
   mkdir -p "${PDF_DIR}"
-  echo ""
-  echo "Ensuring PDF dependencies..."
-  "${PYTHON}" -c "import weasyprint, markdown" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown
-  echo "Generating styled PDFs..."
-  CSS_ARG=()
-  if [[ -n "$CSS_FILE" ]]; then
-    CSS_ARG=(--css "$CSS_FILE")
-  fi
-  "${PYTHON}" scripts/convert_md_to_pdf.py \
-    --batch \
-    "${NOTES_DIR}" \
-    --output "${PDF_DIR}" \
-    "${CSS_ARG[@]}"
-
-  if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
-    echo ""
-    echo "Creating combined PDF with index page..."
-    "${PYTHON}" scripts/create_combined_pdf.py \
-      --notes-dir "${NOTES_DIR}" \
-      --pdf-dir "${PDF_DIR}" \
-      --output "${COMBINED_OUTPUT}"
-  fi
 
   if [[ "$ENRICH_SOURCE" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
     echo ""
@@ -97,6 +75,35 @@ if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "
       --output "$RICH_INDEX_OUT" \
       --title "Rewritten Study Notes"
     echo "Rich index saved to: $RICH_INDEX_OUT"
+  fi
+
+  echo ""
+  echo "Ensuring PDF dependencies..."
+  "${PYTHON}" -c "import weasyprint, markdown, pypdf" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown pypdf
+  echo "Generating styled PDFs (topic notes only)..."
+  CSS_ARG=()
+  if [[ -n "$CSS_FILE" ]]; then
+    CSS_ARG=(--css "$CSS_FILE")
+  fi
+  "${PYTHON}" scripts/convert_md_to_pdf.py \
+    --batch \
+    "${NOTES_DIR}" \
+    --output "${PDF_DIR}" \
+    "${CSS_ARG[@]}"
+
+  if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
+    echo ""
+    echo "Creating combined PDF with rich index front matter..."
+    INDEX_MD="${INDEX_MD:-${NOTES_DIR}/../STUDY_INDEX-rewritten.md}"
+    INDEX_ARG=()
+    if [[ -f "$INDEX_MD" ]]; then
+      INDEX_ARG=(--index-md "$INDEX_MD")
+    fi
+    "${PYTHON}" scripts/create_combined_pdf.py \
+      --notes-dir "${NOTES_DIR}" \
+      --pdf-dir "${PDF_DIR}" \
+      --output "${COMBINED_OUTPUT}" \
+      "${INDEX_ARG[@]}"
   fi
 fi
 

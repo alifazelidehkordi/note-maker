@@ -1,3 +1,6 @@
 selenium
 pyautogui
 pyperclip
+markdown
+weasyprint
+pypdf

@@ -47,6 +47,11 @@ run.log
 .DS_Store
 Thumbs.db
 
+# Agent / analysis artifacts
+graphify-out/
+.claude-flow/
+.metaharness/
+
 # Temporary
 *.tmp
 *.crdownload

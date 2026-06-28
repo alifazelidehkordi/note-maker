@@ -1,0 +1,7 @@
+{
+  "name": "note-maker",
+  "private": true,
+  "scripts": {
+    "test": "./run_tests.sh"
+  }
+}
