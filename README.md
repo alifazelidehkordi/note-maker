@@ -571,4 +571,5 @@ Use `prompts/prompt-mind-map.md` for concept-consolidated exam-oriented mind map
 
 Forked from the ChatGPT mind-map automation project. Mind-map features remain; lecture-note rewriting and PDF export are the primary focus.
 
-**Repository:** https://github.com/alifazelidehkordi/note-maker
+**Repository:** https://github.com/alifazelidehkordi/note-maker  
+**Grok skill (bundled install):** https://github.com/alifazelidehkordi/chatgpt-note-maker-skill — use `/chatgpt-note-maker` after installing
