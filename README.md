@@ -1,124 +1,178 @@
 # ChatGPT Note Maker
 
-End-to-end automation: turn PDFs and raw lecture notes into **clean, well-structured Markdown** using the ChatGPT web UI.
+Turn lecture PDFs and raw notes into **clean, study-ready Markdown** — then optionally export **styled PDFs** with a rich Persian/English فهرست, chapter tables, and original page mappings.
 
 ```
-PDF / DOCX / Markdown  →  ChatGPT →  Clean .md notes
+PDF / DOCX / Markdown  →  ChatGPT  →  Clean .md notes  →  Study PDFs + Combined book
 ```
 
-Primarily designed for high-quality **lecture notes rewriting**, but flexible for other prompts (including mind-map OPML generation).
+Built for medical and university study workflows (tested on 39-topic pathophysiology corpora), but works with any prompt that makes ChatGPT return a downloadable file.
 
-| Mode | Input | Output |
-|------|-------|--------|
-| **PDF batch** | Folder of PDFs/DOCX/MD | `outputs/notes/*.md` (or opml) |
-| **Markdown sections** | One `.md` with `##` headings | Separate clean `.md` per section |
+## What it does
 
-The tool preserves the original logic and flow while making the content much easier to review.
+| Stage | Input | Output |
+|-------|-------|--------|
+| **Rewrite** | PDFs, DOCX, or `##` sections in one `.md` | Clean notes in `outputs/notes/` |
+| **Enrich** *(optional)* | Original split parts with `pdf_pages` frontmatter | Metadata copied into rewritten notes |
+| **Rich index** *(optional)* | Parts + rewritten notes | `STUDY_INDEX-rewritten.md` (فصول، جلسات، صفحات، تمرکز مطالعه) |
+| **PDF export** | Rewritten `.md` topic notes | Individual PDFs via WeasyPrint |
+| **Combined book** | Notes + index | One PDF: rich فهرست first, then all topics in order |
 
 ## Requirements
 
 - Python 3.10+
 - Google Chrome or Chromium
-- ChatGPT account (login once; saved in `chrome_profile/`)
+- ChatGPT account (log in once; session saved in `chrome_profile/`)
 - Linux or Windows
 
 ```bash
-# Linux — recommended for PyAutoGUI
+# Linux — PyAutoGUI + browser automation
 sudo apt install -y python3-tk python3-dev chromium-browser
 ```
 
-## Quick Start
+## Quick start
 
-### Setup (once)
+### 1. Setup (once)
 
 ```bash
+git clone https://github.com/alifazelidehkordi/note-maker.git
 cd note-maker
-chmod +x setup.sh run_pdf_to_notes.sh run_md_to_notes.sh
+chmod +x setup.sh run_*.sh
 ./setup.sh
 ```
 
 Windows: run `setup.cmd`.
 
-### PDF → Clean Markdown Notes (recommended)
+### 2. PDF → clean Markdown notes
 
 ```bash
-# Put your PDFs / DOCX in inputs/
+# Put PDFs/DOCX in inputs/
 ./run_pdf_to_notes.sh --overwrite
-
-# Or with env vars
-INPUT_DIR=/path/to/pdfs NOTES_DIR=/path/to/output ./run_pdf_to_notes.sh --overwrite
 ```
 
-### Markdown file (with ## sections) → Notes
+### 3. Markdown with `##` sections → notes
 
 ```bash
 MARKDOWN_FILE=your_lecture.md ./run_md_to_notes.sh --overwrite
-
-# Only selected sections
-MARKDOWN_FILE=your_lecture.md SECTIONS=2,5-9 ./run_md_to_notes.sh --overwrite
+SECTIONS=2,5-9 MARKDOWN_FILE=your_lecture.md ./run_md_to_notes.sh --overwrite
 ```
 
-### Legacy mind-map (OPML → XMind)
-
-The original mind-map pipeline is still available:
+### 4. PDF export only (notes already exist)
 
 ```bash
-./run_pdf_to_xmind.sh --overwrite
-# or
-MARKDOWN_FILE=notes.md ./run_md_to_xmind.sh
+NOTES_DIR=outputs/phisiopath-full \
+PDF_DIR=outputs/phisiopath-full/pdfs \
+CREATE_COMBINED=1 \
+INDEX_MD=outputs/phisiopath-full/STUDY_INDEX-rewritten.md \
+./run_notes_to_pdf.sh
 ```
 
-## Project Structure
+Or the one-liner wrapper:
+
+```bash
+./run_notes_to_pdf.sh   # defaults: outputs/notes → outputs/pdfs
+```
+
+## Full PDF pipeline (فهرست غنی + combined)
+
+When you have **original topic parts** (with `pdf_pages` in frontmatter) and **rewritten notes**:
+
+```bash
+ORIGINAL_PARTS_DIR=/path/to/original-parts \
+NOTES_DIR=outputs/clean-notes \
+PDF_DIR=outputs/clean-notes/pdfs \
+DO_PDF=1 CREATE_COMBINED=1 \
+ENRICH_SOURCE=1 GENERATE_RICH_INDEX=1 \
+./run_pdf_to_notes.sh --overwrite
+```
+
+**Order of operations (wired correctly):**
+
+1. `enrich_rewritten_notes.py` — copy `pdf_pages`, `chapter`, `part` into clean notes  
+2. `generate_study_index.py` — build `STUDY_INDEX-rewritten.md`  
+3. `convert_md_to_pdf.py` — topic notes only (`01_01_...` pattern, 39 files)  
+4. `create_combined_pdf.py` — **rich index as opening pages**, then all topic PDFs  
+
+The combined PDF auto-detects `STUDY_INDEX-rewritten.md` beside the notes folder. Override with `INDEX_MD=/path/to/index.md`.
+
+### PDF styling options
+
+```bash
+# Themes: medical-blue (default), ink, emerald
+# Presets: study, compact, comfortable, print
+.venv-linux/bin/python scripts/convert_md_to_pdf.py notes/01_01_Topic.md \
+  --theme emerald --preset compact --rtl
+
+# Custom Obsidian-like CSS
+CSS_FILE=~/.obsidian/print.css ./run_notes_to_pdf.sh
+
+# Disable auto RTL detection for Persian content
+.venv-linux/bin/python scripts/convert_md_to_pdf.py notes --batch --output pdfs --no-auto-rtl
+```
+
+**Key Points** and **Warnings / هشدارها** sections are auto-highlighted. YAML frontmatter and `منبع اصلی` lines are stripped from PDF output.
+
+## Project layout
 
 ```
 note-maker/
-├── README.md
-├── requirements.txt
-├── setup.sh / setup.cmd
-├── run_pdf_to_notes.sh          # PDF → clean Markdown notes (new main flow)
-├── run_md_to_notes.sh           # Markdown sections → clean .md notes
-├── run_pdf_to_xmind.sh ...      # Legacy mind-map flows
+├── run_pdf_to_notes.sh       # Main: PDF/DOCX → ChatGPT → .md (+ optional PDF)
+├── run_md_to_notes.sh        # Markdown sections → .md (+ optional PDF)
+├── run_notes_to_pdf.sh       # Existing .md → PDFs + combined book
+├── run_tests.sh              # Full unit test suite
 ├── prompts/
-│   ├── prompt-rewrite-notes.md  # Lecture notes → structured Markdown (recommended)
-│   └── prompt-mind-map.md       # Original mind-map prompt
+│   ├── prompt-rewrite-notes.md   # Lecture notes rewriter (recommended)
+│   └── prompt-mind-map.md        # Legacy OPML mind-map prompt
 ├── scripts/
-│   ├── batch_pdf.py
-│   ├── batch_markdown.py
-│   ├── run_chatgpt_temporary_test.py   # Core Selenium automation
-│   └── ...
-├── inputs/
-└── outputs/notes/       # Default output for rewritten notes
+│   ├── batch_pdf.py / batch_markdown.py
+│   ├── convert_md_to_pdf.py      # WeasyPrint study PDFs
+│   ├── create_combined_pdf.py    # Rich index + merge
+│   ├── enrich_rewritten_notes.py
+│   ├── generate_study_index.py   # Rich فهرست generator
+│   └── run_chatgpt_temporary_test.py
+├── inputs/                   # Default input folder
+└── outputs/                  # Generated notes & PDFs (gitignored)
 ```
 
-## Pipeline Steps
+## Testing
 
-1. Upload source (PDF or Markdown section) to a fresh temporary ChatGPT chat.
-2. Send your prompt (e.g. the notes rewriter).
-3. ChatGPT generates the file (`.md` or `.opml`) and the automation downloads it automatically.
-4. (Optional) Post-processing (for mind-maps: convert OPML → XMind).
+```bash
+./run_tests.sh
+# or
+npm test
+```
 
-## CLI Options (pipeline)
+16 tests cover download detection, PDF helpers, RTL detection, preset application, and a WeasyPrint smoke test.
 
-Passed through to the underlying steps:
+## CLI flags (ChatGPT batch)
 
 | Flag | Description |
 |------|-------------|
-| `--overwrite` | Re-generate existing OPML and XMind files |
+| `--overwrite` | Re-generate existing outputs |
 | `--limit N` | Process only first N files/sections |
-| `--model "Name"` | ChatGPT model label (e.g. `GPT-4o`) |
+| `--model "Name"` | ChatGPT model label |
+| `--pdf` / `DO_PDF=1` | Also generate PDFs after rewrite |
+| `--combined` / `CREATE_COMBINED=1` | Build combined PDF with index |
 | `--save-diagnostics` | Save response text + screenshot per item |
 | `--sections 1,3,5-8` | Markdown mode: filter sections |
-| `--no-warm-up` | Skip the initial hello warm-up message |
-| `--keep-browser` | Leave browser open after batch finishes |
 
-## Customizing the Prompt
+### Environment variables (PDF stage)
 
-Edit any file in `prompts/`.
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NOTES_DIR` | `outputs/notes` | Rewritten markdown folder |
+| `PDF_DIR` | `NOTES_DIR/pdfs` | Individual PDF output |
+| `CREATE_COMBINED` | `0` | Build merged PDF |
+| `COMBINED_OUTPUT` | `NOTES_DIR/../COMBINED_NOTES.pdf` | Combined file path |
+| `ENRICH_SOURCE` | `0` | Copy page metadata from original parts |
+| `GENERATE_RICH_INDEX` | `0` | Generate `STUDY_INDEX-rewritten.md` |
+| `ORIGINAL_PARTS_DIR` | — | Source parts for enrich + index |
+| `INDEX_MD` | auto-detect | Rich index for combined PDF front matter |
+| `CSS_FILE` | — | Extra print CSS (e.g. Obsidian theme) |
 
-- `prompt-rewrite-notes.md` — Current main prompt for clean lecture notes (recommended).
-- `prompt-mind-map.md` — Original prompt for OPML mind maps.
+## Custom prompts
 
-The automation works with any prompt as long as ChatGPT is told to **save the result as a downloadable file** and reply with **only the download link**.
+Edit files in `prompts/`. ChatGPT must be instructed to **save the result as a downloadable file** and reply with **only the download link**.
 
 ## Troubleshooting
 
@@ -126,101 +180,25 @@ The automation works with any prompt as long as ChatGPT is told to **save the re
 |---------|-----|
 | Browser not found | Install Chrome/Chromium |
 | Not logged in | Log in manually in the opened browser |
-| No OPML downloaded | Use `--save-diagnostics`; check `downloads/` |
-| XMind won't open | Re-run `./run_opml_to_xmind.sh` on existing OPML |
-| Wrong model | Pass `--model "GPT-4o"` |
-| Browser restarts every file | Use one batch run with multiple sections; retries now reset chat only |
-| `Could not load temporary chat` / prompt editor missing | Automation cookies (`conv_key_*`) piled up. Batches auto-prune at start and after each file; manual fix: `python3 scripts/prune_chatgpt_cookies.py` (login is preserved) |
+| Download not detected | `--save-diagnostics`; check `downloads/` |
+| `temporary chat` / editor missing | `python3 scripts/prune_chatgpt_cookies.py` |
+| PDF deps missing | `pip install weasyprint markdown pypdf` or re-run `./setup.sh` |
+| Combined PDF has wrong index | Ensure `STUDY_INDEX-rewritten.md` exists; set `INDEX_MD` explicitly |
+| Wrong ChatGPT model | `--model "GPT-4o"` |
+
+## Legacy mind-map flow
+
+OPML → XMind is still supported:
+
+```bash
+./run_pdf_to_xmind.sh --overwrite
+./run_opml_to_xmind.sh
+```
 
 ## Portability
 
-Copy this folder anywhere. Run `setup.sh`, log in once, point `INPUT_DIR` / `MARKDOWN_FILE` / `XMIND_DIR` to your paths. No hardcoded user paths.
+Copy the folder anywhere. Run `setup.sh`, log in once, point `INPUT_DIR` / `NOTES_DIR` / `MARKDOWN_FILE` to your paths. No hardcoded user directories.
 
-## Related
+## License
 
-The original mind-map functionality is still fully supported. This project was forked and rebranded from the mind-map automation for the new lecture notes rewriting workflow.
-
----
-
-## PDF Export (Integrated)
-
-You can now generate both clean `.md` **and** beautiful study PDFs in one go:
-
-```bash
-# PDF/MD files → notes + PDFs
-DO_PDF=1 ./run_pdf_to_notes.sh --overwrite
-
-# Or using flag (passed through)
-./run_pdf_to_notes.sh --pdf --overwrite
-
-# Markdown sections → notes + PDFs
-DO_PDF=1 MARKDOWN_FILE=your_notes.md ./run_md_to_notes.sh --overwrite
-
-# Or explicitly set output dirs
-INPUT_DIR=inputs NOTES_DIR=outputs/notes PDF_DIR=outputs/pdfs DO_PDF=1 ./run_pdf_to_notes.sh
-
-# Use your own Obsidian-like CSS (recommended for matching your export style)
-CSS_FILE=~/.obsidian/print.css DO_PDF=1 ./run_pdf_to_notes.sh --overwrite
-```
-
-### Combined PDF with فهرست (Index)
-
-When processing a whole folder, automatically create **one big PDF**:
-
-- First page: clean **Table of Contents / فهرست** listing all titles
-- Then all the individual notes combined in order
-
-```bash
-# Full flow: .md + individual PDFs + combined with index
-DO_PDF=1 CREATE_COMBINED=1 ./run_pdf_to_notes.sh --overwrite
-
-# Custom combined file name
-DO_PDF=1 CREATE_COMBINED=1 COMBINED_OUTPUT=outputs/My_Complete_Notes.pdf ./run_pdf_to_notes.sh
-```
-
-**With original page mapping + rich فهرست (for your STUDY_INDEX style parts):**
-
-```bash
-ORIGINAL_PARTS_DIR=/path/to/parts \
-NOTES_DIR=outputs/clean-notes \
-PDF_DIR=outputs/pdfs \
-DO_PDF=1 CREATE_COMBINED=1 \
-ENRICH_SOURCE=1 GENERATE_RICH_INDEX=1 \
-./run_pdf_to_notes.sh --overwrite
-```
-
-This will enrich the notes with `pdf_pages`, generate a rich `STUDY_INDEX-rewritten.md` (modeled on your phisiopath index), and the combined PDF.
-```
-
-Standalone (if you already have the PDFs):
-
-```bash
-python scripts/create_combined_pdf.py \
-  --notes-dir outputs/notes \
-  --pdf-dir outputs/pdfs \
-  --output outputs/COMBINED_NOTES.pdf
-```
-
-Uses WeasyPrint with styling tuned to feel like Obsidian PDF exports:
-- Proper heading hierarchy (h1 > h2 > h3 with different sizes/weights)
-- Good spacing and readability
-- Key Points section highlighted
-
-**To match your exact Obsidian theme/export:**
-
-Export one note from Obsidian to PDF, or save the print CSS (in Obsidian dev tools or by inspecting a PDF export), then use:
-
-```bash
-CSS_FILE=/path/to/your-obsidian-print.css ./run_notes_to_pdf.sh
-```
-
-You can also pass it via the main runners.
-
-The default CSS was updated to fix issues like h2 size being too close to body text.
-
-## Customizing / Extending
-
-- Main prompt for notes: `prompts/prompt-rewrite-notes.md`
-- You can add new prompts and use `--prompt your-prompt.md --output-ext md`
-
-The core automation works for any prompt that makes ChatGPT produce a downloadable file.
+Private study automation tooling. Use and modify for personal academic workflows.
