@@ -2,14 +2,14 @@
 
 [![Tests](https://img.shields.io/badge/tests-16%20passing-brightgreen)](#testing)
 
-Automate lecture-note workflows with the **ChatGPT web UI**: upload sources, apply a custom prompt, download clean Markdown — then optionally build **study PDFs** with a rich bilingual فهرست, chapter tables, and links back to original PDF page ranges.
+Automate lecture-note workflows with the **ChatGPT web UI**: upload sources, apply a custom prompt, download clean Markdown — then optionally build **study PDFs** with a rich study index, chapter tables, and links back to original PDF page ranges.
 
 Designed for dense medical/university material (validated on a **39-topic pathophysiology** corpus), but any prompt that makes ChatGPT return a **downloadable file** works.
 
 ```
 ┌─────────────┐    ┌──────────┐    ┌────────────────┐    ┌─────────────────────────────┐
 │ PDF / DOCX  │───▶│ ChatGPT  │───▶│ Clean .md notes │───▶│ PDFs + combined study book  │
-│ or .md ##   │    │  (web)   │    │  (structured)   │    │  (WeasyPrint + فهرست غنی)   │
+│ or .md ##   │    │  (web)   │    │  (structured)   │    │  (WeasyPrint + rich index)  │
 └─────────────┘    └──────────┘    └────────────────┘    └─────────────────────────────┘
 ```
 
@@ -21,7 +21,7 @@ Designed for dense medical/university material (validated on a **39-topic pathop
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Workflows](#workflows)
-- [Rich فهرست (STUDY_INDEX)](#rich-فهرست-study_index)
+- [Rich study index (STUDY_INDEX)](#rich-study-index-study_index)
 - [PDF export & styling](#pdf-export--styling)
 - [Output note format](#output-note-format)
 - [Shell scripts reference](#shell-scripts-reference)
@@ -47,7 +47,7 @@ Designed for dense medical/university material (validated on a **39-topic pathop
 | **Selenium automation** | Opens temporary ChatGPT chats, attaches files, sends prompts, downloads artifacts |
 | **Structured notes** | Default prompt enforces `# Title` → `## Explanation` → `## Key Points` |
 | **Metadata enrichment** | Copy `pdf_pages`, `chapter`, `part` from original split parts into rewritten notes |
-| **Rich study index** | Generate `STUDY_INDEX-rewritten.md` with فصول، جلسات، صفحات اصلی، تمرکز مطالعه |
+| **Rich study index** | Generate `STUDY_INDEX-rewritten.md` with chapters, sessions, original page ranges, and study-focus columns |
 | **Study PDFs** | WeasyPrint export with medical-blue theme, RTL auto-detection, Key Points highlighting |
 | **Combined book** | One PDF: rich index pages first, then all topic notes in order |
 | **Mind maps** | Legacy OPML generation + conversion to themed XMind files |
@@ -111,7 +111,7 @@ sudo apt install -y libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.
 # 2. Export study PDFs from existing notes
 ./run_notes_to_pdf.sh
 
-# 3. Full book: enrich metadata + rich فهرست + PDFs + combined
+# 3. Full book: enrich metadata + rich study index + PDFs + combined
 ORIGINAL_PARTS_DIR=/path/to/parts DO_PDF=1 CREATE_COMBINED=1 \
   ENRICH_SOURCE=1 GENERATE_RICH_INDEX=1 ./run_pdf_to_notes.sh --overwrite
 ```
@@ -126,7 +126,7 @@ ORIGINAL_PARTS_DIR=/path/to/parts DO_PDF=1 CREATE_COMBINED=1 \
 | One long `.md` with `##` sections | `run_md_to_notes.sh` | One `.md` per section |
 | Clean notes already on disk | `run_notes_to_pdf.sh` | Individual PDFs (+ optional combined book) |
 | Original parts + rewritten notes | `run_notes_to_pdf.sh` with `ENRICH_SOURCE=1` | Notes with `pdf_pages` frontmatter |
-| Parts + notes, need فهرست | Add `GENERATE_RICH_INDEX=1` | `STUDY_INDEX-rewritten.md` |
+| Parts + notes, need study index | Add `GENERATE_RICH_INDEX=1` | `STUDY_INDEX-rewritten.md` |
 | Everything in one shot | `run_pdf_to_notes.sh` with all `DO_PDF` flags | Rewrite → enrich → index → PDF → combined |
 | OPML mind maps (legacy) | `run_pdf_to_xmind.sh` | OPML + themed XMind files |
 
@@ -177,7 +177,7 @@ INDEX_MD=outputs/phisiopath-full/STUDY_INDEX-rewritten.md \
 
 Defaults if you omit env vars: `outputs/notes` → `outputs/pdfs`.
 
-### 4. Full pipeline: rewrite + enrich + فهرست + PDF + combined
+### 4. Full pipeline: rewrite + enrich + study index + PDF + combined
 
 For corpora split into **topic parts** with YAML frontmatter (`pdf_pages`, `chapter`, `part`):
 
@@ -211,7 +211,7 @@ outputs/phisiopath-full/
 ├── 01_01_Blood_Cells_....md          # 39 topic notes
 ├── ...
 ├── 09_39_Hypoparathyroidism.md
-├── STUDY_INDEX-rewritten.md          # Rich فهرست (auto-generated)
+├── STUDY_INDEX-rewritten.md          # Rich study index (auto-generated)
 ├── pdfs/                             # Individual study PDFs
 └── COMBINED_NOTES.pdf                # Index + all 39 topics (~243 pages)
 ```
@@ -228,15 +228,15 @@ COMBINED_OUTPUT=outputs/phisiopath-full/COMBINED_NOTES.pdf \
 
 ---
 
-## Rich فهرست (STUDY_INDEX)
+## Rich study index (STUDY_INDEX)
 
-`generate_study_index.py` builds a bilingual study index modeled on medical course structure:
+`generate_study_index.py` builds a structured study index modeled on medical course layout:
 
 **Sections included:**
-- **نمای کلی** — session count
-- **فهرست فصول** — chapter table (فصل، موضوع، جلسات، صفحات)
-- **Per-chapter tables** — جلسه، موضوع، صفحات اصلی، تمرکز مطالعه
-- **English mirror** — same structure for quick reference
+- **Overview** — session count and course summary
+- **Chapter index** — table of chapters (chapter, topic, sessions, pages)
+- **Per-chapter tables** — session, topic, original pages, study focus
+- **Quick-reference summary** — compact mirror of the same structure
 
 **Standalone generation:**
 
@@ -255,7 +255,7 @@ python scripts/generate_study_index.py \
 
 ### Original parts frontmatter
 
-Topic-split source files should carry YAML frontmatter so enrichment and the فهرست can map sessions to original PDF pages:
+Topic-split source files should carry YAML frontmatter so enrichment and the study index can map sessions to original PDF pages:
 
 ```yaml
 ---
@@ -325,8 +325,8 @@ python scripts/convert_md_to_pdf.py note.md --page-size Letter --no-page-numbers
 
 ### PDF processing details
 
-- Strips YAML frontmatter and `منبع اصلی` / `pdf_pages:` metadata lines
-- Wraps **Key Points** / **نکات کلیدی** / **Warnings** / **هشدارها** in styled boxes
+- Strips YAML frontmatter and source-metadata lines (e.g. `pdf_pages:`)
+- Wraps **Key Points** and **Warnings** headings (including localized variants) in styled boxes
 - Auto-detects Persian/Arabic script → enables RTL layout (disable with `--no-auto-rtl`)
 - Supports tables, footnotes, fenced code, TOC extension
 - Uses Vazirmatn / Noto Arabic font stack for mixed Persian/English notes
