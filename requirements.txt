@@ -4,3 +4,4 @@ pyperclip
 markdown
 weasyprint
 pypdf
+pyyaml
