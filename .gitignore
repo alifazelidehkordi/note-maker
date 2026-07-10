@@ -69,3 +69,4 @@ profile_templates/
 # Parallel job claims
 .note-maker-claims/
 *.claim.json
+.claude/
