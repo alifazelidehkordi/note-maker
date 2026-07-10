@@ -1,0 +1,189 @@
+diff --git a/scripts/parallel_runtime/models.py b/scripts/parallel_runtime/models.py
+index 59539a3..0000000 100644
+--- a/scripts/parallel_runtime/models.py
++++ b/scripts/parallel_runtime/models.py
+@@ -135,6 +135,7 @@ class RunConfig:
+     adaptive_recovery_seconds: float = 900.0
+     worker_max_jobs: int = 20
+     worker_memory_limit_mb: float = 0.0
++    job_timeout: float = 1800.0
+     content_attempts: int = 3
+     network_retries: int = 4
+     browser_retries: int = 3
+@@ -167,6 +168,8 @@ class RunConfig:
+             raise ValueError("worker_max_jobs must not be negative.")
+         if self.worker_memory_limit_mb < 0:
+             raise ValueError("worker_memory_limit_mb must not be negative.")
++        if self.job_timeout < 0:
++            raise ValueError("job_timeout must not be negative.")
+         for name in ("content_attempts", "network_retries", "browser_retries", "download_retries", "rate_limit_retries"):
+             value = int(getattr(self, name))
+             if value < (1 if name == "content_attempts" else 0):
+@@ -205,6 +208,7 @@ class RunConfig:
+             "adaptive_recovery_seconds": self.adaptive_recovery_seconds,
+             "worker_max_jobs": self.worker_max_jobs,
+             "worker_memory_limit_mb": self.worker_memory_limit_mb,
++            "job_timeout": self.job_timeout,
+             "content_attempts": self.content_attempts,
+             "network_retries": self.network_retries,
+             "browser_retries": self.browser_retries,
+@@ -242,6 +246,7 @@ class RunConfig:
+             adaptive_recovery_seconds=float(payload.get("adaptive_recovery_seconds", 900.0)),
+             worker_max_jobs=int(payload.get("worker_max_jobs", 20)),
+             worker_memory_limit_mb=float(payload.get("worker_memory_limit_mb", 0.0)),
++            job_timeout=float(payload.get("job_timeout", 1800.0)),
+             content_attempts=int(payload.get("content_attempts", 3)),
+             network_retries=int(payload.get("network_retries", 4)),
+             browser_retries=int(payload.get("browser_retries", 3)),
+diff --git a/scripts/parallel_runtime/coordinator.py b/scripts/parallel_runtime/coordinator.py
+index 0e41d4f..0000000 100644
+--- a/scripts/parallel_runtime/coordinator.py
++++ b/scripts/parallel_runtime/coordinator.py
+@@ -64,6 +64,7 @@ class _WorkerSlot:
+     completed_jobs: int = 0
+     recycle_requested: bool = False
+     recycle_reason: str | None = None
++    job_started_at: float | None = None
+ 
+ 
+ class ParallelCoordinator:
+@@ -231,6 +232,7 @@ class ParallelCoordinator:
+                 continue
+             slot.current_job = job
+             slot.claim = claim
++            slot.job_started_at = time.monotonic()
+             slot.requested_job = False
+             slot.command_queue.put(WorkerCommand.run_job(job.to_payload()))
+             self.result.assignments[slot.worker_id].append(job.key)
+@@ -250,6 +252,7 @@ class ParallelCoordinator:
+             self.claims.release(slot.claim)
+         slot.current_job = None
+         slot.claim = None
++        slot.job_started_at = None
+         slot.requested_job = True
+         return job
+ 
+@@ -489,6 +492,17 @@ class ParallelCoordinator:
+                         f"worker heartbeat timed out after {self.config.worker_timeout:.1f}s",
+                     )
+                     continue
++                if (
++                    slot.current_job is not None
++                    and slot.job_started_at is not None
++                    and self.config.job_timeout > 0
++                    and now - slot.job_started_at > self.config.job_timeout
++                ):
++                    self._handle_lost_worker(
++                        slot,
++                        f"job timed out after {self.config.job_timeout:.1f}s",
++                    )
++                    continue
+                 if self.config.worker_memory_limit_mb > 0 and not slot.recycle_requested:
+                     rss = process_tree_rss_mb(int(slot.process.pid or 0))
+                     if rss is not None and rss > self.config.worker_memory_limit_mb:
+diff --git a/tests/test_job_timeout_watchdog.py b/tests/test_job_timeout_watchdog.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_job_timeout_watchdog.py
+@@ -0,0 +1,112 @@
++from __future__ import annotations
++
++from pathlib import Path
++import sys
++import tempfile
++from types import SimpleNamespace
++import unittest
++from unittest.mock import patch
++
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "scripts"))
++
++from parallel_runtime.coordinator import ParallelCoordinator, _WorkerSlot
++from parallel_runtime.models import RunConfig
++
++
++class _AliveProcess:
++    pid = 12345
++    exitcode = None
++
++    def is_alive(self) -> bool:
++        return True
++
++
++class JobTimeoutWatchdogTests(unittest.TestCase):
++    def _config(self, root: Path, *, job_timeout: float) -> RunConfig:
++        return RunConfig(
++            run_id="watchdog-test",
++            manifest_path=root / "manifest.json",
++            claims_dir=root / "claims",
++            worker_count=1,
++            executor_path="parallel_runtime.executors:PdfJobExecutor",
++            heartbeat_interval=1.0,
++            worker_timeout=10.0,
++            job_timeout=job_timeout,
++        )
++
++    @staticmethod
++    def _slot(*, job_started_at: float) -> _WorkerSlot:
++        return _WorkerSlot(
++            worker_id="worker-001",
++            generation=1,
++            process=_AliveProcess(),
++            command_queue=object(),
++            started_at=90.0,
++            last_heartbeat=100.0,
++            last_manifest_heartbeat=100.0,
++            ready=True,
++            current_job=SimpleNamespace(key="file-22"),
++            job_started_at=job_started_at,
++        )
++
++    def test_run_config_round_trip_preserves_job_timeout(self):
++        with tempfile.TemporaryDirectory() as temp_dir:
++            config = self._config(Path(temp_dir), job_timeout=123.5)
++            restored = RunConfig.from_payload(config.to_payload())
++
++        self.assertEqual(restored.job_timeout, 123.5)
++
++    def test_negative_job_timeout_is_rejected(self):
++        with tempfile.TemporaryDirectory() as temp_dir:
++            with self.assertRaisesRegex(ValueError, "job_timeout"):
++                self._config(Path(temp_dir), job_timeout=-1.0)
++
++    def test_busy_worker_times_out_even_with_fresh_heartbeat(self):
++        with tempfile.TemporaryDirectory() as temp_dir:
++            coordinator = object.__new__(ParallelCoordinator)
++            coordinator.config = self._config(Path(temp_dir), job_timeout=5.0)
++            slot = self._slot(job_started_at=90.0)
++            coordinator.slots = {slot.worker_id: slot}
++            lost: list[tuple[_WorkerSlot, str]] = []
++            coordinator._handle_lost_worker = lambda worker, reason: lost.append((worker, reason))
++            coordinator._recycle_worker = lambda _worker: None
++
++            with patch("parallel_runtime.coordinator.time.monotonic", return_value=100.0):
++                coordinator._check_workers()
++
++        self.assertEqual(len(lost), 1)
++        self.assertIs(lost[0][0], slot)
++        self.assertEqual(lost[0][1], "job timed out after 5.0s")
++
++    def test_zero_job_timeout_disables_watchdog(self):
++        with tempfile.TemporaryDirectory() as temp_dir:
++            coordinator = object.__new__(ParallelCoordinator)
++            coordinator.config = self._config(Path(temp_dir), job_timeout=0.0)
++            slot = self._slot(job_started_at=1.0)
++            coordinator.slots = {slot.worker_id: slot}
++            lost: list[tuple[_WorkerSlot, str]] = []
++            coordinator._handle_lost_worker = lambda worker, reason: lost.append((worker, reason))
++            coordinator._recycle_worker = lambda _worker: None
++
++            with patch("parallel_runtime.coordinator.time.monotonic", return_value=100.0):
++                coordinator._check_workers()
++
++        self.assertEqual(lost, [])
++
++
++if __name__ == "__main__":
++    unittest.main()
