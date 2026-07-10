@@ -391,7 +391,11 @@ def bootstrap_session(
 
 
 def _fsync_file(path: Path) -> None:
-    with path.open("rb") as handle:
+    # Windows requires a writable CRT descriptor for fsync. Opening the
+    # completed candidate read/write preserves its contents while making
+    # the durability barrier portable across POSIX and Windows.
+    with path.open("r+b") as handle:
+        handle.flush()
         os.fsync(handle.fileno())
 
 

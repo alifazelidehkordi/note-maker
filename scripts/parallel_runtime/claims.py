@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from process_liveness import pid_is_alive
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -23,15 +25,7 @@ def _parse_time(value: object) -> float:
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return pid_is_alive(pid)
 
 
 @dataclass(frozen=True)

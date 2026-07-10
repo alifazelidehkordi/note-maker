@@ -1,27 +1,51 @@
-name: Apply Windows Test Repairs
+name: Phase 1 Stability
 
 on:
+  push:
   pull_request:
-    branches:
-      - main
-
-permissions:
-  contents: write
 
 jobs:
-  repair:
+  tests:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q scripts tests
+      - name: Run test suite
+        run: python -m unittest discover -s tests -v
+
+  acceptance:
+    name: Browser-free release acceptance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          ref: fix/windows-test-stability
-          fetch-depth: 0
-      - name: Apply repairs
-        run: python scripts/apply_windows_repair.py
-      - name: Commit clean repair
+          python-version: "3.12"
+          cache: pip
+      - name: Install PDF system libraries
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix: make filesystem and process checks Windows-safe"
-          git push origin HEAD:fix/windows-test-stability
+          sudo apt-get update
+          sudo apt-get install -y libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Run Phase 1 acceptance
+        run: python scripts/phase1_acceptance.py --workdir "$RUNNER_TEMP/notemaker-acceptance" --report logs/phase1-acceptance.json
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-acceptance-report
+          path: logs/phase1-acceptance.json
