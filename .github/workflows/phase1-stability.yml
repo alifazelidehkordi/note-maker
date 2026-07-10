@@ -1,4 +1,4 @@
-name: Minimal Final Windows Failure Isolation
+name: Final PDF Test Failure Isolation
 
 on:
   pull_request:
@@ -18,30 +18,17 @@ jobs:
       - name: Install dependencies quietly
         shell: pwsh
         run: py -3.12 -m pip install -q -r requirements.txt
-      - name: Run modules independently
+      - name: Run affected PDF modules
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
-          $files = @(
-            'test_artifact_validation.py','test_atomic_artifact_save.py','test_batch_diagnostics_integration.py',
-            'test_browser_response_state_machine.py','test_browser_runtime_architecture.py','test_browser_runtime_contracts.py',
-            'test_combined_pdf_links.py','test_convert_md_to_pdf.py','test_diagnostics.py','test_download_contract.py',
-            'test_download_detection.py','test_fake_browser_provider.py','test_job_claims.py','test_job_planner.py',
-            'test_level6_coordinator.py','test_manifest_v2.py','test_manifest.py','test_parallel_batch_dispatch.py',
-            'test_parallel_coordinator.py','test_patchright_downloads.py','test_patchright_provider.py','test_phase1_acceptance.py',
-            'test_planner_architecture.py','test_process_hygiene.py','test_process_liveness.py','test_profile_manager.py',
-            'test_resilience_control.py','test_resume_integration.py','test_run_summary_paths.py','test_runtime_flags.py',
-            'test_session_bootstrap.py'
-          )
           $failed = $false
-          foreach ($file in $files) {
+          foreach ($file in @('test_combined_pdf_links.py','test_convert_md_to_pdf.py')) {
             cmd.exe /d /s /c "py -3.12 -m unittest discover -s tests -p $file -v > module.log 2>&1"
             $code = $LASTEXITCODE
-            if ($code -ne 0) {
-              $failed = $true
-              Write-Host "===== FAIL $file ====="
-              Get-Content module.log
-            }
+            Write-Host "===== $file ====="
+            Get-Content module.log
+            if ($code -ne 0) { $failed = $true }
           }
           if ($failed) { exit 1 }
