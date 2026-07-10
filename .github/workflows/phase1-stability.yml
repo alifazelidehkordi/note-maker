@@ -8,13 +8,42 @@ permissions:
   contents: read
 
 jobs:
-  list-tests:
-    name: List Windows test modules
+  isolate:
+    name: Windows test group ${{ matrix.group }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: A
+            files: test_artifact_validation.py,test_atomic_artifact_save.py,test_batch_diagnostics_integration.py,test_browser_response_state_machine.py,test_browser_runtime_architecture.py,test_browser_runtime_contracts.py
+          - group: B
+            files: test_combined_pdf_links.py,test_convert_md_to_pdf.py,test_diagnostics.py,test_download_contract.py,test_download_detection.py,test_fake_browser_provider.py
+          - group: C
+            files: test_job_claims.py,test_job_planner.py,test_level6_coordinator.py,test_manifest_v2.py,test_manifest.py,test_parallel_batch_dispatch.py
+          - group: D
+            files: test_parallel_coordinator.py,test_patchright_downloads.py,test_patchright_provider.py,test_phase1_acceptance.py,test_planner_architecture.py,test_process_hygiene.py
+          - group: E
+            files: test_profile_manager.py,test_resilience_control.py,test_resume_integration.py,test_run_summary_paths.py,test_runtime_flags.py,test_session_bootstrap.py
     runs-on: windows-latest
     steps:
       - name: Clone diagnostic branch
         shell: pwsh
         run: git clone --quiet --depth 1 --branch fix/windows-test-stability "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" .
-      - name: List test modules
+      - name: Install dependencies quietly
         shell: pwsh
-        run: Get-ChildItem tests -Filter 'test_*.py' | Sort-Object Name | ForEach-Object { $_.Name }
+        run: py -3.12 -m pip install -q -r requirements.txt
+      - name: Run test group
+        shell: pwsh
+        env:
+          TEST_FILES: ${{ matrix.files }}
+        run: |
+          $failed = $false
+          foreach ($file in $env:TEST_FILES.Split(',')) {
+            Write-Host "RUN $file"
+            py -3.12 -m unittest discover -s tests -p $file -v *> $null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "FAIL $file"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
