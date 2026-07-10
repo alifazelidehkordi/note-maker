@@ -1,0 +1,7 @@
+Note Maker Level 6 / v0.8.0
+Automated regression: 169/169 PASS
+Level 6 resilience acceptance: 11/11 PASS
+Phase 1 deterministic acceptance: 3/3 PASS
+compileall: PASS
+Patchright persistent-context smoke: PASS (/usr/bin/chromium, healthy)
+Authenticated multi-worker ChatGPT E2E: NOT RUN (requires private authenticated profile)

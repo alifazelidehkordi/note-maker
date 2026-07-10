@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "phase": "level3-profile-manager-session-bootstrap",
+  "version": "0.5.0",
+  "date": "2026-07-10",
+  "compileall": "passed",
+  "unit_tests": {
+    "passed": true,
+    "count": 128
+  },
+  "acceptance": {
+    "passed": true,
+    "checks": 3
+  },
+  "patchright_basic_smoke": "passed",
+  "profile_isolation_smoke": {
+    "passed": true,
+    "simultaneous_processes": 2,
+    "model": "one Patchright sync runtime per OS process"
+  },
+  "live_chatgpt_authenticated_smoke": "not_run_requires_user_session",
+  "parallel_runs_over_one": "fail_closed_until_phase4_and_phase5"
+}

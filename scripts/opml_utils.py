@@ -10,6 +10,10 @@ def escape_xml_attribute_value(value: str) -> str:
     return value.replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
 def repair_and_validate_opml(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
 
@@ -24,4 +28,12 @@ def repair_and_validate_opml(path: Path) -> None:
         flags=re.DOTALL,
     )
     path.write_text(repaired, encoding="utf-8")
-    ET.parse(path)
+    root = ET.parse(path).getroot()
+
+    if _local_name(root.tag) != "opml":
+        raise ValueError("Root element is not <opml>")
+    body = next((element for element in root.iter() if _local_name(element.tag) == "body"), None)
+    if body is None:
+        raise ValueError("Missing <body> element")
+    if not any(_local_name(element.tag) == "outline" for element in body.iter()):
+        raise ValueError("OPML body contains no <outline> element")

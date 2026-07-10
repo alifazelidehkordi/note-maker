@@ -1,0 +1,570 @@
+test_accepts_valid_markdown (test_artifact_validation.ArtifactValidationTests.test_accepts_valid_markdown) ... ok
+test_accepts_valid_opml (test_artifact_validation.ArtifactValidationTests.test_accepts_valid_opml) ... ok
+test_dispatches_by_expected_extension_not_temporary_suffix (test_artifact_validation.ArtifactValidationTests.test_dispatches_by_expected_extension_not_temporary_suffix) ... ok
+test_rejects_ambiguous_expected_artifact_types (test_artifact_validation.ArtifactValidationTests.test_rejects_ambiguous_expected_artifact_types) ... ok
+test_rejects_assistant_apology (test_artifact_validation.ArtifactValidationTests.test_rejects_assistant_apology) ... ok
+test_rejects_html_page_saved_as_markdown (test_artifact_validation.ArtifactValidationTests.test_rejects_html_page_saved_as_markdown) ... ok
+test_rejects_markdown_without_h1 (test_artifact_validation.ArtifactValidationTests.test_rejects_markdown_without_h1) ... ok
+test_rejects_markdown_without_h2 (test_artifact_validation.ArtifactValidationTests.test_rejects_markdown_without_h2) ... ok
+test_rejects_opml_without_outline (test_artifact_validation.ArtifactValidationTests.test_rejects_opml_without_outline) ... ok
+test_rejects_too_small_markdown (test_artifact_validation.ArtifactValidationTests.test_rejects_too_small_markdown) ... ok
+test_rejects_unsupported_expected_extension (test_artifact_validation.ArtifactValidationTests.test_rejects_unsupported_expected_extension) ... ok
+test_repairs_unescaped_opml_attributes (test_artifact_validation.ArtifactValidationTests.test_repairs_unescaped_opml_attributes) ... ok
+test_final_replace_failure_preserves_existing_output (test_atomic_artifact_save.AtomicArtifactSaveTests.test_final_replace_failure_preserves_existing_output) ... ok
+test_invalid_markdown_preserves_existing_output_and_candidate (test_atomic_artifact_save.AtomicArtifactSaveTests.test_invalid_markdown_preserves_existing_output_and_candidate) ... ok
+test_same_source_and_destination_is_validated_without_replacing (test_atomic_artifact_save.AtomicArtifactSaveTests.test_same_source_and_destination_is_validated_without_replacing) ... ok
+test_valid_markdown_replaces_existing_output (test_atomic_artifact_save.AtomicArtifactSaveTests.test_valid_markdown_replaces_existing_output) ... ok
+test_valid_opml_is_repaired_before_atomic_replace (test_atomic_artifact_save.AtomicArtifactSaveTests.test_valid_opml_is_repaired_before_atomic_replace) ... ok
+test_validation_can_be_explicitly_disabled_but_replace_remains_atomic (test_atomic_artifact_save.AtomicArtifactSaveTests.test_validation_can_be_explicitly_disabled_but_replace_remains_atomic) ... ok
+test_pdf_batch_automatically_saves_final_failure_and_summary_path (test_batch_diagnostics_integration.BatchDiagnosticsIntegrationTests.test_pdf_batch_automatically_saves_final_failure_and_summary_path) ... Run ID: 20260710T112827730677Z-03eeedc3
+Input folder: /tmp/tmpwqi7r84q/inputs
+Output folder: /tmp/tmpwqi7r84q/outputs
+Output extension: .md
+Manifest: /tmp/tmpwqi7r84q/outputs/manifest.json
+Resume: enabled
+File count: 1
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for source.pdf: run — new job (weight=1)
+Planning complete: runnable=1, skipped=0, adopted=0, estimated_weight=1.
+Starting runnable file 1/1: source.pdf
+No valid artifact obtained. Opening a fresh chat for next attempt.
+Retrying source.pdf (attempt 2/2)...
+Diagnostics saved: /tmp/tmpwqi7r84q/outputs/diagnostics/20260710T112827730677Z-03eeedc3/source.pdf
+No valid artifact obtained after the final attempt.
+Batch complete. Successes: 0. Failures: 1. Skipped: 0. Adopted: 0.
+Failed files:
+- source.pdf
+Batch summary saved: /tmp/tmpwqi7r84q/logs/runs/20260710T112827730677Z-03eeedc3/summary.json
+Latest batch summary updated: /tmp/tmpwqi7r84q/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+ok
+test_generation_download_and_stability_transitions_are_deterministic (test_browser_response_state_machine.BrowserResponseStateMachineTests.test_generation_download_and_stability_transitions_are_deterministic) ... ok
+test_rate_limit_has_priority_over_other_states (test_browser_response_state_machine.BrowserResponseStateMachineTests.test_rate_limit_has_priority_over_other_states) ... ok
+test_batch_jobs_use_browser_session_methods_instead_of_core_browser_calls (test_browser_runtime_architecture.BrowserRuntimeArchitectureTests.test_batch_jobs_use_browser_session_methods_instead_of_core_browser_calls) ... ok
+test_batch_modules_do_not_use_raw_locator_apis (test_browser_runtime_architecture.BrowserRuntimeArchitectureTests.test_batch_modules_do_not_use_raw_locator_apis) ... ok
+test_compatibility_facade_keeps_phase0_public_function_names (test_browser_runtime_architecture.BrowserRuntimeArchitectureTests.test_compatibility_facade_keeps_phase0_public_function_names) ... ok
+test_selenium_imports_are_isolated_from_facade_and_batch_modules (test_browser_runtime_architecture.BrowserRuntimeArchitectureTests.test_selenium_imports_are_isolated_from_facade_and_batch_modules) ... ok
+test_facade_preserves_legacy_signatures (test_browser_runtime_contracts.BrowserRuntimeContractTests.test_facade_preserves_legacy_signatures) ... ok
+test_factory_returns_supported_providers_and_rejects_unknown_provider (test_browser_runtime_contracts.BrowserRuntimeContractTests.test_factory_returns_supported_providers_and_rejects_unknown_provider) ... ok
+test_fake_provider_and_session_satisfy_runtime_protocols (test_browser_runtime_contracts.BrowserRuntimeContractTests.test_fake_provider_and_session_satisfy_runtime_protocols) ... ok
+test_legacy_errors_are_translated_to_typed_runtime_errors (test_browser_runtime_contracts.BrowserRuntimeContractTests.test_legacy_errors_are_translated_to_typed_runtime_errors) ... ok
+test_request_models_normalize_extensions_and_validate_timeouts (test_browser_runtime_contracts.BrowserRuntimeContractTests.test_request_models_normalize_extensions_and_validate_timeouts) ... ok
+test_selenium_session_delegates_high_level_operations_to_facade (test_browser_runtime_contracts.BrowserRuntimeContractTests.test_selenium_session_delegates_high_level_operations_to_facade) ... ok
+test_combined_links_are_internal (test_combined_pdf_links.CombinedPdfLinkTests.test_combined_links_are_internal) ... Annotation sizes differ: 1 vs. 0
+Annotation sizes differ: 1 vs. 0
+ok
+test_create_combined_rebuilds_only_stale_topic_pdf (test_combined_pdf_links.CombinedPdfLinkTests.test_create_combined_rebuilds_only_stale_topic_pdf) ... ok
+test_file_and_note_aliases (test_combined_pdf_links.CombinedPdfLinkTests.test_file_and_note_aliases) ... ok
+test_index_structure (test_combined_pdf_links.CombinedPdfLinkTests.test_index_structure) ... ok
+test_pdf_needs_rebuild_when_missing_or_source_is_newer (test_combined_pdf_links.CombinedPdfLinkTests.test_pdf_needs_rebuild_when_missing_or_source_is_newer) ... ok
+test_apply_preset_uses_named_defaults (test_convert_md_to_pdf.ConvertMdToPdfTests.test_apply_preset_uses_named_defaults) ... ok
+test_batch_convert_reports_partial_failures_and_continues (test_convert_md_to_pdf.ConvertMdToPdfTests.test_batch_convert_reports_partial_failures_and_continues) ... ok
+test_clean_markdown_strips_frontmatter_and_metadata (test_convert_md_to_pdf.ConvertMdToPdfTests.test_clean_markdown_strips_frontmatter_and_metadata) ... ok
+test_contains_rtl_script_detects_persian (test_convert_md_to_pdf.ConvertMdToPdfTests.test_contains_rtl_script_detects_persian) ... ok
+test_find_rich_index_md (test_convert_md_to_pdf.ConvertMdToPdfTests.test_find_rich_index_md) ... ok
+test_infer_title_uses_first_heading (test_convert_md_to_pdf.ConvertMdToPdfTests.test_infer_title_uses_first_heading) ... ok
+test_is_topic_note_filters_meta_files (test_convert_md_to_pdf.ConvertMdToPdfTests.test_is_topic_note_filters_meta_files) ... ok
+test_main_returns_two_when_batch_has_failures (test_convert_md_to_pdf.ConvertMdToPdfTests.test_main_returns_two_when_batch_has_failures) ... ok
+test_main_returns_zero_when_batch_succeeds (test_convert_md_to_pdf.ConvertMdToPdfTests.test_main_returns_zero_when_batch_succeeds) ... ok
+test_make_pdf_writes_file (test_convert_md_to_pdf.ConvertMdToPdfTests.test_make_pdf_writes_file) ... ok
+test_md_to_html_wraps_key_points (test_convert_md_to_pdf.ConvertMdToPdfTests.test_md_to_html_wraps_key_points) ... ok
+test_resolve_style_auto_enables_rtl (test_convert_md_to_pdf.ConvertMdToPdfTests.test_resolve_style_auto_enables_rtl) ... ok
+test_resolve_style_respects_forced_ltr (test_convert_md_to_pdf.ConvertMdToPdfTests.test_resolve_style_respects_forced_ltr) ... ok
+test_capture_retry_failure_records_validation_details (test_diagnostics.DiagnosticsTests.test_capture_retry_failure_records_validation_details) ... PDF rebuild required for 01_01_Topic.md (missing), generating...
+PDF rebuild required for 01_02_Topic.md (missing), generating...
+Using generated rich index: /tmp/tmp56vnjdjs/STUDY_INDEX.md
+  Adding: 01_01_Topic.pdf (starts at final page 3)
+  Adding: 01_02_Topic.pdf (starts at final page 4)
+
+Combined PDF created: /tmp/tmp56vnjdjs/final.pdf
+   Total pages: 4
+   Index pages: 2
+   Topic notes: 2
+   Internal index links converted: 4
+PDF rebuild required for 01_01_Stale.md (source Markdown is newer), generating...
+Using existing rich index: /tmp/tmpu6jpdtkw/index.md
+  Adding: 01_01_Stale.pdf (starts at final page 2)
+  Adding: 01_02_Current.pdf (starts at final page 3)
+
+Combined PDF created: /tmp/tmpu6jpdtkw/final.pdf
+   Total pages: 3
+   Index pages: 1
+   Topic notes: 2
+   Internal index links converted: 0
+✓ 01_First.md -> 01_First.pdf
+✗ Failed 02_Broken.md: simulated renderer failure
+✓ 03_Third.md -> 03_Third.pdf
+Batch complete: 1 created, 1 failed.
+Batch complete: 1 created, 0 failed.
+Diagnostics saved: /tmp/tmpe03djnqc/diagnostics/run-validation/source.pdf
+ok
+test_diagnostic_callback_failure_does_not_mask_retry_result (test_diagnostics.DiagnosticsTests.test_diagnostic_callback_failure_does_not_mask_retry_result) ... ok
+test_final_failure_writes_metadata_response_and_screenshot (test_diagnostics.DiagnosticsTests.test_final_failure_writes_metadata_response_and_screenshot) ... ok
+test_intermediate_attempt_uses_separate_attempt_directory (test_diagnostics.DiagnosticsTests.test_intermediate_attempt_uses_separate_attempt_directory) ... ok
+test_page_source_is_opt_in (test_diagnostics.DiagnosticsTests.test_page_source_is_opt_in) ... ok
+test_rejected_candidate_is_copied_into_diagnostics (test_diagnostics.DiagnosticsTests.test_rejected_candidate_is_copied_into_diagnostics) ... ok
+test_retry_saves_all_failed_attempts_when_requested (test_diagnostics.DiagnosticsTests.test_retry_saves_all_failed_attempts_when_requested) ... No valid artifact obtained. Opening a fresh chat for next attempt.
+Retrying job (attempt 2/3)...
+No valid artifact obtained. Opening a fresh chat for next attempt.
+Retrying job (attempt 3/3)...
+No valid artifact obtained after the final attempt.
+ok
+test_retry_saves_only_final_failure_by_default (test_diagnostics.DiagnosticsTests.test_retry_saves_only_final_failure_by_default) ... No valid artifact obtained. Opening a fresh chat for next attempt.
+Retrying job (attempt 2/3)...
+No valid artifact obtained. Opening a fresh chat for next attempt.
+Retrying job (attempt 3/3)...
+No valid artifact obtained after the final attempt.
+ok
+test_screenshot_failure_does_not_block_metadata_or_response (test_diagnostics.DiagnosticsTests.test_screenshot_failure_does_not_block_metadata_or_response) ... ok
+test_markdown_batch_passes_expected_opml_extension (test_download_contract.DownloadContractTests.test_markdown_batch_passes_expected_opml_extension) ... Processing section 1: Topic
+Saved OPML: /tmp/tmp88nz_53g/01_topic.opml
+ok
+test_pdf_batch_passes_expected_markdown_extension (test_download_contract.DownloadContractTests.test_pdf_batch_passes_expected_markdown_extension) ... Processing: source.pdf
+Saved MD: /tmp/tmp9x5ppd09/source.md
+ok
+test_explicit_format_name_is_accepted (test_download_detection.DownloadDetectionTests.test_explicit_format_name_is_accepted) ... ok
+test_extensionless_file_is_detected_by_expected_content_only (test_download_detection.DownloadDetectionTests.test_extensionless_file_is_detected_by_expected_content_only) ... ok
+test_file_suffix_is_type_specific (test_download_detection.DownloadDetectionTests.test_file_suffix_is_type_specific) ... ok
+test_generic_file_and_notes_words_are_not_enough (test_download_detection.DownloadDetectionTests.test_generic_file_and_notes_words_are_not_enough) ... ok
+test_matching_candidate_is_preferred_over_wrong_type (test_download_detection.DownloadDetectionTests.test_matching_candidate_is_preferred_over_wrong_type) ... ok
+test_new_file_with_preserved_old_mtime_is_rejected (test_download_detection.DownloadDetectionTests.test_new_file_with_preserved_old_mtime_is_rejected) ... ok
+test_new_wrong_extension_is_ignored (test_download_detection.DownloadDetectionTests.test_new_wrong_extension_is_ignored) ... ok
+test_only_latest_assistant_message_is_scanned_first (test_download_detection.DownloadDetectionTests.test_only_latest_assistant_message_is_scanned_first) ... ok
+test_overwritten_same_filename_is_detected (test_download_detection.DownloadDetectionTests.test_overwritten_same_filename_is_detected) ... ok
+test_rejects_chatgpt_app_download_links (test_download_detection.DownloadDetectionTests.test_rejects_chatgpt_app_download_links) ... ok
+test_trigger_must_match_expected_extension (test_download_detection.DownloadDetectionTests.test_trigger_must_match_expected_extension) ... ok
+test_unchanged_preexisting_file_is_not_selected (test_download_detection.DownloadDetectionTests.test_unchanged_preexisting_file_is_not_selected) ... ok
+test_unsupported_expected_extension_is_rejected (test_download_detection.DownloadDetectionTests.test_unsupported_expected_extension_is_rejected) ... ok
+test_diagnostics_use_provider_methods_not_driver_properties (test_fake_browser_provider.FakeBrowserProviderTests.test_diagnostics_use_provider_methods_not_driver_properties) ... ok
+test_fake_provider_records_launch_configuration (test_fake_browser_provider.FakeBrowserProviderTests.test_fake_provider_records_launch_configuration) ... ok
+test_invalid_download_is_rejected_by_existing_artifact_validator (test_fake_browser_provider.FakeBrowserProviderTests.test_invalid_download_is_rejected_by_existing_artifact_validator) ... Processing: source.pdf
+ok
+test_pdf_process_succeeds_using_only_browser_session_contract (test_fake_browser_provider.FakeBrowserProviderTests.test_pdf_process_succeeds_using_only_browser_session_contract) ... Processing: source.pdf
+Saved MD: /tmp/tmp33_odpdb/output/source.md
+ok
+test_retry_orchestrator_honors_provider_rate_limit_cooldown (test_fake_browser_provider.FakeBrowserProviderTests.test_retry_orchestrator_honors_provider_rate_limit_cooldown) ... Rate limit cooldown requested: 17s
+ERROR on attempt 1/2 for rate-limited-job: slow down
+Retrying rate-limited-job (attempt 2/2)...
+ok
+test_timeout_and_crash_are_deterministic_typed_failures (test_fake_browser_provider.FakeBrowserProviderTests.test_timeout_and_crash_are_deterministic_typed_failures) ... ok
+test_claim_is_atomic_heartbeat_owned_and_releasable (test_job_claims.ClaimStoreTests.test_claim_is_atomic_heartbeat_owned_and_releasable) ... ok
+test_dead_stale_claim_is_reclaimed (test_job_claims.ClaimStoreTests.test_dead_stale_claim_is_reclaimed) ... ok
+test_completed_plan_has_no_runnable_worker_job (test_job_planner.JobPlannerTests.test_completed_plan_has_no_runnable_worker_job) ... ok
+test_file_planning_is_browser_free_and_commits_in_one_write (test_job_planner.JobPlannerTests.test_file_planning_is_browser_free_and_commits_in_one_write) ... ok
+test_section_planner_materializes_stable_input_before_worker_start (test_job_planner.JobPlannerTests.test_section_planner_materializes_stable_input_before_worker_start) ... ok
+test_auth_startup_circuit_starts_only_one_worker (test_level6_coordinator.Level6CoordinatorTests.test_auth_startup_circuit_starts_only_one_worker) ... Process note-maker-level6-run-worker-001-g1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "/usr/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/work_level6/note-maker-level5-parallel-runtime/scripts/parallel_runtime/worker.py", line 62, in worker_process_main
+    executor = executor_type(
+        config=dict(config.executor_config),
+    ...<2 lines>...
+        emit=emit,
+    )
+  File "/mnt/data/work_level6/note-maker-level5-parallel-runtime/scripts/parallel_runtime/testing.py", line 27, in __init__
+    raise AuthenticationRequiredError("scripted authentication failure")
+browser_runtime.errors.AuthenticationRequiredError: scripted authentication failure
+ok
+test_global_rate_limit_pauses_new_assignments (test_level6_coordinator.Level6CoordinatorTests.test_global_rate_limit_pauses_new_assignments) ... ok
+test_transient_network_failures_do_not_stop_batch (test_level6_coordinator.Level6CoordinatorTests.test_transient_network_failures_do_not_stop_batch) ... ok
+test_worker_recycling_preserves_all_outputs (test_level6_coordinator.Level6CoordinatorTests.test_worker_recycling_preserves_all_outputs) ... ok
+test_adopt_existing_valid_output (test_manifest.ManifestTests.test_adopt_existing_valid_output) ... ok
+test_atomic_save_preserves_previous_manifest_on_replace_failure (test_manifest.ManifestTests.test_atomic_save_preserves_previous_manifest_on_replace_failure) ... ok
+test_manifest_json_contains_schema_and_status (test_manifest.ManifestTests.test_manifest_json_contains_schema_and_status) ... ok
+test_missing_invalid_or_changed_output_is_rerun (test_manifest.ManifestTests.test_missing_invalid_or_changed_output_is_rerun) ... ok
+test_new_job_runs_and_completed_valid_job_skips (test_manifest.ManifestTests.test_new_job_runs_and_completed_valid_job_skips) ... ok
+test_prompt_content_change_invalidates_completed_job (test_manifest.ManifestTests.test_prompt_content_change_invalidates_completed_job) ... ok
+test_retry_failed_only_filters_new_and_completed_jobs (test_manifest.ManifestTests.test_retry_failed_only_filters_new_and_completed_jobs) ... ok
+test_running_and_failed_jobs_resume (test_manifest.ManifestTests.test_running_and_failed_jobs_resume) ... ok
+test_same_prompt_content_at_new_path_remains_valid (test_manifest.ManifestTests.test_same_prompt_content_at_new_path_remains_valid) ... ok
+test_section_hash_is_independent_for_each_section (test_manifest.ManifestTests.test_section_hash_is_independent_for_each_section) ... ok
+test_source_content_change_invalidates_completed_job (test_manifest.ManifestTests.test_source_content_change_invalidates_completed_job) ... ok
+test_untracked_existing_output_requires_rebuild_by_default (test_manifest.ManifestTests.test_untracked_existing_output_requires_rebuild_by_default) ... ok
+test_execution_metadata_and_interrupted_state_are_recorded (test_manifest_v2.ManifestV2Tests.test_execution_metadata_and_interrupted_state_are_recorded) ... ok
+test_schema_one_is_migrated_to_schema_two (test_manifest_v2.ManifestV2Tests.test_schema_one_is_migrated_to_schema_two) ... ok
+test_stale_coordinator_instances_merge_distinct_dirty_items (test_manifest_v2.ManifestV2Tests.test_stale_coordinator_instances_merge_distinct_dirty_items) ... ok
+test_stale_planner_cannot_downgrade_a_valid_completed_record (test_manifest_v2.ManifestV2Tests.test_stale_planner_cannot_downgrade_a_valid_completed_record) ... ok
+test_writer_handle_is_process_bound_and_reader_has_no_mutation_api (test_manifest_v2.ManifestV2Tests.test_writer_handle_is_process_bound_and_reader_has_no_mutation_api) ... ok
+test_markdown_batch_uses_markdown_executor_contract (test_parallel_batch_dispatch.ParallelBatchDispatchTests.test_markdown_batch_uses_markdown_executor_contract) ... Run ID: 20260710T112831074061Z-17a1076a
+Markdown file: /tmp/tmphon034u3/lecture.md
+Output folder: /tmp/tmphon034u3/outputs
+Output extension: .md
+Manifest: /tmp/tmphon034u3/outputs/manifest.json
+Resume: enabled
+Detected sections: 2
+Sections selected: 2
+Browser provider: selenium
+Parallel runs: 2
+Keep managed runtime: policy default
+Resume decision for section 01 First: run — new job (weight=1)
+Resume decision for section 02 Second: run — new job (weight=1)
+Planning complete: runnable=2, skipped=0, adopted=0, estimated_weight=2.
+Parallel Markdown batch complete. Successes: 2. Failures: 0. Workers: 2. Restarts: 0.
+Batch summary saved: /tmp/tmphon034u3/logs/runs/20260710T112831074061Z-17a1076a/summary.json
+Latest batch summary updated: /tmp/tmphon034u3/logs/last_batch_summary.json
+ok
+test_pdf_batch_uses_coordinator_for_parallel_runs (test_parallel_batch_dispatch.ParallelBatchDispatchTests.test_pdf_batch_uses_coordinator_for_parallel_runs) ... Run ID: 20260710T112831087439Z-1e138254
+Input folder: /tmp/tmpq9cnkpnl/inputs
+Output folder: /tmp/tmpq9cnkpnl/outputs
+Output extension: .md
+Manifest: /tmp/tmpq9cnkpnl/outputs/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 2
+Keep managed runtime: policy default
+Resume decision for a.pdf: run — new job (weight=1)
+Resume decision for b.pdf: run — new job (weight=1)
+Planning complete: runnable=2, skipped=0, adopted=0, estimated_weight=2.
+Parallel batch complete. Successes: 2. Failures: 0. Workers: 2. Restarts: 0.
+Batch summary saved: /tmp/tmpq9cnkpnl/logs/runs/20260710T112831087439Z-1e138254/summary.json
+Latest batch summary updated: /tmp/tmpq9cnkpnl/logs/last_batch_summary.json
+ok
+test_dynamic_pull_queue_redistributes_uneven_jobs (test_parallel_coordinator.ParallelCoordinatorTests.test_dynamic_pull_queue_redistributes_uneven_jobs) ... ok
+test_external_claim_timeout_does_not_overwrite_owner_manifest_state (test_parallel_coordinator.ParallelCoordinatorTests.test_external_claim_timeout_does_not_overwrite_owner_manifest_state) ... ok
+test_heartbeat_timeout_kills_and_replaces_frozen_worker (test_parallel_coordinator.ParallelCoordinatorTests.test_heartbeat_timeout_kills_and_replaces_frozen_worker) ... ok
+test_late_event_from_old_worker_generation_is_ignored (test_parallel_coordinator.ParallelCoordinatorTests.test_late_event_from_old_worker_generation_is_ignored) ... ok
+test_one_to_four_workers_execute_every_job_exactly_once (test_parallel_coordinator.ParallelCoordinatorTests.test_one_to_four_workers_execute_every_job_exactly_once) ... ok
+test_resume_after_forced_coordinator_and_worker_kill (test_parallel_coordinator.ParallelCoordinatorTests.test_resume_after_forced_coordinator_and_worker_kill) ... ok
+test_sigterm_triggers_graceful_interrupted_shutdown (test_parallel_coordinator.ParallelCoordinatorTests.test_sigterm_triggers_graceful_interrupted_shutdown) ... ok
+test_two_independent_runs_on_shared_output_do_not_duplicate_jobs (test_parallel_coordinator.ParallelCoordinatorTests.test_two_independent_runs_on_shared_output_do_not_duplicate_jobs) ... ok
+test_worker_crash_requeues_job_and_restarts_worker (test_parallel_coordinator.ParallelCoordinatorTests.test_worker_crash_requeues_job_and_restarts_worker) ... ok
+test_filesystem_salvage_detects_fresh_overwritten_artifact (test_patchright_downloads.PatchrightDownloadTests.test_filesystem_salvage_detects_fresh_overwritten_artifact) ... ok
+test_trigger_scoring_requires_expected_artifact_context (test_patchright_downloads.PatchrightDownloadTests.test_trigger_scoring_requires_expected_artifact_context) ... ok
+test_download_uses_event_first_and_job_specific_staging (test_patchright_provider.PatchrightProviderTests.test_download_uses_event_first_and_job_specific_staging) ... ok
+test_patchright_errors_map_to_typed_runtime_taxonomy (test_patchright_provider.PatchrightProviderTests.test_patchright_errors_map_to_typed_runtime_taxonomy) ... ok
+test_patchright_session_satisfies_browser_contract_and_health (test_patchright_provider.PatchrightProviderTests.test_patchright_session_satisfies_browser_contract_and_health) ... ok
+test_send_idempotency_prevents_duplicate_click_after_acknowledgement (test_patchright_provider.PatchrightProviderTests.test_send_idempotency_prevents_duplicate_click_after_acknowledgement) ... ok
+test_uncertain_send_blocks_a_second_click_for_same_prompt (test_patchright_provider.PatchrightProviderTests.test_uncertain_send_blocks_a_second_click_for_same_prompt) ... ok
+test_browser_free_release_acceptance (test_phase1_acceptance.Phase1AcceptanceTests.test_browser_free_release_acceptance) ... Run ID: 20260710T112843218108Z-253a1abb
+Input folder: /tmp/tmpv3dl536o/inputs
+Output folder: /tmp/tmpv3dl536o/outputs/notes
+Output extension: .md
+Manifest: /tmp/tmpv3dl536o/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for 01_First.pdf: run — new job (weight=1)
+Resume decision for 02_Second.pdf: run — new job (weight=1)
+Planning complete: runnable=2, skipped=0, adopted=0, estimated_weight=2.
+Starting runnable file 1/2: 01_First.pdf
+Starting runnable file 2/2: 02_Second.pdf
+ERROR on attempt 1/2 for 02_Second.pdf: Artifact validation failed for 02_Second.md: File is smaller than the minimum 100 bytes; Missing level-2 heading; Output contains headings or download links but no note content. Rejected candidate: /tmp/tmpv3dl536o/outputs/notes/_rejected/02_Second-20260710T112843232425Z.md
+Retrying 02_Second.pdf (attempt 2/2)...
+ERROR on attempt 2/2 for 02_Second.pdf: Artifact validation failed for 02_Second.md: File is smaller than the minimum 100 bytes; Missing level-2 heading; Output contains headings or download links but no note content. Rejected candidate: /tmp/tmpv3dl536o/outputs/notes/_rejected/02_Second-20260710T112843234960Z.md
+Diagnostics saved: /tmp/tmpv3dl536o/outputs/notes/diagnostics/20260710T112843218108Z-253a1abb/02_Second.pdf
+Batch complete. Successes: 1. Failures: 1. Skipped: 0. Adopted: 0.
+Failed files:
+- 02_Second.pdf
+Batch summary saved: /tmp/tmpv3dl536o/logs/runs/20260710T112843218108Z-253a1abb/summary.json
+Latest batch summary updated: /tmp/tmpv3dl536o/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112843244154Z-17e2bee1
+Input folder: /tmp/tmpv3dl536o/inputs
+Output folder: /tmp/tmpv3dl536o/outputs/notes
+Output extension: .md
+Manifest: /tmp/tmpv3dl536o/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for 02_Second.pdf: run — retrying failed job (weight=1)
+Resume decision for 01_First.pdf: skip — job was not previously failed or interrupted
+Planning complete: runnable=1, skipped=1, adopted=0, estimated_weight=1.
+Starting runnable file 1/1: 02_Second.pdf
+Batch complete. Successes: 1. Failures: 0. Skipped: 1. Adopted: 0.
+Batch summary saved: /tmp/tmpv3dl536o/logs/runs/20260710T112843244154Z-17e2bee1/summary.json
+Latest batch summary updated: /tmp/tmpv3dl536o/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112843257987Z-df5add82
+Input folder: /tmp/tmpv3dl536o/inputs
+Output folder: /tmp/tmpv3dl536o/outputs/notes
+Output extension: .md
+Manifest: /tmp/tmpv3dl536o/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for 01_First.pdf: skip — completed output is valid
+Resume decision for 02_Second.pdf: skip — completed output is valid
+Planning complete: runnable=0, skipped=2, adopted=0, estimated_weight=0.
+Batch complete. Successes: 2. Failures: 0. Skipped: 2. Adopted: 0.
+Batch summary saved: /tmp/tmpv3dl536o/logs/runs/20260710T112843257987Z-df5add82/summary.json
+Latest batch summary updated: /tmp/tmpv3dl536o/logs/last_batch_summary.json
+No browser session was required.
+Annotation sizes differ: 2 vs. 0
+Annotation sizes differ: 2 vs. 0
+ok
+test_batch_modules_delegate_resume_planning_to_shared_planner (test_planner_architecture.PlannerArchitectureTests.test_batch_modules_delegate_resume_planning_to_shared_planner) ... ok
+test_batches_delegate_default_execution_to_parallel_coordinator (test_planner_architecture.PlannerArchitectureTests.test_batches_delegate_default_execution_to_parallel_coordinator) ... ok
+test_planner_has_no_browser_runtime_dependency (test_planner_architecture.PlannerArchitectureTests.test_planner_has_no_browser_runtime_dependency) ... ok
+test_worker_module_has_no_manifest_write_dependency (test_planner_architecture.PlannerArchitectureTests.test_worker_module_has_no_manifest_write_dependency) ... ok
+test_orphan_candidate_descendant_is_cleaned (test_process_hygiene.ProcessHygieneTests.test_orphan_candidate_descendant_is_cleaned) ... /usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.TextIOWrapper name=3 encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_stale_claim_recovery_does_not_remove_live_claim (test_process_hygiene.ProcessHygieneTests.test_stale_claim_recovery_does_not_remove_live_claim) ... ok
+test_auth_detection_supports_modern_cookie_database_and_expiry (test_profile_manager.ProfileManagerTests.test_auth_detection_supports_modern_cookie_database_and_expiry) ... ok
+test_cleanup_of_unknown_run_is_a_noop_and_does_not_create_runtime (test_profile_manager.ProfileManagerTests.test_cleanup_of_unknown_run_is_a_noop_and_does_not_create_runtime) ... ok
+test_live_chromium_singleton_marker_blocks_profile_use (test_profile_manager.ProfileManagerTests.test_live_chromium_singleton_marker_blocks_profile_use) ... ok
+test_nested_symlinks_are_not_copied_into_snapshot (test_profile_manager.ProfileManagerTests.test_nested_symlinks_are_not_copied_into_snapshot) ... ok
+test_profile_lease_is_exclusive_and_reclaims_dead_local_owner (test_profile_manager.ProfileManagerTests.test_profile_lease_is_exclusive_and_reclaims_dead_local_owner) ... ok
+test_retention_policy_keeps_failure_and_deletes_success (test_profile_manager.ProfileManagerTests.test_retention_policy_keeps_failure_and_deletes_success) ... ok
+test_secure_preferences_is_copied_without_rewriting_protected_content (test_profile_manager.ProfileManagerTests.test_secure_preferences_is_copied_without_rewriting_protected_content) ... ok
+test_snapshot_integrity_detects_tampering (test_profile_manager.ProfileManagerTests.test_snapshot_integrity_detects_tampering) ... ok
+test_snapshot_is_selective_portable_and_sanitizes_absolute_paths (test_profile_manager.ProfileManagerTests.test_snapshot_is_selective_portable_and_sanitizes_absolute_paths) ... ok
+test_snapshot_rejects_active_reference_profile (test_profile_manager.ProfileManagerTests.test_snapshot_rejects_active_reference_profile) ... ok
+test_two_worker_profiles_are_independent_and_cleanup_is_scoped (test_profile_manager.ProfileManagerTests.test_two_worker_profiles_are_independent_and_cleanup_is_scoped) ... ok
+test_unauthenticated_snapshot_is_fail_closed_by_default (test_profile_manager.ProfileManagerTests.test_unauthenticated_snapshot_is_fail_closed_by_default) ... ok
+test_auth_circuit_opens_at_global_threshold (test_resilience_control.GlobalControlTests.test_auth_circuit_opens_at_global_threshold) ... ok
+test_cooldown_pauses_dispatch_and_adaptive_limit_recovers (test_resilience_control.GlobalControlTests.test_cooldown_pauses_dispatch_and_adaptive_limit_recovers) ... ok
+test_failure_classification_is_typed (test_resilience_control.RetryPolicyTests.test_failure_classification_is_typed) ... ok
+test_independent_retry_budgets_are_bounded (test_resilience_control.RetryPolicyTests.test_independent_retry_budgets_are_bounded) ... ok
+test_rate_limit_retry_after_overrides_backoff (test_resilience_control.RetryPolicyTests.test_rate_limit_retry_after_overrides_backoff) ... ok
+test_adopt_existing_avoids_browser_and_records_output (test_resume_integration.ResumeIntegrationTests.test_adopt_existing_avoids_browser_and_records_output) ... ✓ 01_First.md -> 01_First.pdf
+✓ 02_Second.md -> 02_Second.pdf
+Using generated rich index: /tmp/tmpv3dl536o/outputs/STUDY_INDEX.md
+  Adding: 01_First.pdf (starts at final page 3)
+  Adding: 02_Second.pdf (starts at final page 4)
+
+Combined PDF created: /tmp/tmpv3dl536o/outputs/COMBINED_NOTES.pdf
+   Total pages: 4
+   Index pages: 2
+   Topic notes: 2
+   Internal index links converted: 8
+Run ID: 20260710T112844806659Z-fd8832d4
+Input folder: /tmp/tmppgzhsjt_/inputs
+Output folder: /tmp/tmppgzhsjt_/outputs
+Output extension: .md
+Manifest: /tmp/tmppgzhsjt_/outputs/manifest.json
+Resume: enabled
+File count: 1
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for one.pdf: adopt — valid existing output
+Planning complete: runnable=0, skipped=0, adopted=1, estimated_weight=0.
+Batch complete. Successes: 1. Failures: 0. Skipped: 0. Adopted: 1.
+Batch summary saved: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/runs/20260710T112844806659Z-fd8832d4/summary.json
+Latest batch summary updated: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/last_batch_summary.json
+No browser session was required.
+ok
+test_markdown_change_runs_only_changed_section (test_resume_integration.ResumeIntegrationTests.test_markdown_change_runs_only_changed_section) ... Run ID: 20260710T112844817778Z-0d292e4a
+Markdown file: /tmp/tmpzcuf9jo0/lecture.md
+Output folder: /tmp/tmpzcuf9jo0/outputs
+Output extension: .md
+Manifest: /tmp/tmpzcuf9jo0/outputs/manifest.json
+Resume: enabled
+Detected sections: 2
+Sections selected: 2
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for section 01 First: run — new job (weight=1)
+Resume decision for section 02 Second: run — new job (weight=1)
+Planning complete: runnable=2, skipped=0, adopted=0, estimated_weight=2.
+Starting runnable section 1/2: section 01 First
+Starting runnable section 2/2: section 02 Second
+Markdown batch complete. Successes: 2. Failures: 0. Skipped: 0. Adopted: 0.
+Batch summary saved: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/runs/20260710T112844817778Z-0d292e4a/summary.json
+Latest batch summary updated: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112844831037Z-2b743c86
+Markdown file: /tmp/tmpzcuf9jo0/lecture.md
+Output folder: /tmp/tmpzcuf9jo0/outputs
+Output extension: .md
+Manifest: /tmp/tmpzcuf9jo0/outputs/manifest.json
+Resume: enabled
+Detected sections: 2
+Sections selected: 2
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for section 02 Second: run — job inputs changed: source_hash (weight=1)
+Resume decision for section 01 First: skip — completed output is valid
+Planning complete: runnable=1, skipped=1, adopted=0, estimated_weight=1.
+Starting runnable section 1/1: section 02 Second
+Markdown batch complete. Successes: 2. Failures: 0. Skipped: 1. Adopted: 0.
+Batch summary saved: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/runs/20260710T112844831037Z-2b743c86/summary.json
+Latest batch summary updated: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+ok
+test_pdf_second_run_skips_without_opening_browser (test_resume_integration.ResumeIntegrationTests.test_pdf_second_run_skips_without_opening_browser) ... Run ID: 20260710T112844841868Z-b7bb1628
+Input folder: /tmp/tmpeazrpbzx/inputs
+Output folder: /tmp/tmpeazrpbzx/outputs
+Output extension: .md
+Manifest: /tmp/tmpeazrpbzx/outputs/manifest.json
+Resume: enabled
+File count: 1
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for one.pdf: run — new job (weight=1)
+Planning complete: runnable=1, skipped=0, adopted=0, estimated_weight=1.
+Starting runnable file 1/1: one.pdf
+Batch complete. Successes: 1. Failures: 0. Skipped: 0. Adopted: 0.
+Batch summary saved: /tmp/tmpeazrpbzx/logs/runs/20260710T112844841868Z-b7bb1628/summary.json
+Latest batch summary updated: /tmp/tmpeazrpbzx/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112844854367Z-c9b1e4f2
+Input folder: /tmp/tmpeazrpbzx/inputs
+Output folder: /tmp/tmpeazrpbzx/outputs
+Output extension: .md
+Manifest: /tmp/tmpeazrpbzx/outputs/manifest.json
+Resume: enabled
+File count: 1
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for one.pdf: skip — completed output is valid
+Planning complete: runnable=0, skipped=1, adopted=0, estimated_weight=0.
+Batch complete. Successes: 1. Failures: 0. Skipped: 1. Adopted: 0.
+Batch summary saved: /tmp/tmpeazrpbzx/logs/runs/20260710T112844854367Z-c9b1e4f2/summary.json
+Latest batch summary updated: /tmp/tmpeazrpbzx/logs/last_batch_summary.json
+No browser session was required.
+ok
+test_pdf_source_change_runs_only_changed_job (test_resume_integration.ResumeIntegrationTests.test_pdf_source_change_runs_only_changed_job) ... Run ID: 20260710T112844862671Z-e5f7721e
+Input folder: /tmp/tmp1sk3byqb/inputs
+Output folder: /tmp/tmp1sk3byqb/outputs
+Output extension: .md
+Manifest: /tmp/tmp1sk3byqb/outputs/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for one.pdf: run — new job (weight=1)
+Resume decision for two.pdf: run — new job (weight=1)
+Planning complete: runnable=2, skipped=0, adopted=0, estimated_weight=2.
+Starting runnable file 1/2: one.pdf
+Starting runnable file 2/2: two.pdf
+Batch complete. Successes: 2. Failures: 0. Skipped: 0. Adopted: 0.
+Batch summary saved: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/runs/20260710T112844862671Z-e5f7721e/summary.json
+Latest batch summary updated: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112844875564Z-36a21428
+Input folder: /tmp/tmp1sk3byqb/inputs
+Output folder: /tmp/tmp1sk3byqb/outputs
+Output extension: .md
+Manifest: /tmp/tmp1sk3byqb/outputs/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for two.pdf: run — job inputs changed: source_hash (weight=1)
+Resume decision for one.pdf: skip — completed output is valid
+Planning complete: runnable=1, skipped=1, adopted=0, estimated_weight=1.
+Starting runnable file 1/1: two.pdf
+Batch complete. Successes: 2. Failures: 0. Skipped: 1. Adopted: 0.
+Batch summary saved: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/runs/20260710T112844875564Z-36a21428/summary.json
+Latest batch summary updated: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+ok
+test_summary_is_run_specific_and_latest_copy_remains_compatible (test_run_summary_paths.RunSummaryPathTests.test_summary_is_run_specific_and_latest_copy_remains_compatible) ... Batch summary saved: /tmp/tmppr4ljla7/logs/runs/run-123/summary.json
+Latest batch summary updated: /tmp/tmppr4ljla7/logs/last_batch_summary.json
+ok
+test_batch_main_accepts_parallel_mode_and_forwards_it (test_runtime_flags.RuntimeFlagsTests.test_batch_main_accepts_parallel_mode_and_forwards_it) ... ok
+test_batch_parsers_preserve_runtime_defaults (test_runtime_flags.RuntimeFlagsTests.test_batch_parsers_preserve_runtime_defaults) ... ok
+test_batch_summary_records_runtime_settings (test_runtime_flags.RuntimeFlagsTests.test_batch_summary_records_runtime_settings) ... Run ID: 20260710T112844955508Z-fbc2e520
+Input folder: /tmp/tmpu9f86dsa/inputs
+Output folder: /tmp/tmpu9f86dsa/outputs
+Output extension: .md
+Manifest: /tmp/tmpu9f86dsa/outputs/manifest.json
+Resume: enabled
+File count: 1
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for source.pdf: adopt — valid existing output
+Planning complete: runnable=0, skipped=0, adopted=1, estimated_weight=0.
+Batch complete. Successes: 1. Failures: 0. Skipped: 0. Adopted: 1.
+Batch summary saved: /tmp/tmpu9f86dsa/logs/runs/20260710T112844955508Z-fbc2e520/summary.json
+Latest batch summary updated: /tmp/tmpu9f86dsa/logs/last_batch_summary.json
+No browser session was required.
+ok
+test_explicit_level5_flags_are_accepted (test_runtime_flags.RuntimeFlagsTests.test_explicit_level5_flags_are_accepted) ... ok
+test_explicit_runtime_settings_are_applied_to_environment (test_runtime_flags.RuntimeFlagsTests.test_explicit_runtime_settings_are_applied_to_environment) ... ok
+test_level6_resilience_flags_are_validated (test_runtime_flags.RuntimeFlagsTests.test_level6_resilience_flags_are_validated) ... ok
+test_non_positive_parallel_runs_is_rejected_by_argparse (test_runtime_flags.RuntimeFlagsTests.test_non_positive_parallel_runs_is_rejected_by_argparse) ... usage: python -m unittest [-h] [--input-dir INPUT_DIR]
+                          [--output-dir OUTPUT_DIR] [--prompt PROMPT]
+                          [--overwrite] [--limit LIMIT] [--model MODEL]
+                          [--save-diagnostics] [--save-page-source]
+                          [--max-attempts MAX_ATTEMPTS]
+                          [--download-timeout DOWNLOAD_TIMEOUT]
+                          [--close-delay CLOSE_DELAY] [--no-warm-up]
+                          [--keep-browser] [--output-ext OUTPUT_EXT]
+                          [--manifest MANIFEST] [--no-resume] [--retry-failed]
+                          [--adopt-existing]
+                          [--browser-provider {selenium,patchright}]
+                          [--parallel-runs N]
+                          [--worker-heartbeat-interval SECONDS]
+                          [--worker-timeout SECONDS]
+                          [--worker-ready-timeout SECONDS]
+                          [--worker-startup-stagger SECONDS]
+                          [--max-worker-restarts N]
+                          [--shutdown-grace-seconds SECONDS]
+                          [--global-rate-limit-cooldown SECONDS]
+                          [--auth-failures-before-abort N]
+                          [--rate-limit-failures-before-abort N]
+                          [--rate-limit-window-seconds SECONDS]
+                          [--adaptive-concurrency]
+                          [--adaptive-scale-down-threshold N]
+                          [--adaptive-recovery-seconds SECONDS]
+                          [--worker-max-jobs N] [--worker-memory-limit-mb MB]
+                          [--network-retries N] [--browser-retries N]
+                          [--download-retries N] [--rate-limit-retries N]
+                          [--retry-backoff-base SECONDS]
+                          [--retry-backoff-cap SECONDS]
+                          [--retry-jitter-ratio RATIO] [--runtime-dir PATH]
+                          [--profile-snapshot ID_OR_PATH] [--keep-runtime]
+python -m unittest: error: argument --parallel-runs: must be at least 1
+ok
+test_parallel_execution_is_enabled_with_a_safety_cap (test_runtime_flags.RuntimeFlagsTests.test_parallel_execution_is_enabled_with_a_safety_cap) ... ok
+test_patchright_provider_is_opt_in_and_unknown_provider_is_rejected (test_runtime_flags.RuntimeFlagsTests.test_patchright_provider_is_opt_in_and_unknown_provider_is_rejected) ... ok
+test_pipeline_forwards_parallel_runtime_settings (test_runtime_flags.RuntimeFlagsTests.test_pipeline_forwards_parallel_runtime_settings) ... ok
+test_profile_runtime_flags_are_normalized_and_forwarded (test_runtime_flags.RuntimeFlagsTests.test_profile_runtime_flags_are_normalized_and_forwarded) ... ok
+test_shutdown_grace_is_configurable_and_nonnegative (test_runtime_flags.RuntimeFlagsTests.test_shutdown_grace_is_configurable_and_nonnegative) ... ok
+test_worker_ready_timeout_must_be_positive (test_runtime_flags.RuntimeFlagsTests.test_worker_ready_timeout_must_be_positive) ... ok
+test_worker_timeout_must_exceed_heartbeat_interval (test_runtime_flags.RuntimeFlagsTests.test_worker_timeout_must_exceed_heartbeat_interval) ... ok
+test_before_open_runs_while_profile_lease_is_held (test_session_bootstrap.SessionBootstrapTests.test_before_open_runs_while_profile_lease_is_held) ... ok
+test_bootstrap_injects_isolated_paths_validates_login_and_releases_lease (test_session_bootstrap.SessionBootstrapTests.test_bootstrap_injects_isolated_paths_validates_login_and_releases_lease) ... ok
+test_startup_failure_releases_profile_lease (test_session_bootstrap.SessionBootstrapTests.test_startup_failure_releases_profile_lease) ... ok
+
+----------------------------------------------------------------------
+Ran 169 tests in 17.269s
+
+OK

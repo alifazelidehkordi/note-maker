@@ -1,0 +1,15 @@
+{
+  "version": "0.3.0",
+  "unit_tests": {
+    "total": 101,
+    "passed": 101,
+    "failed": 0
+  },
+  "acceptance_passed": true,
+  "acceptance_scenarios": 3,
+  "compileall": "passed",
+  "live_browser_smoke_test": "not run in this environment; active engine remains Selenium",
+  "parallel_runtime": "still fail-closed for values greater than 1",
+  "facade_compatible": true,
+  "acceptance_version": "0.3.0"
+}

@@ -5,3 +5,5 @@ markdown
 weasyprint
 pypdf
 pyyaml
+patchright==1.61.2
+playwright-stealth==2.0.3

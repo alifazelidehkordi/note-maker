@@ -29,6 +29,18 @@ except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
 
 
 @dataclass(frozen=True)
+class BatchResult:
+    """Outcome of a batch conversion, including partial failures."""
+
+    created: list[Path]
+    failed: list[tuple[Path, str]]
+
+    @property
+    def succeeded(self) -> bool:
+        return not self.failed
+
+
+@dataclass(frozen=True)
 class PdfStyle:
     page_size: str = "A4"
     margin: str = "1.45cm 1.55cm"
@@ -125,8 +137,9 @@ WARNING_SECTION_RE = re.compile(
 )
 
 RTL_SCRIPT_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
-TOPIC_NOTE_RE = re.compile(r"^\d{2}_\d{2}_", re.IGNORECASE)
+TOPIC_NOTE_RE = re.compile(r"^\d{1,3}(?:_\d{1,3})?_", re.IGNORECASE)
 RICH_INDEX_NAMES = ("STUDY_INDEX-rewritten.md", "STUDY_INDEX.md")
+META_NOTE_NAMES = {"study_index.md", "study_index-rewritten.md", "study_index_verification.md", "combined_notes.md", "readme.md"}
 
 MARKDOWN_EXTENSIONS = [
     "extra",
@@ -424,8 +437,13 @@ def clean_markdown(md_text: str) -> str:
 
 
 def is_topic_note(path: Path) -> bool:
-    """True for numbered study notes (01_01_...), not index/meta files."""
-    return bool(TOPIC_NOTE_RE.match(path.name))
+    """Accept study-note Markdown files while excluding generated/meta files."""
+    if path.suffix.lower() != ".md":
+        return False
+    name = path.name.casefold()
+    if name in META_NOTE_NAMES or name.startswith(("study_index", "combined_notes", ".")):
+        return False
+    return bool(TOPIC_NOTE_RE.match(path.name)) or path.is_file()
 
 
 def find_rich_index_md(notes_dir: Path) -> Path | None:
@@ -548,8 +566,8 @@ def batch_convert(
     style: PdfStyle | None = None,
     css_file: Path | None = None,
     auto_rtl: bool = True,
-) -> list[Path]:
-    """Convert all matching Markdown files in a directory."""
+) -> BatchResult:
+    """Convert all matching Markdown files and report every partial failure."""
     require_dependencies()
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
@@ -561,7 +579,8 @@ def batch_convert(
     if not auto_rtl or base_style.rtl:
         shared_css = build_css(base_style, extra_css=extra_css)
 
-    results: list[Path] = []
+    created: list[Path] = []
+    failed: list[tuple[Path, str]] = []
     for md in sorted(input_dir.glob(pattern)):
         if not md.is_file() or not is_topic_note(md):
             continue
@@ -576,10 +595,12 @@ def batch_convert(
                 auto_rtl=auto_rtl,
             )
             print(f"✓ {md.name} -> {pdf.name}")
-            results.append(out)
+            created.append(out)
         except Exception as exc:  # noqa: BLE001 - user-facing batch converter
-            print(f"✗ Failed {md.name}: {exc}")
-    return results
+            message = str(exc)
+            print(f"✗ Failed {md.name}: {message}")
+            failed.append((md, message))
+    return BatchResult(created=created, failed=failed)
 
 
 def parse_args() -> argparse.Namespace:
@@ -646,7 +667,7 @@ def main() -> int:
 
     if args.batch or inp.is_dir():
         out_dir = Path(args.output) if args.output else inp / "pdfs"
-        batch_convert(
+        result = batch_convert(
             inp,
             out_dir,
             pattern=args.pattern,
@@ -654,6 +675,12 @@ def main() -> int:
             css_file=css_file,
             auto_rtl=auto_rtl,
         )
+        print(
+            f"Batch complete: {len(result.created)} created, "
+            f"{len(result.failed)} failed."
+        )
+        if result.failed:
+            return 2
     else:
         out = Path(args.output) if args.output else inp.with_suffix(".pdf")
         result = make_pdf(

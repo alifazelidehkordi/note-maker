@@ -1,0 +1,8 @@
+compileall=passed
+unit_tests=157 passed, 4 subtests passed
+unittest_runner=Ran 157 tests, OK
+phase1_acceptance=3/3 passed
+parallel_runtime_acceptance=14 passed, 4 subtests passed
+parallel_race_stress=heartbeat 8/8; shared-output 10/10
+patchright_basic_smoke=passed (persistent context, system Chromium, about:blank DOM/title/screenshot)
+authenticated_multi_worker_chatgpt_smoke=not_run_requires_private_authenticated_profile

@@ -1,0 +1,548 @@
+{
+  "scripts/run_chatgpt_temporary_test.py": {
+    "functions": [
+      {
+        "name": "log",
+        "line": 65
+      },
+      {
+        "name": "find_browser_binary",
+        "line": 71
+      },
+      {
+        "name": "pyautogui_module",
+        "line": 82
+      },
+      {
+        "name": "paste_hotkey",
+        "line": 88
+      },
+      {
+        "name": "build_driver",
+        "line": 93
+      },
+      {
+        "name": "wait_for_editor",
+        "line": 141
+      },
+      {
+        "name": "dismiss_cookie_banner",
+        "line": 164
+      },
+      {
+        "name": "login_buttons_visible",
+        "line": 183
+      },
+      {
+        "name": "visible_body_text",
+        "line": 199
+      },
+      {
+        "name": "page_has_load_error",
+        "line": 206
+      },
+      {
+        "name": "reload_and_wait_for_editor",
+        "line": 211
+      },
+      {
+        "name": "wait_until_logged_in",
+        "line": 220
+      },
+      {
+        "name": "start_new_chat",
+        "line": 245
+      },
+      {
+        "name": "select_model",
+        "line": 263
+      },
+      {
+        "name": "set_editor_text",
+        "line": 337
+      },
+      {
+        "name": "editor_text",
+        "line": 357
+      },
+      {
+        "name": "find_enabled_send_button",
+        "line": 368
+      },
+      {
+        "name": "wait_for_send_enabled",
+        "line": 384
+      },
+      {
+        "name": "click_send",
+        "line": 393
+      },
+      {
+        "name": "send_message",
+        "line": 407
+      },
+      {
+        "name": "assistant_message_count",
+        "line": 423
+      },
+      {
+        "name": "wait_until_idle",
+        "line": 433
+      },
+      {
+        "name": "wait_until_editor_ready",
+        "line": 464
+      },
+      {
+        "name": "click_attach_menu",
+        "line": 482
+      },
+      {
+        "name": "native_attach_file",
+        "line": 510
+      },
+      {
+        "name": "dom_attach_file",
+        "line": 556
+      },
+      {
+        "name": "attach_file",
+        "line": 621
+      },
+      {
+        "name": "upload_pending_visible",
+        "line": 628
+      },
+      {
+        "name": "wait_for_file_upload_complete",
+        "line": 639
+      },
+      {
+        "name": "normalize_expected_extensions",
+        "line": 688
+      },
+      {
+        "name": "accepted_artifact_suffixes",
+        "line": 711
+      },
+      {
+        "name": "is_partial_download",
+        "line": 722
+      },
+      {
+        "name": "snapshot_downloads",
+        "line": 735
+      },
+      {
+        "name": "is_artifact_download_file",
+        "line": 799
+      },
+      {
+        "name": "is_opml_download_file",
+        "line": 817
+      },
+      {
+        "name": "is_artifact_download_trigger",
+        "line": 833
+      },
+      {
+        "name": "is_opml_download_trigger",
+        "line": 855
+      },
+      {
+        "name": "newest_download",
+        "line": 891
+      },
+      {
+        "name": "pending_downloads",
+        "line": 911
+      },
+      {
+        "name": "wait_for_download_settled",
+        "line": 927
+      },
+      {
+        "name": "find_artifact_candidates_in_downloads",
+        "line": 988
+      },
+      {
+        "name": "find_opml_candidates_in_downloads",
+        "line": 1007
+      },
+      {
+        "name": "element_download_fields",
+        "line": 1020
+      },
+      {
+        "name": "click_candidate_and_wait",
+        "line": 1033
+      },
+      {
+        "name": "click_new_download_link",
+        "line": 1094
+      },
+      {
+        "name": "wait_and_salvage_download",
+        "line": 1157
+      },
+      {
+        "name": "resolve_download",
+        "line": 1193
+      },
+      {
+        "name": "latest_assistant_text",
+        "line": 1239
+      },
+      {
+        "name": "safe_filename",
+        "line": 1256
+      },
+      {
+        "name": "run",
+        "line": 1260
+      },
+      {
+        "name": "main",
+        "line": 1330
+      }
+    ],
+    "classes": [],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 24
+      },
+      {
+        "name": "DEFAULT_PROMPT",
+        "line": 25
+      },
+      {
+        "name": "CHROME_CANDIDATES",
+        "line": 26
+      },
+      {
+        "name": "EDGE_CANDIDATES",
+        "line": 35
+      },
+      {
+        "name": "CHROME_NAMES",
+        "line": 41
+      },
+      {
+        "name": "EDGE_NAMES",
+        "line": 47
+      },
+      {
+        "name": "CHROME_PROFILE_DIR",
+        "line": 48
+      },
+      {
+        "name": "EDGE_PROFILE_DIR",
+        "line": 49
+      },
+      {
+        "name": "DOWNLOAD_DIR",
+        "line": 50
+      },
+      {
+        "name": "TEXT_OUTPUT",
+        "line": 51
+      },
+      {
+        "name": "SCREENSHOT",
+        "line": 52
+      },
+      {
+        "name": "LOG_FILE",
+        "line": 53
+      },
+      {
+        "name": "CHATGPT_URL",
+        "line": 54
+      },
+      {
+        "name": "SEND_SELECTORS",
+        "line": 55
+      },
+      {
+        "name": "PAGE_LOAD_ERROR_MARKERS",
+        "line": 192
+      },
+      {
+        "name": "PARTIAL_SUFFIXES",
+        "line": 671
+      },
+      {
+        "name": "NON_FILE_DOWNLOAD_PHRASES",
+        "line": 672
+      },
+      {
+        "name": "ARTIFACT_EXTENSIONS",
+        "line": 682
+      },
+      {
+        "name": "MARKDOWN_EXTENSIONS",
+        "line": 683
+      },
+      {
+        "name": "DOWNLOAD_TIME_TOLERANCE_NS",
+        "line": 684
+      }
+    ]
+  },
+  "scripts/batch_common.py": {
+    "functions": [
+      {
+        "name": "batch_log",
+        "line": 26
+      },
+      {
+        "name": "should_skip_input",
+        "line": 30
+      },
+      {
+        "name": "collect_input_files",
+        "line": 37
+      },
+      {
+        "name": "wait_for_download",
+        "line": 46
+      },
+      {
+        "name": "driver_is_alive",
+        "line": 82
+      },
+      {
+        "name": "quit_driver",
+        "line": 92
+      },
+      {
+        "name": "reset_chat",
+        "line": 101
+      },
+      {
+        "name": "is_temporary_chat_error",
+        "line": 107
+      },
+      {
+        "name": "recover_from_chat_error",
+        "line": 112
+      },
+      {
+        "name": "recreate_driver",
+        "line": 132
+      },
+      {
+        "name": "warm_up",
+        "line": 148
+      },
+      {
+        "name": "should_delete_cookie",
+        "line": 161
+      },
+      {
+        "name": "prune_driver_cookies",
+        "line": 167
+      },
+      {
+        "name": "prune_automation_cookies",
+        "line": 186
+      },
+      {
+        "name": "bootstrap_session",
+        "line": 206
+      },
+      {
+        "name": "save_artifact_download",
+        "line": 239
+      },
+      {
+        "name": "write_batch_summary",
+        "line": 299
+      },
+      {
+        "name": "capture_retry_failure",
+        "line": 330
+      },
+      {
+        "name": "run_with_retries",
+        "line": 404
+      }
+    ],
+    "classes": [
+      {
+        "name": "NoValidArtifactError",
+        "line": 323
+      }
+    ],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 20
+      },
+      {
+        "name": "LOGS_DIR",
+        "line": 21
+      },
+      {
+        "name": "SKIP_NAME_PREFIXES",
+        "line": 22
+      },
+      {
+        "name": "SKIP_NAME_STEMS",
+        "line": 23
+      },
+      {
+        "name": "DELETE_COOKIE_PREFIXES",
+        "line": 157
+      },
+      {
+        "name": "DELETE_COOKIE_EXACT",
+        "line": 158
+      }
+    ]
+  },
+  "scripts/batch_pdf.py": {
+    "functions": [
+      {
+        "name": "process_one",
+        "line": 20
+      },
+      {
+        "name": "run_batch",
+        "line": 76
+      },
+      {
+        "name": "build_parser",
+        "line": 300
+      },
+      {
+        "name": "main",
+        "line": 332
+      }
+    ],
+    "classes": [],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 14
+      },
+      {
+        "name": "DEFAULT_INPUT_DIR",
+        "line": 15
+      },
+      {
+        "name": "DEFAULT_OUTPUT_DIR",
+        "line": 16
+      },
+      {
+        "name": "DEFAULT_PROMPT",
+        "line": 17
+      }
+    ]
+  },
+  "scripts/batch_markdown.py": {
+    "functions": [
+      {
+        "name": "batch_log",
+        "line": 33
+      },
+      {
+        "name": "parse_section_numbers",
+        "line": 37
+      },
+      {
+        "name": "split_markdown_sections",
+        "line": 61
+      },
+      {
+        "name": "select_sections",
+        "line": 78
+      },
+      {
+        "name": "write_markdown_section_file",
+        "line": 90
+      },
+      {
+        "name": "build_section_prompt",
+        "line": 97
+      },
+      {
+        "name": "process_markdown_section",
+        "line": 106
+      },
+      {
+        "name": "run_batch",
+        "line": 155
+      },
+      {
+        "name": "build_parser",
+        "line": 388
+      },
+      {
+        "name": "main",
+        "line": 430
+      }
+    ],
+    "classes": [
+      {
+        "name": "MarkdownSection",
+        "line": 23
+      }
+    ],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 17
+      },
+      {
+        "name": "DEFAULT_OUTPUT_DIR",
+        "line": 18
+      },
+      {
+        "name": "DEFAULT_PROMPT",
+        "line": 19
+      }
+    ]
+  },
+  "scripts/runtime_flags.py": {
+    "functions": [
+      {
+        "name": "add_runtime_arguments",
+        "line": 32
+      },
+      {
+        "name": "validate_runtime_settings",
+        "line": 55
+      },
+      {
+        "name": "settings_from_namespace",
+        "line": 78
+      }
+    ],
+    "classes": [
+      {
+        "name": "RuntimeConfigurationError",
+        "line": 12
+      },
+      {
+        "name": "RuntimeSettings",
+        "line": 17
+      }
+    ],
+    "constants": [
+      {
+        "name": "DEFAULT_BROWSER_PROVIDER",
+        "line": 7
+      },
+      {
+        "name": "DEFAULT_PARALLEL_RUNS",
+        "line": 8
+      },
+      {
+        "name": "SUPPORTED_BROWSER_PROVIDERS",
+        "line": 9
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+Run ID: 20260710T081651763034Z-415216cb
+Input folder: /tmp/note-maker-phase1-hbzosef0/inputs
+Output folder: /tmp/note-maker-phase1-hbzosef0/outputs/notes
+Output extension: .md
+Manifest: /tmp/note-maker-phase1-hbzosef0/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Resume decision for 01_First.pdf: run — new job
+Resume decision for 02_Second.pdf: run — new job
+Starting runnable file 1/2: 01_First.pdf
+Starting runnable file 2/2: 02_Second.pdf
+ERROR on attempt 1/2 for 02_Second.pdf: Artifact validation failed for 02_Second.md: File is smaller than the minimum 100 bytes; Missing level-2 heading; Output contains headings or download links but no note content. Rejected candidate: /tmp/note-maker-phase1-hbzosef0/outputs/notes/_rejected/02_Second-20260710T081651778264Z.md
+Retrying 02_Second.pdf (attempt 2/2)...
+ERROR on attempt 2/2 for 02_Second.pdf: Artifact validation failed for 02_Second.md: File is smaller than the minimum 100 bytes; Missing level-2 heading; Output contains headings or download links but no note content. Rejected candidate: /tmp/note-maker-phase1-hbzosef0/outputs/notes/_rejected/02_Second-20260710T081651781308Z.md
+Diagnostics saved: /tmp/note-maker-phase1-hbzosef0/outputs/notes/diagnostics/20260710T081651763034Z-415216cb/02_Second.pdf
+Batch complete. Successes: 1. Failures: 1. Skipped: 0. Adopted: 0.
+Failed files:
+- 02_Second.pdf
+Batch summary saved: /tmp/note-maker-phase1-hbzosef0/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T081651786787Z-6b16226f
+Input folder: /tmp/note-maker-phase1-hbzosef0/inputs
+Output folder: /tmp/note-maker-phase1-hbzosef0/outputs/notes
+Output extension: .md
+Manifest: /tmp/note-maker-phase1-hbzosef0/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Resume decision for 01_First.pdf: skip — job was not previously failed or interrupted
+Resume decision for 02_Second.pdf: run — retrying failed job
+Starting runnable file 1/1: 02_Second.pdf
+Batch complete. Successes: 1. Failures: 0. Skipped: 1. Adopted: 0.
+Batch summary saved: /tmp/note-maker-phase1-hbzosef0/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T081651793500Z-6a206b05
+Input folder: /tmp/note-maker-phase1-hbzosef0/inputs
+Output folder: /tmp/note-maker-phase1-hbzosef0/outputs/notes
+Output extension: .md
+Manifest: /tmp/note-maker-phase1-hbzosef0/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Resume decision for 01_First.pdf: skip — completed output is valid
+Resume decision for 02_Second.pdf: skip — completed output is valid
+Batch complete. Successes: 2. Failures: 0. Skipped: 2. Adopted: 0.
+Batch summary saved: /tmp/note-maker-phase1-hbzosef0/logs/last_batch_summary.json
+No browser session was required.
+Annotation sizes differ: 2 vs. 0
+Annotation sizes differ: 2 vs. 0
+✓ 01_First.md -> 01_First.pdf
+✓ 02_Second.md -> 02_Second.pdf
+Using generated rich index: /tmp/note-maker-phase1-hbzosef0/outputs/STUDY_INDEX.md
+  Adding: 01_First.pdf (starts at final page 3)
+  Adding: 02_Second.pdf (starts at final page 4)
+
+Combined PDF created: /tmp/note-maker-phase1-hbzosef0/outputs/COMBINED_NOTES.pdf
+   Total pages: 4
+   Index pages: 2
+   Topic notes: 2
+   Internal index links converted: 8
+[PASS] batch_failure_and_diagnostics: Partial failure returned 2; valid output survived; invalid candidates and final diagnostics were preserved.
+[PASS] retry_failed_and_resume: --retry-failed ran only the failed job; a subsequent unchanged run skipped both jobs without a browser.
+[PASS] pdf_book_end_to_end: Rendered 2 topic PDFs and a 4-page combined book (2 index page(s)) with resolved local links and bookmarks.
+Acceptance report: /mnt/data/work_level2/note-maker-main/logs/phase1-acceptance.json

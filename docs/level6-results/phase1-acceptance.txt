@@ -1,0 +1,83 @@
+Run ID: 20260710T112857074939Z-886b7f9c
+Input folder: /tmp/note-maker-phase1-ww72rlv3/inputs
+Output folder: /tmp/note-maker-phase1-ww72rlv3/outputs/notes
+Output extension: .md
+Manifest: /tmp/note-maker-phase1-ww72rlv3/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for 01_First.pdf: run — new job (weight=1)
+Resume decision for 02_Second.pdf: run — new job (weight=1)
+Planning complete: runnable=2, skipped=0, adopted=0, estimated_weight=2.
+Starting runnable file 1/2: 01_First.pdf
+Starting runnable file 2/2: 02_Second.pdf
+ERROR on attempt 1/2 for 02_Second.pdf: Artifact validation failed for 02_Second.md: File is smaller than the minimum 100 bytes; Missing level-2 heading; Output contains headings or download links but no note content. Rejected candidate: /tmp/note-maker-phase1-ww72rlv3/outputs/notes/_rejected/02_Second-20260710T112857088616Z.md
+Retrying 02_Second.pdf (attempt 2/2)...
+ERROR on attempt 2/2 for 02_Second.pdf: Artifact validation failed for 02_Second.md: File is smaller than the minimum 100 bytes; Missing level-2 heading; Output contains headings or download links but no note content. Rejected candidate: /tmp/note-maker-phase1-ww72rlv3/outputs/notes/_rejected/02_Second-20260710T112857091629Z.md
+Diagnostics saved: /tmp/note-maker-phase1-ww72rlv3/outputs/notes/diagnostics/20260710T112857074939Z-886b7f9c/02_Second.pdf
+Batch complete. Successes: 1. Failures: 1. Skipped: 0. Adopted: 0.
+Failed files:
+- 02_Second.pdf
+Batch summary saved: /tmp/note-maker-phase1-ww72rlv3/logs/runs/20260710T112857074939Z-886b7f9c/summary.json
+Latest batch summary updated: /tmp/note-maker-phase1-ww72rlv3/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112857100582Z-8f3f35e6
+Input folder: /tmp/note-maker-phase1-ww72rlv3/inputs
+Output folder: /tmp/note-maker-phase1-ww72rlv3/outputs/notes
+Output extension: .md
+Manifest: /tmp/note-maker-phase1-ww72rlv3/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 2
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for 02_Second.pdf: run — retrying failed job (weight=1)
+Resume decision for 01_First.pdf: skip — job was not previously failed or interrupted
+Planning complete: runnable=1, skipped=1, adopted=0, estimated_weight=1.
+Starting runnable file 1/1: 02_Second.pdf
+Batch complete. Successes: 1. Failures: 0. Skipped: 1. Adopted: 0.
+Batch summary saved: /tmp/note-maker-phase1-ww72rlv3/logs/runs/20260710T112857100582Z-8f3f35e6/summary.json
+Latest batch summary updated: /tmp/note-maker-phase1-ww72rlv3/logs/last_batch_summary.json
+Keeping browser open (--keep-browser).
+Run ID: 20260710T112857123992Z-7cac70b7
+Input folder: /tmp/note-maker-phase1-ww72rlv3/inputs
+Output folder: /tmp/note-maker-phase1-ww72rlv3/outputs/notes
+Output extension: .md
+Manifest: /tmp/note-maker-phase1-ww72rlv3/outputs/notes/manifest.json
+Resume: enabled
+File count: 2
+Max attempts per file: 3
+Download timeout: 90s
+Browser provider: selenium
+Parallel runs: 1
+Keep managed runtime: policy default
+Resume decision for 01_First.pdf: skip — completed output is valid
+Resume decision for 02_Second.pdf: skip — completed output is valid
+Planning complete: runnable=0, skipped=2, adopted=0, estimated_weight=0.
+Batch complete. Successes: 2. Failures: 0. Skipped: 2. Adopted: 0.
+Batch summary saved: /tmp/note-maker-phase1-ww72rlv3/logs/runs/20260710T112857123992Z-7cac70b7/summary.json
+Latest batch summary updated: /tmp/note-maker-phase1-ww72rlv3/logs/last_batch_summary.json
+No browser session was required.
+Annotation sizes differ: 2 vs. 0
+Annotation sizes differ: 2 vs. 0
+✓ 01_First.md -> 01_First.pdf
+✓ 02_Second.md -> 02_Second.pdf
+Using generated rich index: /tmp/note-maker-phase1-ww72rlv3/outputs/STUDY_INDEX.md
+  Adding: 01_First.pdf (starts at final page 3)
+  Adding: 02_Second.pdf (starts at final page 4)
+
+Combined PDF created: /tmp/note-maker-phase1-ww72rlv3/outputs/COMBINED_NOTES.pdf
+   Total pages: 4
+   Index pages: 2
+   Topic notes: 2
+   Internal index links converted: 8
+[PASS] batch_failure_and_diagnostics: Partial failure returned 2; valid output survived; invalid candidates and final diagnostics were preserved.
+[PASS] retry_failed_and_resume: --retry-failed ran only the failed job; a subsequent unchanged run skipped both jobs without a browser.
+[PASS] pdf_book_end_to_end: Rendered 2 topic PDFs and a 4-page combined book (2 index page(s)) with resolved local links and bookmarks.
+Acceptance report: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/phase1-acceptance.json

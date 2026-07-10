@@ -1,0 +1,50 @@
+{
+  "version": "0.7.0",
+  "date": "2026-07-10",
+  "compileall": "passed",
+  "automated_tests": {
+    "status": "passed",
+    "count": 157,
+    "worker_count_subtests": 4,
+    "pytest_duration_seconds": 15.15,
+    "unittest_duration_seconds": 13.398
+  },
+  "parallel_runtime_acceptance": {
+    "status": "passed",
+    "tests": 14,
+    "worker_count_subtests": 4,
+    "workers_verified": [1, 2, 3, 4],
+    "dynamic_pull_distribution": true,
+    "crash_recovery": true,
+    "heartbeat_timeout_recovery": true,
+    "generation_event_filtering": true,
+    "post_claim_manifest_recheck": true,
+    "graceful_shutdown": true,
+    "terminate_kill_escalation": true,
+    "forced_kill_resume": true,
+    "shared_output_duplicate_prevention": true
+  },
+  "race_stress": {
+    "heartbeat_freeze_recovery": "8/8 passed",
+    "two_coordinator_shared_output": "10/10 passed"
+  },
+  "phase1_acceptance": {
+    "status": "passed",
+    "checks": 3
+  },
+  "patchright_basic_smoke": {
+    "status": "passed",
+    "executable": "/usr/bin/chromium",
+    "health": "healthy",
+    "persistent_context": true,
+    "target": "about:blank with injected DOM",
+    "title": "Patchright Smoke",
+    "screenshot": true
+  },
+  "authenticated_multi_worker_chatgpt_smoke": "not_run_requires_private_authenticated_profile",
+  "parallel_runs": {
+    "minimum": 1,
+    "maximum": 16,
+    "shared_runtime_for_one_and_many": true
+  }
+}

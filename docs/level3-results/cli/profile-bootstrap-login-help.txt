@@ -1,0 +1,9 @@
+usage: profile_bootstrap.py login [-h] [--profile PROFILE]
+                                  [--snapshot-name SNAPSHOT_NAME]
+                                  [--no-snapshot]
+
+options:
+  -h, --help            show this help message and exit
+  --profile PROFILE
+  --snapshot-name SNAPSHOT_NAME
+  --no-snapshot

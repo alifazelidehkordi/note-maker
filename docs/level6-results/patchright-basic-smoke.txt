@@ -1,0 +1,7 @@
+Patchright using Chromium executable: /usr/bin/chromium
+provider=patchright
+profile=/tmp/nm-level6-final-smoke-profile
+downloads=/tmp/nm-level6-final-smoke-downloads
+health=healthy
+title=Patchright Smoke
+basic navigation succeeded; screenshot=/tmp/nm-level6-final-smoke-downloads/patchright-basic-smoke.png

@@ -1,0 +1,7 @@
+Patchright using Chromium executable: /usr/bin/chromium
+provider=patchright
+profile=/tmp/notemaker-level3-basic-smoke/profile
+downloads=/tmp/notemaker-level3-basic-smoke/downloads
+health=healthy
+title=Patchright Smoke
+basic navigation succeeded; screenshot=/tmp/notemaker-level3-basic-smoke/downloads/patchright-basic-smoke.png

@@ -1,0 +1,3 @@
+python=/mnt/data/work_level2/note-maker-main/.venv-linux/bin/python
+Python 3.13.5
+compileall=passed

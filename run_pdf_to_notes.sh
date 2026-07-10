@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 cd "$(dirname "$0")"
 
 echo "=== PDF/DOCX -> Clean Markdown Notes (via ChatGPT Note Maker) ==="
-echo "Project dir: $(pwd)"
-
-VENV_DIR=".venv-linux"
-PYTHON="${VENV_DIR}/bin/python"
-
-if [[ ! -x "${PYTHON}" ]]; then
-  ./setup.sh
-fi
-
-if ! "${PYTHON}" -c "import selenium, pyautogui, pyperclip" 2>/dev/null; then
-  "${PYTHON}" -m pip install --upgrade pip
-  "${PYTHON}" -m pip install -r requirements.txt
+VENV_DIR=".venv-linux"; PYTHON="${VENV_DIR}/bin/python"
+[[ -x "$PYTHON" ]] || ./setup.sh
+if ! "$PYTHON" -c "import selenium, pyautogui, pyperclip" 2>/dev/null; then
+  "$PYTHON" -m pip install --upgrade pip
+  "$PYTHON" -m pip install -r requirements.txt
 fi
 
 INPUT_DIR="${INPUT_DIR:-inputs}"
@@ -29,88 +21,42 @@ ENRICH_SOURCE="${ENRICH_SOURCE:-0}"
 GENERATE_RICH_INDEX="${GENERATE_RICH_INDEX:-0}"
 ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-}"
 CSS_FILE="${CSS_FILE:-}"
+BOOK_TITLE="${BOOK_TITLE:-Study Notes}"
 
-echo ""
-echo "Input dir : ${INPUT_DIR}"
-echo "Notes dir : ${NOTES_DIR}  (final .md files)"
-echo "Prompt    : ${PROMPT_FILE}"
-if [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; then
-  echo "PDF dir   : ${PDF_DIR}  (will generate PDFs too)"
-  if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
-    echo "Combined  : ${COMBINED_OUTPUT}"
-  fi
-fi
-echo ""
+BATCH_ARGS=(); CLI_PDF=0; CLI_COMBINED=0
+for arg in "$@"; do
+  case "$arg" in
+    --pdf) CLI_PDF=1 ;;
+    --combined) CLI_COMBINED=1 ;;
+    *) BATCH_ARGS+=("$arg") ;;
+  esac
+done
+WANT_COMBINED=0; [[ "$CREATE_COMBINED" == 1 || "$CLI_COMBINED" == 1 ]] && WANT_COMBINED=1
+WANT_PDF=0; [[ "$DO_PDF" == 1 || "$CLI_PDF" == 1 || "$WANT_COMBINED" == 1 ]] && WANT_PDF=1
 
-mkdir -p "${NOTES_DIR}"
-
-"${PYTHON}" scripts/batch_pdf.py \
-  --input-dir "${INPUT_DIR}" \
-  --output-dir "${NOTES_DIR}" \
-  --prompt "${PROMPT_FILE}" \
-  --output-ext md \
-  "$@"
-
+mkdir -p "$NOTES_DIR"
+set +e
+"$PYTHON" scripts/batch_pdf.py --input-dir "$INPUT_DIR" --output-dir "$NOTES_DIR" --prompt "$PROMPT_FILE" --output-ext md "${BATCH_ARGS[@]}"
 EXIT_CODE=$?
+set -e
 
-if [[ $EXIT_CODE -eq 0 ]] && { [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; }; then
-  mkdir -p "${PDF_DIR}"
-
-  if [[ "$ENRICH_SOURCE" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
-    echo ""
-    echo "Enriching rewritten notes with original page info..."
-    "${PYTHON}" scripts/enrich_rewritten_notes.py \
-      --original-parts "$ORIGINAL_PARTS_DIR" \
-      --rewritten-dir "${NOTES_DIR}" \
-      --inplace
+if [[ $EXIT_CODE -eq 0 && "$WANT_PDF" == 1 ]]; then
+  mkdir -p "$PDF_DIR"
+  if [[ "$ENRICH_SOURCE" == 1 && -n "$ORIGINAL_PARTS_DIR" ]]; then
+    "$PYTHON" scripts/enrich_rewritten_notes.py --original-parts "$ORIGINAL_PARTS_DIR" --rewritten-dir "$NOTES_DIR" --inplace
   fi
-
-  if [[ "$GENERATE_RICH_INDEX" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
-    echo ""
-    echo "Generating rich STUDY_INDEX (فهرست)..."
-    RICH_INDEX_OUT="${NOTES_DIR}/../STUDY_INDEX-rewritten.md"
-    "${PYTHON}" scripts/generate_study_index.py \
-      --parts-dir "$ORIGINAL_PARTS_DIR" \
-      --clean-dir "${NOTES_DIR}" \
-      --output "$RICH_INDEX_OUT" \
-      --title "Rewritten Study Notes"
-    echo "Rich index saved to: $RICH_INDEX_OUT"
+  if [[ "$GENERATE_RICH_INDEX" == 1 && -n "$ORIGINAL_PARTS_DIR" ]]; then
+    "$PYTHON" scripts/generate_study_index.py --parts-dir "$ORIGINAL_PARTS_DIR" --clean-dir "$NOTES_DIR" --output "${NOTES_DIR}/../STUDY_INDEX-rewritten.md" --title "$BOOK_TITLE"
   fi
-
-  echo ""
-  echo "Ensuring PDF dependencies..."
-  "${PYTHON}" -c "import weasyprint, markdown, pypdf" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown pypdf
-  echo "Generating styled PDFs (topic notes only)..."
-  CSS_ARG=()
-  if [[ -n "$CSS_FILE" ]]; then
-    CSS_ARG=(--css "$CSS_FILE")
-  fi
-  "${PYTHON}" scripts/convert_md_to_pdf.py \
-    --batch \
-    "${NOTES_DIR}" \
-    --output "${PDF_DIR}" \
-    "${CSS_ARG[@]}"
-
-  if [[ "$CREATE_COMBINED" == "1" ]] || [[ " $* " == *" --combined "* ]]; then
-    echo ""
-    echo "Creating combined PDF with rich index front matter..."
+  "$PYTHON" -c "import weasyprint, markdown, pypdf" 2>/dev/null || "$PYTHON" -m pip install weasyprint markdown pypdf
+  CSS_ARG=(); [[ -n "$CSS_FILE" ]] && CSS_ARG=(--css "$CSS_FILE")
+  "$PYTHON" scripts/convert_md_to_pdf.py --batch "$NOTES_DIR" --output "$PDF_DIR" "${CSS_ARG[@]}"
+  if [[ "$WANT_COMBINED" == 1 ]]; then
     INDEX_MD="${INDEX_MD:-${NOTES_DIR}/../STUDY_INDEX-rewritten.md}"
-    INDEX_ARG=()
-    if [[ -f "$INDEX_MD" ]]; then
-      INDEX_ARG=(--index-md "$INDEX_MD")
-    fi
-    "${PYTHON}" scripts/create_combined_pdf.py \
-      --notes-dir "${NOTES_DIR}" \
-      --pdf-dir "${PDF_DIR}" \
-      --output "${COMBINED_OUTPUT}" \
-      "${INDEX_ARG[@]}"
+    INDEX_ARG=(); [[ -f "$INDEX_MD" ]] && INDEX_ARG=(--index-md "$INDEX_MD")
+    "$PYTHON" scripts/create_combined_pdf.py --notes-dir "$NOTES_DIR" --pdf-dir "$PDF_DIR" --output "$COMBINED_OUTPUT" --title "$BOOK_TITLE" "${CSS_ARG[@]}" "${INDEX_ARG[@]}"
   fi
 fi
 
-echo ""
-echo "Done. Exit code: ${EXIT_CODE}"
-echo "Your rewritten notes are in: ${NOTES_DIR}/"
-if [[ "$DO_PDF" == "1" ]] || [[ " $* " == *" --pdf "* ]]; then
-  echo "PDFs are in: ${PDF_DIR}/"
-fi
-exit $EXIT_CODE
+echo "Done. Exit code: $EXIT_CODE"
+exit "$EXIT_CODE"

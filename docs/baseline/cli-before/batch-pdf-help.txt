@@ -1,0 +1,38 @@
+usage: batch_pdf.py [-h] [--input-dir INPUT_DIR] [--output-dir OUTPUT_DIR]
+                    [--prompt PROMPT] [--overwrite] [--limit LIMIT]
+                    [--model MODEL] [--save-diagnostics] [--save-page-source]
+                    [--max-attempts MAX_ATTEMPTS]
+                    [--download-timeout DOWNLOAD_TIMEOUT]
+                    [--close-delay CLOSE_DELAY] [--no-warm-up]
+                    [--keep-browser] [--output-ext OUTPUT_EXT]
+                    [--manifest MANIFEST] [--no-resume] [--retry-failed]
+                    [--adopt-existing]
+
+Batch convert PDF/DOCX/MD files to OPML or Markdown via ChatGPT web.
+
+options:
+  -h, --help            show this help message and exit
+  --input-dir INPUT_DIR
+  --output-dir OUTPUT_DIR
+  --prompt PROMPT
+  --overwrite
+  --limit LIMIT
+  --model MODEL
+  --save-diagnostics    Save diagnostics for every failed retry; final
+                        failures are always saved.
+  --save-page-source    Include potentially sensitive page_source.html in
+                        failure diagnostics.
+  --max-attempts MAX_ATTEMPTS
+  --download-timeout DOWNLOAD_TIMEOUT
+  --close-delay CLOSE_DELAY
+  --no-warm-up
+  --keep-browser
+  --output-ext OUTPUT_EXT
+                        Output file extension (e.g. opml or md)
+  --manifest MANIFEST   Manifest path (default: <output-dir>/manifest.json)
+  --no-resume           Ignore resume decisions and run selected jobs again;
+                        results are still recorded.
+  --retry-failed        Only run jobs previously failed, interrupted, pending,
+                        or invalidated in the manifest.
+  --adopt-existing      Validate and register untracked existing outputs
+                        instead of rebuilding them.

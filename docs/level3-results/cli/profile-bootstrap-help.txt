@@ -1,0 +1,21 @@
+usage: profile_bootstrap.py [-h] [--runtime-dir RUNTIME_DIR]
+                            [--snapshot-dir SNAPSHOT_DIR]
+                            {inspect,login,snapshot,prepare-worker,cleanup-run} ...
+
+Create, inspect and restore portable ChatGPT browser-session snapshots.
+
+positional arguments:
+  {inspect,login,snapshot,prepare-worker,cleanup-run}
+    inspect             Inspect login evidence and profile locks.
+    login               Open real Chromium with a reference profile and
+                        optionally snapshot it after close.
+    snapshot            Create a portable session snapshot.
+    prepare-worker      Restore one isolated worker profile.
+    cleanup-run         Apply the configured retention policy.
+
+options:
+  -h, --help            show this help message and exit
+  --runtime-dir RUNTIME_DIR
+                        Managed run directory root.
+  --snapshot-dir SNAPSHOT_DIR
+                        Session snapshot directory root.

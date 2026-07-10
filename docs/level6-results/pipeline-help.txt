@@ -1,0 +1,134 @@
+usage: pipeline.py [-h] [--input-dir INPUT_DIR]
+                   [--markdown-file MARKDOWN_FILE] [--opml-dir OPML_DIR]
+                   [--xmind-dir XMIND_DIR] [--prompt PROMPT]
+                   [--sections SECTIONS] [--overwrite] [--limit LIMIT]
+                   [--model MODEL] [--save-diagnostics] [--save-page-source]
+                   [--max-attempts MAX_ATTEMPTS]
+                   [--max-section-attempts MAX_SECTION_ATTEMPTS]
+                   [--download-timeout DOWNLOAD_TIMEOUT]
+                   [--close-delay CLOSE_DELAY] [--no-warm-up] [--keep-browser]
+                   [--output-ext OUTPUT_EXT] [--manifest MANIFEST]
+                   [--no-resume] [--retry-failed] [--adopt-existing]
+                   [--browser-provider {selenium,patchright}]
+                   [--parallel-runs N] [--worker-heartbeat-interval SECONDS]
+                   [--worker-timeout SECONDS] [--worker-ready-timeout SECONDS]
+                   [--worker-startup-stagger SECONDS]
+                   [--max-worker-restarts N]
+                   [--shutdown-grace-seconds SECONDS]
+                   [--global-rate-limit-cooldown SECONDS]
+                   [--auth-failures-before-abort N]
+                   [--rate-limit-failures-before-abort N]
+                   [--rate-limit-window-seconds SECONDS]
+                   [--adaptive-concurrency]
+                   [--adaptive-scale-down-threshold N]
+                   [--adaptive-recovery-seconds SECONDS] [--worker-max-jobs N]
+                   [--worker-memory-limit-mb MB] [--network-retries N]
+                   [--browser-retries N] [--download-retries N]
+                   [--rate-limit-retries N] [--retry-backoff-base SECONDS]
+                   [--retry-backoff-cap SECONDS] [--retry-jitter-ratio RATIO]
+                   [--runtime-dir PATH] [--profile-snapshot ID_OR_PATH]
+                   [--keep-runtime]
+                   {pdf,markdown}
+
+Full pipeline: source file(s) -> OPML -> XMind (.xmind)
+
+positional arguments:
+  {pdf,markdown}        pdf: batch PDF/DOCX files; markdown: split a .md file
+                        by ## headings
+
+options:
+  -h, --help            show this help message and exit
+  --input-dir INPUT_DIR
+  --markdown-file MARKDOWN_FILE
+  --opml-dir OPML_DIR
+  --xmind-dir XMIND_DIR
+  --prompt PROMPT
+  --sections SECTIONS
+  --overwrite
+  --limit LIMIT
+  --model MODEL
+  --save-diagnostics    Save diagnostics for every failed retry; final
+                        failures are always saved.
+  --save-page-source    Include potentially sensitive page_source.html in
+                        failure diagnostics.
+  --max-attempts MAX_ATTEMPTS
+  --max-section-attempts MAX_SECTION_ATTEMPTS
+  --download-timeout DOWNLOAD_TIMEOUT
+  --close-delay CLOSE_DELAY
+  --no-warm-up          Skip the initial hello warm-up in ChatGPT.
+  --keep-browser        Leave the browser open after the batch finishes.
+  --output-ext OUTPUT_EXT
+                        Output extension for generated artifact (opml or md)
+  --manifest MANIFEST   Manifest path passed to the batch generator
+  --no-resume           Ignore resume decisions while still recording results
+  --retry-failed        Only run failed or interrupted manifest jobs
+  --adopt-existing      Validate and register untracked existing outputs
+  --browser-provider {selenium,patchright}
+                        Browser provider. Selenium remains the default;
+                        Patchright is available as an opt-in persistent-
+                        context engine.
+  --parallel-runs N     Number of concurrent browser worker processes (1-16).
+                        All values, including 1, use the same dynamic
+                        coordinator runtime.
+  --worker-heartbeat-interval SECONDS
+                        Seconds between worker heartbeat events (default: 10).
+  --worker-timeout SECONDS
+                        Declare a worker lost after this heartbeat silence
+                        (default: 45).
+  --worker-ready-timeout SECONDS
+                        Maximum startup time before WORKER_READY is required
+                        (default: 180).
+  --worker-startup-stagger SECONDS
+                        Delay between starting browser workers (default: 1).
+  --max-worker-restarts N
+                        Maximum restarts allowed for each logical worker
+                        (default: 2).
+  --shutdown-grace-seconds SECONDS
+                        Grace period for workers to stop before terminate/kill
+                        escalation during SIGINT or SIGTERM shutdown (default:
+                        10).
+  --global-rate-limit-cooldown SECONDS
+                        Pause all new job assignments after a rate limit
+                        (default: 180).
+  --auth-failures-before-abort N
+                        Open the global authentication circuit after N
+                        failures (default: 2).
+  --rate-limit-failures-before-abort N
+                        Open the severe rate-limit circuit after N events; 0
+                        disables (default: 6).
+  --rate-limit-window-seconds SECONDS
+                        Observation window used by adaptive rate-limit control
+                        (default: 300).
+  --adaptive-concurrency
+                        Enable automatic active-worker scale-down and cautious
+                        recovery.
+  --adaptive-scale-down-threshold N
+                        Rate-limit events in the window before reducing active
+                        workers (default: 2).
+  --adaptive-recovery-seconds SECONDS
+                        Rate-limit-free interval before increasing active
+                        workers (default: 900).
+  --worker-max-jobs N   Recycle a worker after N completed jobs; 0 disables
+                        (default: 20).
+  --worker-memory-limit-mb MB
+                        Recycle an idle worker after exceeding this RSS; 0
+                        disables.
+  --network-retries N
+  --browser-retries N
+  --download-retries N
+  --rate-limit-retries N
+  --retry-backoff-base SECONDS
+  --retry-backoff-cap SECONDS
+  --retry-jitter-ratio RATIO
+                        Backoff jitter ratio from 0 to 1 (default: 0.20).
+  --runtime-dir PATH    Managed runtime root for per-run and per-worker
+                        profiles, downloads, logs, and diagnostics (default:
+                        .runtime or CHATGPT_RUNTIME_DIR).
+  --profile-snapshot ID_OR_PATH
+                        Restore each managed worker profile from this
+                        authenticated session snapshot id or path (equivalent
+                        to CHATGPT_PROFILE_SNAPSHOT).
+  --keep-runtime        Keep managed run directories after successful
+                        completion for diagnostics. By default successful
+                        managed runtimes are deleted and failed ones are
+                        retained.

@@ -1,7 +1,10 @@
 {
   "name": "note-maker",
+  "version": "0.8.1",
   "private": true,
   "scripts": {
-    "test": "./run_tests.sh"
+    "test": "./run_tests.sh",
+    "acceptance": "./run_phase1_acceptance.sh",
+    "acceptance:level6": ".venv-linux/bin/python scripts/level6_acceptance.py"
   }
 }

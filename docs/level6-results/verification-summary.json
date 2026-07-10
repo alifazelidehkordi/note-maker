@@ -1,0 +1,47 @@
+{
+  "version": "0.8.0",
+  "date": "2026-07-10",
+  "compileall": "passed",
+  "automated_tests": {
+    "status": "passed",
+    "count": 169,
+    "duration_seconds": 17.269
+  },
+  "level6_acceptance": {
+    "status": "passed",
+    "tests": 11,
+    "duration_seconds": 2.884,
+    "contracts": [
+      "global rate-limit events pause new assignments",
+      "transient network failures remain within bounded retry budgets",
+      "authentication circuit uses a one-worker startup barrier",
+      "adaptive concurrency scales down and recovers",
+      "worker recycling preserves outputs and resume state",
+      "stale claims and surviving child processes are cleaned safely"
+    ]
+  },
+  "phase1_acceptance": {
+    "status": "passed",
+    "checks": 3
+  },
+  "resilience": {
+    "global_rate_limit_cooldown": true,
+    "independent_retry_budgets": true,
+    "auth_startup_barrier": true,
+    "auth_and_rate_circuits": true,
+    "adaptive_concurrency_opt_in": true,
+    "worker_recycling": true,
+    "process_tree_cleanup_linux": true,
+    "stale_claim_recovery": true
+  },
+  "patchright_basic_smoke": {
+    "status": "passed",
+    "executable": "/usr/bin/chromium",
+    "health": "healthy",
+    "persistent_context": true,
+    "target": "about:blank with injected DOM",
+    "title": "Patchright Smoke",
+    "screenshot": true
+  },
+  "authenticated_multi_worker_chatgpt_smoke": "not_run_requires_private_authenticated_profile"
+}

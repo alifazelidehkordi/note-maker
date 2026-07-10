@@ -1,0 +1,34 @@
+test_auth_circuit_opens_at_global_threshold (test_resilience_control.GlobalControlTests.test_auth_circuit_opens_at_global_threshold) ... ok
+test_cooldown_pauses_dispatch_and_adaptive_limit_recovers (test_resilience_control.GlobalControlTests.test_cooldown_pauses_dispatch_and_adaptive_limit_recovers) ... ok
+test_failure_classification_is_typed (test_resilience_control.RetryPolicyTests.test_failure_classification_is_typed) ... ok
+test_independent_retry_budgets_are_bounded (test_resilience_control.RetryPolicyTests.test_independent_retry_budgets_are_bounded) ... ok
+test_rate_limit_retry_after_overrides_backoff (test_resilience_control.RetryPolicyTests.test_rate_limit_retry_after_overrides_backoff) ... ok
+test_auth_startup_circuit_starts_only_one_worker (test_level6_coordinator.Level6CoordinatorTests.test_auth_startup_circuit_starts_only_one_worker) ... Process note-maker-level6-run-worker-001-g1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "/usr/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/work_level6/note-maker-level5-parallel-runtime/scripts/parallel_runtime/worker.py", line 62, in worker_process_main
+    executor = executor_type(
+        config=dict(config.executor_config),
+    ...<2 lines>...
+        emit=emit,
+    )
+  File "/mnt/data/work_level6/note-maker-level5-parallel-runtime/scripts/parallel_runtime/testing.py", line 27, in __init__
+    raise AuthenticationRequiredError("scripted authentication failure")
+browser_runtime.errors.AuthenticationRequiredError: scripted authentication failure
+ok
+test_global_rate_limit_pauses_new_assignments (test_level6_coordinator.Level6CoordinatorTests.test_global_rate_limit_pauses_new_assignments) ... ok
+test_transient_network_failures_do_not_stop_batch (test_level6_coordinator.Level6CoordinatorTests.test_transient_network_failures_do_not_stop_batch) ... ok
+test_worker_recycling_preserves_all_outputs (test_level6_coordinator.Level6CoordinatorTests.test_worker_recycling_preserves_all_outputs) ... ok
+test_orphan_candidate_descendant_is_cleaned (test_process_hygiene.ProcessHygieneTests.test_orphan_candidate_descendant_is_cleaned) ... ok
+test_stale_claim_recovery_does_not_remove_live_claim (test_process_hygiene.ProcessHygieneTests.test_stale_claim_recovery_does_not_remove_live_claim) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 2.884s
+
+OK
+Level 6 acceptance report: /mnt/data/work_level6/note-maker-level5-parallel-runtime/logs/level6-acceptance.json

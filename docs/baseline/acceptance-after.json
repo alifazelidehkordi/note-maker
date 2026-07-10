@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "phase": "phase1-stability",
+  "version": "0.2.0",
+  "created_at": "2026-07-10T07:22:21.088337+00:00",
+  "workspace": "/tmp/note-maker-phase1-n77qhv_v",
+  "passed": true,
+  "checks": [
+    {
+      "name": "batch_failure_and_diagnostics",
+      "passed": true,
+      "duration_seconds": 0.0301,
+      "details": "Partial failure returned 2; valid output survived; invalid candidates and final diagnostics were preserved."
+    },
+    {
+      "name": "retry_failed_and_resume",
+      "passed": true,
+      "duration_seconds": 0.0147,
+      "details": "--retry-failed ran only the failed job; a subsequent unchanged run skipped both jobs without a browser."
+    },
+    {
+      "name": "pdf_book_end_to_end",
+      "passed": true,
+      "duration_seconds": 0.9089,
+      "details": "Rendered 2 topic PDFs and a 4-page combined book (2 index page(s)) with resolved local links and bookmarks."
+    }
+  ]
+}

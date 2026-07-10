@@ -1,0 +1,68 @@
+diff -ru docs/baseline/cli-before/batch-markdown-help.txt docs/baseline/cli-after/batch-markdown-help.txt
+--- docs/baseline/cli-before/batch-markdown-help.txt	2026-07-10 07:18:29.266094006 +0000
++++ docs/baseline/cli-after/batch-markdown-help.txt	2026-07-10 07:22:39.429926247 +0000
+@@ -10,6 +10,7 @@
+                          [--output-ext OUTPUT_EXT] [--no-warm-up]
+                          [--keep-browser] [--manifest MANIFEST] [--no-resume]
+                          [--retry-failed] [--adopt-existing]
++                         [--browser-provider {selenium}] [--parallel-runs N]
+ 
+ Process each ## section in a Markdown file with a prompt and download the
+ generated artifact.
+@@ -45,3 +46,10 @@
+                         pending, or invalidated in the manifest.
+   --adopt-existing      Validate and register untracked existing outputs
+                         instead of rebuilding them.
++  --browser-provider {selenium}
++                        Browser provider to use. Phase 0 freezes the current
++                        Selenium engine; additional providers are introduced
++                        in later phases.
++  --parallel-runs N     Requested number of concurrent browser runs. Phase 0
++                        accepts only 1; parallel execution is introduced after
++                        the single-writer runtime is ready.
+diff -ru docs/baseline/cli-before/batch-pdf-help.txt docs/baseline/cli-after/batch-pdf-help.txt
+--- docs/baseline/cli-before/batch-pdf-help.txt	2026-07-10 07:18:28.965138603 +0000
++++ docs/baseline/cli-after/batch-pdf-help.txt	2026-07-10 07:22:39.119302058 +0000
+@@ -6,7 +6,8 @@
+                     [--close-delay CLOSE_DELAY] [--no-warm-up]
+                     [--keep-browser] [--output-ext OUTPUT_EXT]
+                     [--manifest MANIFEST] [--no-resume] [--retry-failed]
+-                    [--adopt-existing]
++                    [--adopt-existing] [--browser-provider {selenium}]
++                    [--parallel-runs N]
+ 
+ Batch convert PDF/DOCX/MD files to OPML or Markdown via ChatGPT web.
+ 
+@@ -36,3 +37,10 @@
+                         or invalidated in the manifest.
+   --adopt-existing      Validate and register untracked existing outputs
+                         instead of rebuilding them.
++  --browser-provider {selenium}
++                        Browser provider to use. Phase 0 freezes the current
++                        Selenium engine; additional providers are introduced
++                        in later phases.
++  --parallel-runs N     Requested number of concurrent browser runs. Phase 0
++                        accepts only 1; parallel execution is introduced after
++                        the single-writer runtime is ready.
+diff -ru docs/baseline/cli-before/pipeline-help.txt docs/baseline/cli-after/pipeline-help.txt
+--- docs/baseline/cli-before/pipeline-help.txt	2026-07-10 07:18:29.355317833 +0000
++++ docs/baseline/cli-after/pipeline-help.txt	2026-07-10 07:22:39.520467731 +0000
+@@ -9,6 +9,7 @@
+                    [--close-delay CLOSE_DELAY] [--no-warm-up] [--keep-browser]
+                    [--output-ext OUTPUT_EXT] [--manifest MANIFEST]
+                    [--no-resume] [--retry-failed] [--adopt-existing]
++                   [--browser-provider {selenium}] [--parallel-runs N]
+                    {pdf,markdown}
+ 
+ Full pipeline: source file(s) -> OPML -> XMind (.xmind)
+@@ -44,3 +45,10 @@
+   --no-resume           Ignore resume decisions while still recording results
+   --retry-failed        Only run failed or interrupted manifest jobs
+   --adopt-existing      Validate and register untracked existing outputs
++  --browser-provider {selenium}
++                        Browser provider to use. Phase 0 freezes the current
++                        Selenium engine; additional providers are introduced
++                        in later phases.
++  --parallel-runs N     Requested number of concurrent browser runs. Phase 0
++                        accepts only 1; parallel execution is introduced after
++                        the single-writer runtime is ready.

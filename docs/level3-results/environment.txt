@@ -1,0 +1,5 @@
+version=0.5.0
+python=Python 3.13.5
+chromium=Chromium 144.0.7559.96 built on Debian GNU/Linux 13 (trixie)
+chromium_path=/usr/bin/chromium
+platform=Linux 703b9f8e065a 4.4.0 #1 SMP Sun Jan 10 15:06:54 PST 2016 x86_64 GNU/Linux

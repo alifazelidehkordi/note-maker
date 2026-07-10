@@ -1,0 +1,651 @@
+{
+  "scripts/run_chatgpt_temporary_test.py": {
+    "functions": [
+      {
+        "name": "log",
+        "line": 52
+      },
+      {
+        "name": "find_browser_binary",
+        "line": 81
+      },
+      {
+        "name": "pyautogui_module",
+        "line": 86
+      },
+      {
+        "name": "paste_hotkey",
+        "line": 91
+      },
+      {
+        "name": "build_driver",
+        "line": 96
+      },
+      {
+        "name": "wait_for_editor",
+        "line": 101
+      },
+      {
+        "name": "dismiss_cookie_banner",
+        "line": 106
+      },
+      {
+        "name": "login_buttons_visible",
+        "line": 111
+      },
+      {
+        "name": "visible_body_text",
+        "line": 116
+      },
+      {
+        "name": "page_has_load_error",
+        "line": 121
+      },
+      {
+        "name": "reload_and_wait_for_editor",
+        "line": 126
+      },
+      {
+        "name": "wait_until_logged_in",
+        "line": 131
+      },
+      {
+        "name": "start_new_chat",
+        "line": 136
+      },
+      {
+        "name": "select_model",
+        "line": 141
+      },
+      {
+        "name": "set_editor_text",
+        "line": 146
+      },
+      {
+        "name": "editor_text",
+        "line": 151
+      },
+      {
+        "name": "find_enabled_send_button",
+        "line": 156
+      },
+      {
+        "name": "wait_for_send_enabled",
+        "line": 161
+      },
+      {
+        "name": "click_send",
+        "line": 166
+      },
+      {
+        "name": "send_message",
+        "line": 171
+      },
+      {
+        "name": "assistant_message_count",
+        "line": 176
+      },
+      {
+        "name": "wait_until_idle",
+        "line": 181
+      },
+      {
+        "name": "wait_until_editor_ready",
+        "line": 186
+      },
+      {
+        "name": "click_attach_menu",
+        "line": 191
+      },
+      {
+        "name": "native_attach_file",
+        "line": 196
+      },
+      {
+        "name": "dom_attach_file",
+        "line": 201
+      },
+      {
+        "name": "attach_file",
+        "line": 206
+      },
+      {
+        "name": "upload_pending_visible",
+        "line": 211
+      },
+      {
+        "name": "wait_for_file_upload_complete",
+        "line": 216
+      },
+      {
+        "name": "normalize_expected_extensions",
+        "line": 221
+      },
+      {
+        "name": "accepted_artifact_suffixes",
+        "line": 226
+      },
+      {
+        "name": "is_partial_download",
+        "line": 231
+      },
+      {
+        "name": "snapshot_downloads",
+        "line": 236
+      },
+      {
+        "name": "is_artifact_download_file",
+        "line": 241
+      },
+      {
+        "name": "is_opml_download_file",
+        "line": 246
+      },
+      {
+        "name": "is_artifact_download_trigger",
+        "line": 251
+      },
+      {
+        "name": "is_opml_download_trigger",
+        "line": 256
+      },
+      {
+        "name": "newest_download",
+        "line": 261
+      },
+      {
+        "name": "pending_downloads",
+        "line": 266
+      },
+      {
+        "name": "wait_for_download_settled",
+        "line": 271
+      },
+      {
+        "name": "find_artifact_candidates_in_downloads",
+        "line": 276
+      },
+      {
+        "name": "find_opml_candidates_in_downloads",
+        "line": 281
+      },
+      {
+        "name": "element_download_fields",
+        "line": 286
+      },
+      {
+        "name": "click_candidate_and_wait",
+        "line": 291
+      },
+      {
+        "name": "click_new_download_link",
+        "line": 296
+      },
+      {
+        "name": "wait_and_salvage_download",
+        "line": 301
+      },
+      {
+        "name": "resolve_download",
+        "line": 306
+      },
+      {
+        "name": "latest_assistant_text",
+        "line": 311
+      },
+      {
+        "name": "safe_filename",
+        "line": 316
+      },
+      {
+        "name": "run",
+        "line": 321
+      },
+      {
+        "name": "main",
+        "line": 326
+      }
+    ],
+    "classes": [],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 14
+      },
+      {
+        "name": "DEFAULT_PROMPT",
+        "line": 15
+      },
+      {
+        "name": "CHROME_CANDIDATES",
+        "line": 16
+      },
+      {
+        "name": "EDGE_CANDIDATES",
+        "line": 17
+      },
+      {
+        "name": "CHROME_NAMES",
+        "line": 18
+      },
+      {
+        "name": "EDGE_NAMES",
+        "line": 19
+      },
+      {
+        "name": "CHROME_PROFILE_DIR",
+        "line": 20
+      },
+      {
+        "name": "EDGE_PROFILE_DIR",
+        "line": 21
+      },
+      {
+        "name": "DOWNLOAD_DIR",
+        "line": 22
+      },
+      {
+        "name": "TEXT_OUTPUT",
+        "line": 23
+      },
+      {
+        "name": "SCREENSHOT",
+        "line": 24
+      },
+      {
+        "name": "LOG_FILE",
+        "line": 25
+      },
+      {
+        "name": "CHATGPT_URL",
+        "line": 26
+      },
+      {
+        "name": "SEND_SELECTORS",
+        "line": 27
+      }
+    ]
+  },
+  "scripts/batch_common.py": {
+    "functions": [
+      {
+        "name": "batch_log",
+        "line": 36
+      },
+      {
+        "name": "get_browser_provider",
+        "line": 40
+      },
+      {
+        "name": "as_browser_session",
+        "line": 44
+      },
+      {
+        "name": "should_skip_input",
+        "line": 52
+      },
+      {
+        "name": "collect_input_files",
+        "line": 59
+      },
+      {
+        "name": "wait_for_download",
+        "line": 68
+      },
+      {
+        "name": "driver_is_alive",
+        "line": 100
+      },
+      {
+        "name": "quit_driver",
+        "line": 109
+      },
+      {
+        "name": "reset_chat",
+        "line": 118
+      },
+      {
+        "name": "is_temporary_chat_error",
+        "line": 124
+      },
+      {
+        "name": "recover_from_chat_error",
+        "line": 131
+      },
+      {
+        "name": "recreate_driver",
+        "line": 152
+      },
+      {
+        "name": "warm_up",
+        "line": 174
+      },
+      {
+        "name": "should_delete_cookie",
+        "line": 190
+      },
+      {
+        "name": "prune_driver_cookies",
+        "line": 196
+      },
+      {
+        "name": "prune_automation_cookies",
+        "line": 216
+      },
+      {
+        "name": "bootstrap_session",
+        "line": 236
+      },
+      {
+        "name": "save_artifact_download",
+        "line": 275
+      },
+      {
+        "name": "write_batch_summary",
+        "line": 335
+      },
+      {
+        "name": "capture_retry_failure",
+        "line": 367
+      },
+      {
+        "name": "run_with_retries",
+        "line": 442
+      }
+    ],
+    "classes": [
+      {
+        "name": "NoValidArtifactError",
+        "line": 359
+      }
+    ],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 30
+      },
+      {
+        "name": "LOGS_DIR",
+        "line": 31
+      },
+      {
+        "name": "SKIP_NAME_PREFIXES",
+        "line": 32
+      },
+      {
+        "name": "SKIP_NAME_STEMS",
+        "line": 33
+      },
+      {
+        "name": "DELETE_COOKIE_PREFIXES",
+        "line": 186
+      },
+      {
+        "name": "DELETE_COOKIE_EXACT",
+        "line": 187
+      }
+    ]
+  },
+  "scripts/batch_pdf.py": {
+    "functions": [
+      {
+        "name": "process_one",
+        "line": 21
+      },
+      {
+        "name": "run_batch",
+        "line": 79
+      },
+      {
+        "name": "build_parser",
+        "line": 305
+      },
+      {
+        "name": "main",
+        "line": 337
+      }
+    ],
+    "classes": [],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 15
+      },
+      {
+        "name": "DEFAULT_INPUT_DIR",
+        "line": 16
+      },
+      {
+        "name": "DEFAULT_OUTPUT_DIR",
+        "line": 17
+      },
+      {
+        "name": "DEFAULT_PROMPT",
+        "line": 18
+      }
+    ]
+  },
+  "scripts/batch_markdown.py": {
+    "functions": [
+      {
+        "name": "batch_log",
+        "line": 34
+      },
+      {
+        "name": "parse_section_numbers",
+        "line": 38
+      },
+      {
+        "name": "split_markdown_sections",
+        "line": 62
+      },
+      {
+        "name": "select_sections",
+        "line": 79
+      },
+      {
+        "name": "write_markdown_section_file",
+        "line": 91
+      },
+      {
+        "name": "build_section_prompt",
+        "line": 98
+      },
+      {
+        "name": "process_markdown_section",
+        "line": 107
+      },
+      {
+        "name": "run_batch",
+        "line": 159
+      },
+      {
+        "name": "build_parser",
+        "line": 394
+      },
+      {
+        "name": "main",
+        "line": 436
+      }
+    ],
+    "classes": [
+      {
+        "name": "MarkdownSection",
+        "line": 24
+      }
+    ],
+    "constants": [
+      {
+        "name": "ROOT",
+        "line": 18
+      },
+      {
+        "name": "DEFAULT_OUTPUT_DIR",
+        "line": 19
+      },
+      {
+        "name": "DEFAULT_PROMPT",
+        "line": 20
+      }
+    ]
+  },
+  "scripts/diagnostics.py": {
+    "functions": [
+      {
+        "name": "create_run_id",
+        "line": 22
+      },
+      {
+        "name": "hash_text",
+        "line": 27
+      },
+      {
+        "name": "safe_component",
+        "line": 32
+      },
+      {
+        "name": "save_failure_diagnostics",
+        "line": 75
+      }
+    ],
+    "classes": [
+      {
+        "name": "DiagnosticResult",
+        "line": 16
+      }
+    ],
+    "constants": []
+  },
+  "scripts/browser_runtime/contracts.py": {
+    "functions": [],
+    "classes": [
+      {
+        "name": "BrowserSession",
+        "line": 10
+      },
+      {
+        "name": "BrowserProvider",
+        "line": 43
+      }
+    ],
+    "constants": []
+  },
+  "scripts/browser_runtime/models.py": {
+    "functions": [
+      {
+        "name": "normalize_extensions",
+        "line": 8
+      }
+    ],
+    "classes": [
+      {
+        "name": "BrowserLaunchOptions",
+        "line": 21
+      },
+      {
+        "name": "UploadRequest",
+        "line": 30
+      },
+      {
+        "name": "ResponseWaitRequest",
+        "line": 42
+      },
+      {
+        "name": "DownloadRequest",
+        "line": 52
+      },
+      {
+        "name": "BrowserOperationRecord",
+        "line": 68
+      }
+    ],
+    "constants": []
+  },
+  "scripts/browser_runtime/errors.py": {
+    "functions": [],
+    "classes": [
+      {
+        "name": "BrowserRuntimeError",
+        "line": 4
+      },
+      {
+        "name": "BrowserConfigurationError",
+        "line": 8
+      },
+      {
+        "name": "BrowserStartupError",
+        "line": 12
+      },
+      {
+        "name": "BrowserAuthenticationError",
+        "line": 16
+      },
+      {
+        "name": "BrowserNavigationError",
+        "line": 20
+      },
+      {
+        "name": "BrowserUploadError",
+        "line": 24
+      },
+      {
+        "name": "BrowserSendError",
+        "line": 28
+      },
+      {
+        "name": "BrowserResponseTimeout",
+        "line": 32
+      },
+      {
+        "name": "BrowserDownloadError",
+        "line": 36
+      },
+      {
+        "name": "BrowserCrashedError",
+        "line": 40
+      },
+      {
+        "name": "TemporaryChatError",
+        "line": 44
+      },
+      {
+        "name": "UnsupportedBrowserCapability",
+        "line": 48
+      }
+    ],
+    "constants": []
+  },
+  "scripts/browser_runtime/factory.py": {
+    "functions": [
+      {
+        "name": "create_browser_provider",
+        "line": 8
+      },
+      {
+        "name": "ensure_browser_session",
+        "line": 15
+      }
+    ],
+    "classes": [],
+    "constants": []
+  },
+  "scripts/browser_runtime/selenium_provider.py": {
+    "functions": [
+      {
+        "name": "translate_legacy_error",
+        "line": 30
+      }
+    ],
+    "classes": [
+      {
+        "name": "SeleniumBrowserSession",
+        "line": 58
+      },
+      {
+        "name": "SeleniumProvider",
+        "line": 187
+      }
+    ],
+    "constants": []
+  }
+}

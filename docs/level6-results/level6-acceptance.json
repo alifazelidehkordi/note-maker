@@ -1,0 +1,24 @@
+{
+  "acceptance_contracts": [
+    "global rate-limit events pause new assignments",
+    "transient network failures remain within bounded retry budgets",
+    "authentication circuit uses a one-worker startup barrier",
+    "adaptive concurrency scales down and recovers",
+    "worker recycling preserves outputs and resume state",
+    "stale claims and surviving child processes are cleaned safely"
+  ],
+  "duration_seconds": 2.884,
+  "errors": 0,
+  "failures": 0,
+  "generated_at": "2026-07-10T11:28:55.663346+00:00",
+  "modules": [
+    "test_resilience_control",
+    "test_level6_coordinator",
+    "test_process_hygiene"
+  ],
+  "phase": 6,
+  "schema_version": 1,
+  "skipped": 0,
+  "successful": true,
+  "tests_run": 11
+}

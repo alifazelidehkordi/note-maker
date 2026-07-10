@@ -22,6 +22,7 @@ GENERATE_RICH_INDEX="${GENERATE_RICH_INDEX:-0}"
 ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-}"
 INDEX_MD="${INDEX_MD:-${NOTES_DIR}/../STUDY_INDEX-rewritten.md}"
 CSS_FILE="${CSS_FILE:-}"
+BOOK_TITLE="${BOOK_TITLE:-Study Notes}"
 
 echo ""
 echo "Notes dir : ${NOTES_DIR}"
@@ -50,7 +51,7 @@ if [[ "$GENERATE_RICH_INDEX" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
     --parts-dir "$ORIGINAL_PARTS_DIR" \
     --clean-dir "${NOTES_DIR}" \
     --output "$INDEX_MD" \
-    --title "Rewritten Study Notes"
+    --title "$BOOK_TITLE"
 fi
 
 mkdir -p "${PDF_DIR}"
@@ -78,6 +79,8 @@ if [[ "$CREATE_COMBINED" == "1" ]]; then
     --notes-dir "${NOTES_DIR}" \
     --pdf-dir "${PDF_DIR}" \
     --output "${COMBINED_OUTPUT}" \
+    --title "$BOOK_TITLE" \
+    "${CSS_ARG[@]}" \
     "${INDEX_ARG[@]}"
 fi
 

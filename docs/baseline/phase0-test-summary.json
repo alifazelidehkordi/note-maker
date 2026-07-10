@@ -1,0 +1,25 @@
+{
+  "phase": 0,
+  "date": "2026-07-10",
+  "version_before": "0.2.0",
+  "version_after": "0.2.1",
+  "python": "3.13.5",
+  "platform": "Linux-4.4.0-x86_64-with-glibc2.41",
+  "tests_before": {
+    "passed": 78,
+    "failed": 0
+  },
+  "tests_after": {
+    "passed": 86,
+    "failed": 0
+  },
+  "acceptance_before": {
+    "passed": 3,
+    "failed": 0
+  },
+  "acceptance_after": {
+    "passed": 3,
+    "failed": 0
+  },
+  "live_browser_smoke_test": "not run; Phase 0 acceptance is intentionally browser-free"
+}

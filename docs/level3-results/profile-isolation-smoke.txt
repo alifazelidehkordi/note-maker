@@ -1,0 +1,10 @@
+Patchright using Chromium executable: /usr/bin/chromium
+Patchright using Chromium executable: /usr/bin/chromium
+Patchright using Chromium executable: /usr/bin/chromium
+run_id=profile-smoke-65c33382
+snapshot_id=profile-isolation-smoke-20260710T090829Z-303d297b
+worker_1_profile=/tmp/notemaker-level3-profile-runtime/runs/profile-smoke-65c33382/workers/worker-001/profile
+worker_2_profile=/tmp/notemaker-level3-profile-runtime/runs/profile-smoke-65c33382/workers/worker-002/profile
+snapshot_clone=passed
+simultaneous_processes=2
+profile_isolation=passed

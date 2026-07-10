@@ -59,3 +59,13 @@ inputs/*.pdf
 inputs/*.docx
 inputs/*.md
 !inputs/.gitkeep
+patchright_profile/
+chrome_profile_login/
+profile_templates/
+.runtime/
+.runtime-smoke/
+.profile-snapshots-smoke/
+
+# Parallel job claims
+.note-maker-claims/
+*.claim.json
