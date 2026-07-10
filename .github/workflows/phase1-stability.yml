@@ -1,4 +1,4 @@
-name: Final Conversion Traceback
+name: Apply Final Windows Test Repairs
 
 on:
   pull_request:
@@ -6,18 +6,22 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
-    runs-on: windows-latest
+  repair:
+    runs-on: ubuntu-latest
     steps:
-      - name: Clone branch quietly
-        shell: pwsh
-        run: git clone --quiet --depth 1 --branch fix/windows-test-stability "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" .
-      - name: Install dependencies quietly
-        shell: pwsh
-        run: py -3.12 -m pip install -q -r requirements.txt
-      - name: Run failing conversion test
-        shell: pwsh
-        run: py -3.12 -m unittest tests.test_convert_md_to_pdf.ConvertMdToPdfTests.test_batch_convert_reports_partial_failures_and_continues -v
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/windows-test-stability
+          fetch-depth: 0
+      - name: Apply final repairs
+        run: python scripts/apply_final_windows_repair.py
+      - name: Commit clean repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: keep Windows PDF test output portable"
+          git push origin HEAD:fix/windows-test-stability
