@@ -11,14 +11,42 @@
 
 </div>
 
-```text
-PDF / DOCX / Markdown
-        ↓
-ChatGPT web automation
-        ↓
-Validated, structured Markdown notes
-        ↓
-Study index + themed PDFs + combined book
+```mermaid
+flowchart LR
+    subgraph INPUTS["Source documents"]
+        direction TB
+        PDF["📄 PDF"]
+        DOCX["📝 DOCX"]
+        MD["✍️ Markdown"]
+    end
+
+    AUTO["🤖 ChatGPT<br/>web automation"]
+    NOTES["✅ Validated, structured<br/>Markdown notes"]
+
+    subgraph OUTPUTS["Study-ready outputs"]
+        direction TB
+        INDEX["🗂️ Study index"]
+        PDFS["🎨 Themed PDFs"]
+        BOOK["📚 Combined book"]
+    end
+
+    PDF --> AUTO
+    DOCX --> AUTO
+    MD --> AUTO
+    AUTO --> NOTES
+    NOTES --> INDEX
+    NOTES --> PDFS
+    NOTES --> BOOK
+
+    classDef source fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#1e1b4b;
+    classDef process fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#172554;
+    classDef notes fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#022c22;
+    classDef output fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#431407;
+
+    class PDF,DOCX,MD source;
+    class AUTO process;
+    class NOTES notes;
+    class INDEX,PDFS,BOOK output;
 ```
 
 Note Maker is a local automation toolkit for repeatable, high-volume note production. It drives the ChatGPT web UI, uploads source material, captures downloadable artifacts, validates generated files, resumes interrupted batches, and optionally converts the results into publication-ready study PDFs.
