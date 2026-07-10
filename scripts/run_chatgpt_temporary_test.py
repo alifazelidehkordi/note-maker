@@ -97,6 +97,12 @@ def build_driver(*args, **kwargs):
     return _delegate_call('build_driver', *args, **kwargs)
 
 
+def _build_driver_with_paths(*args, **kwargs):
+    """Private provider hook that preserves managed profile/download paths."""
+    _sync_legacy_namespace()
+    return _legacy._build_driver_with_paths(*args, **kwargs)
+
+
 @wraps(_ORIGINALS['wait_for_editor'])
 def wait_for_editor(*args, **kwargs):
     return _delegate_call('wait_for_editor', *args, **kwargs)
