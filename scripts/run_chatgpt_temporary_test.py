@@ -9,6 +9,7 @@ test seams during the migration.
 from __future__ import annotations
 
 from functools import wraps
+import time
 from browser_runtime import selenium_legacy as _legacy
 
 ROOT = _legacy.ROOT
@@ -294,8 +295,86 @@ def element_download_fields(*args, **kwargs):
 
 
 @wraps(_ORIGINALS['click_candidate_and_wait'])
-def click_candidate_and_wait(*args, **kwargs):
-    return _delegate_call('click_candidate_and_wait', *args, **kwargs)
+def click_candidate_and_wait(
+    driver,
+    element,
+    before,
+    *,
+    expected_extensions,
+    started_at_ns,
+):
+    """Click an artifact card and handle ChatGPT's preview download UI."""
+    _sync_legacy_namespace()
+    text, href, title, aria, context = element_download_fields(element)
+    if not is_artifact_download_trigger(
+        text=text,
+        href=href,
+        title=title,
+        aria=aria,
+        context=context,
+        expected_extensions=expected_extensions,
+    ):
+        return None
+
+    label = (text or aria or title or href or '')[:120]
+    log(f"Clicking artifact download candidate: {label!r}")
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    time.sleep(0.4)
+    driver.execute_script("arguments[0].click();", element)
+
+    # Generated files may open in a preview. In that case the card is only the
+    # first click and the preview header's Download button starts the real save.
+    preview_deadline = time.time() + 5
+    while time.time() < preview_deadline:
+        preview_buttons = []
+        for selector in (
+            "button[aria-label='Download' i]",
+            "button[title='Download' i]",
+            "button[data-testid='download' i]",
+            "[role='button'][aria-label='Download' i]",
+            "[role='button'][title='Download' i]",
+        ):
+            try:
+                preview_buttons.extend(
+                    driver.find_elements(_legacy.By.CSS_SELECTOR, selector)
+                )
+            except Exception:
+                continue
+        for button in reversed(preview_buttons):
+            try:
+                if not button.is_displayed() or button == element:
+                    continue
+                button_label = (
+                    button.get_attribute('aria-label')
+                    or button.get_attribute('title')
+                    or button.text
+                    or 'Download'
+                )
+                if button_label.strip().lower() != 'download':
+                    continue
+                log(f"Clicking artifact preview download button: {button_label!r}")
+                driver.execute_script("arguments[0].click();", button)
+                preview_deadline = 0
+                break
+            except Exception:
+                continue
+        if preview_deadline == 0:
+            break
+        time.sleep(0.25)
+
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        downloaded = wait_for_download_settled(
+            before,
+            expected_extensions=expected_extensions,
+            started_at_ns=started_at_ns,
+            timeout=3,
+        )
+        if downloaded:
+            log(f"Download detected after click: {downloaded.name}")
+            return downloaded
+        time.sleep(0.8)
+    return None
 
 
 @wraps(_ORIGINALS['click_new_download_link'])
