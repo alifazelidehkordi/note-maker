@@ -18,7 +18,8 @@ def _compact_summary(output: str, returncode: int) -> str:
         summary = " | ".join(lines[-3:]) if lines else f"unittest exited {returncode}"
     else:
         summary = "all tests passed"
-    return summary.replace("\r", " ").replace("\n", " ")[:220]
+    summary = summary.replace("\r", " ").replace("\n", " ")[:220]
+    return summary.encode("ascii", errors="backslashreplace").decode("ascii")
 
 
 def _write_github_outputs(summary: str, returncode: int) -> None:
@@ -48,7 +49,7 @@ def main() -> int:
     log_path = Path("logs") / "unit-test-output.txt"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(output, encoding="utf-8")
-    print(output, end="")
+    print(summary)
 
     # A dependent reporting job converts the captured return code back into
     # the workflow result after its display name has exposed the summary.
