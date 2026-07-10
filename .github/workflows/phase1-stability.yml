@@ -8,19 +8,13 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
-    name: Minimal Windows diagnostic
+  list-tests:
+    name: List Windows test modules
     runs-on: windows-latest
     steps:
       - name: Clone diagnostic branch
         shell: pwsh
         run: git clone --quiet --depth 1 --branch fix/windows-test-stability "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" .
-      - name: Install dependencies quietly
+      - name: List test modules
         shell: pwsh
-        run: py -3.12 -m pip install -q -r requirements.txt
-      - name: Compile sources
-        shell: pwsh
-        run: py -3.12 -m compileall -q scripts tests
-      - name: Run diagnostic wrapper
-        shell: pwsh
-        run: py -3.12 scripts/run_ci_unittests.py
+        run: Get-ChildItem tests -Filter 'test_*.py' | Sort-Object Name | ForEach-Object { $_.Name }
