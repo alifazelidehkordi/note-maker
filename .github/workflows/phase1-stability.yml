@@ -1,62 +1,42 @@
-name: Final Windows Failure Isolation
+name: Minimal Final Windows Failure Isolation
 
 on:
   pull_request:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   diagnose:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Clone branch quietly
+        shell: pwsh
+        run: git clone --quiet --depth 1 --branch fix/windows-test-stability "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" .
+      - name: Install dependencies quietly
+        shell: pwsh
+        run: py -3.12 -m pip install -q -r requirements.txt
       - name: Run modules independently
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
           $files = @(
-            'test_artifact_validation.py',
-            'test_atomic_artifact_save.py',
-            'test_batch_diagnostics_integration.py',
-            'test_browser_response_state_machine.py',
-            'test_browser_runtime_architecture.py',
-            'test_browser_runtime_contracts.py',
-            'test_combined_pdf_links.py',
-            'test_convert_md_to_pdf.py',
-            'test_diagnostics.py',
-            'test_download_contract.py',
-            'test_download_detection.py',
-            'test_fake_browser_provider.py',
-            'test_job_claims.py',
-            'test_job_planner.py',
-            'test_level6_coordinator.py',
-            'test_manifest_v2.py',
-            'test_manifest.py',
-            'test_parallel_batch_dispatch.py',
-            'test_parallel_coordinator.py',
-            'test_patchright_downloads.py',
-            'test_patchright_provider.py',
-            'test_phase1_acceptance.py',
-            'test_planner_architecture.py',
-            'test_process_hygiene.py',
-            'test_process_liveness.py',
-            'test_profile_manager.py',
-            'test_resilience_control.py',
-            'test_resume_integration.py',
-            'test_run_summary_paths.py',
-            'test_runtime_flags.py',
+            'test_artifact_validation.py','test_atomic_artifact_save.py','test_batch_diagnostics_integration.py',
+            'test_browser_response_state_machine.py','test_browser_runtime_architecture.py','test_browser_runtime_contracts.py',
+            'test_combined_pdf_links.py','test_convert_md_to_pdf.py','test_diagnostics.py','test_download_contract.py',
+            'test_download_detection.py','test_fake_browser_provider.py','test_job_claims.py','test_job_planner.py',
+            'test_level6_coordinator.py','test_manifest_v2.py','test_manifest.py','test_parallel_batch_dispatch.py',
+            'test_parallel_coordinator.py','test_patchright_downloads.py','test_patchright_provider.py','test_phase1_acceptance.py',
+            'test_planner_architecture.py','test_process_hygiene.py','test_process_liveness.py','test_profile_manager.py',
+            'test_resilience_control.py','test_resume_integration.py','test_run_summary_paths.py','test_runtime_flags.py',
             'test_session_bootstrap.py'
           )
           $failed = $false
           foreach ($file in $files) {
-            cmd.exe /d /s /c "python -m unittest discover -s tests -p $file -v > module.log 2>&1"
+            cmd.exe /d /s /c "py -3.12 -m unittest discover -s tests -p $file -v > module.log 2>&1"
             $code = $LASTEXITCODE
             if ($code -ne 0) {
               $failed = $true
