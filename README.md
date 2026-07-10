@@ -1,24 +1,49 @@
+<div align="center">
+
 # ChatGPT Note Maker
 
-[![Version](https://img.shields.io/badge/version-0.8.1-blue)](CHANGELOG.md) [![Tests](https://img.shields.io/badge/tests-169%20passing-brightgreen)](#testing)
+**Turn PDFs, DOCX files, and long Markdown documents into structured study notes through the ChatGPT web interface — then export polished PDFs and combined study books.**
 
-Automate lecture-note workflows with the **ChatGPT web UI**:
+[![Version](https://img.shields.io/badge/version-0.8.1-2563eb)](CHANGELOG.md)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](#requirements)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-64748b)](#requirements)
+[![Tests](https://img.shields.io/badge/tests-169%20passing-16a34a)](#testing)
+
+</div>
 
 ```text
 PDF / DOCX / Markdown
         ↓
 ChatGPT web automation
         ↓
-Clean structured Markdown notes
+Validated, structured Markdown notes
         ↓
-Optional study PDFs + rich STUDY_INDEX + combined book
+Study index + themed PDFs + combined book
 ```
 
-Designed for dense university and medical material (validated on a 39-topic pathophysiology corpus), but works with any prompt that makes ChatGPT return a downloadable artifact such as Markdown or OPML.
+Note Maker is a local automation toolkit for repeatable, high-volume note production. It drives the ChatGPT web UI, uploads source material, captures downloadable artifacts, validates generated files, resumes interrupted batches, and optionally converts the results into publication-ready study PDFs.
 
----
+It was built for dense university and medical material, but the workflow works with any prompt that asks ChatGPT to return a downloadable Markdown or OPML artifact.
 
-## Quick Start
+> [!IMPORTANT]
+> This project automates the ChatGPT website. UI changes, rate limits, authentication challenges, and account restrictions can affect runs. Start with one worker and non-sensitive test files.
+
+## Highlights
+
+- **Batch processing** for PDF, DOCX, and Markdown section workflows
+- **Managed browser sessions** with reusable login snapshots and isolated worker profiles
+- **Selenium or Patchright** browser providers
+- **Safe resume support** using content hashes and a persistent manifest
+- **Output validation** before an existing note is replaced
+- **Parallel execution** with isolated workers and dynamic job dispatch
+- **Rate-limit and authentication protection** through global cooldowns and circuit breakers
+- **Diagnostics** including metadata, response captures, and screenshots for final failures
+- **Study-index generation** with chapter, session, page-range, and study-focus metadata
+- **High-quality PDF export** with themes, presets, RTL detection, and custom CSS
+- **Combined study books** with bookmarks, internal links, and continuous page numbering
+- **Legacy OPML/XMind workflows** for mind-map generation
+
+## Quick start
 
 ### 1. Install
 
@@ -29,30 +54,31 @@ chmod +x setup.sh run_*.sh
 ./setup.sh
 ```
 
-Windows: run `setup.cmd`.
+On Windows, run:
 
-**Linux PDF prerequisites** (skip if you only need Markdown):
-
-```bash
-sudo apt install -y python3-tk python3-dev chromium-browser \
-  libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
-  libffi-dev shared-mime-info fonts-vazirmatn fonts-noto-core
+```bat
+setup.cmd
 ```
 
 ### 2. Create a reusable ChatGPT login snapshot
 
-Log in once in a dedicated reference profile, then close the browser so the snapshot can be created safely.
+Log in once using a dedicated browser profile, then close the browser before creating the snapshot.
 
 ```bash
 ./run_login.sh --profile chrome_profile_login --snapshot-name default
-# Windows: run_login.cmd --profile chrome_profile_login --snapshot-name default
 ```
 
-Reuse the snapshot with `--profile-snapshot default`. Workers receive isolated profile clones; the original login profile is never shared.
+Windows:
 
-### 3. Rewrite your first batch
+```bat
+run_login.cmd --profile chrome_profile_login --snapshot-name default
+```
 
-Put PDFs or DOCX files in `inputs/`, then run:
+The snapshot is copied into isolated profiles for each run or worker. The original login profile is not shared directly.
+
+### 3. Rewrite a batch
+
+Place source files in `inputs/`, then run:
 
 ```bash
 ./run_pdf_to_notes.sh \
@@ -61,9 +87,9 @@ Put PDFs or DOCX files in `inputs/`, then run:
   --overwrite
 ```
 
-Output Markdown files are written to `outputs/notes/`.
+Generated Markdown files are written to `outputs/notes/`.
 
-### 4. Build study PDFs and a combined book
+### 4. Build PDFs and a combined book
 
 ```bash
 NOTES_DIR=outputs/notes \
@@ -73,60 +99,43 @@ COMBINED_OUTPUT=outputs/notes/COMBINED_NOTES.pdf \
 ./run_notes_to_pdf.sh
 ```
 
-Combined PDFs in **v0.8.1** use one continuous visible page-number sequence across the generated index and all topic PDFs. PDF page labels match the visible numbering.
-
----
-
-## Features
-
-| Capability | Description |
-|---|---|
-| Batch rewriting | Process a folder of PDFs/DOCX files or split one long Markdown file by `##` sections |
-| ChatGPT web automation | Upload files, send prompts, detect downloadable artifacts, and save validated outputs |
-| Browser providers | Selenium is the default; Patchright is available for persistent contexts and event-first downloads |
-| Managed sessions | Create authenticated snapshots and restore them into isolated per-run/per-worker browser profiles |
-| Structured notes | Default prompt produces `# Title`, `## Explanation`, and `## Key Points` |
-| Resume support | Manifest-backed hash resume skips unchanged completed work |
-| Validation & diagnostics | Structural checks before replacing outputs; final failures save metadata, response, and screenshot |
-| Parallel runtime | Run 1–16 isolated browser workers with dynamic job dispatch |
-| Level 6 resilience | Global cooldowns, auth/rate circuits, adaptive concurrency, retry budgets, and worker recycling |
-| Study index | Generate `STUDY_INDEX-rewritten.md` with chapters, sessions, page ranges, and study focus |
-| PDF export | WeasyPrint themes, presets, RTL detection, and custom CSS |
-| Combined books | Merge index and topic PDFs with internal links, bookmarks, and continuous numbering |
-| Legacy mind maps | Generate OPML and XMind files from PDFs or Markdown sections |
-
----
+Combined books use one continuous visible page-number sequence across the generated index and all topic PDFs.
 
 ## Requirements
 
-| Dependency | Purpose |
+| Requirement | Notes |
 |---|---|
-| Python 3.10+ | Automation scripts |
-| Google Chrome or Chromium | ChatGPT browser automation |
-| ChatGPT account | Required for authenticated web UI runs |
-| Linux or Windows | Shell and CMD runners are provided |
-| WeasyPrint dependencies | Required only for PDF export |
+| Python 3.10+ | Runs the automation and document-processing scripts |
+| Google Chrome or Chromium | Required for ChatGPT web automation |
+| ChatGPT account | Required for authenticated browser sessions |
+| Linux or Windows | Shell and CMD launchers are included |
+| WeasyPrint system libraries | Needed only for PDF export |
 
-Python dependencies are installed by `setup.sh` from `requirements.txt`:
+Python packages are installed from `requirements.txt`, including Selenium, Patchright, WeasyPrint, pypdf, Markdown, PyYAML, PyAutoGUI, and clipboard helpers.
 
-```text
-selenium  pyautogui  pyperclip  markdown  weasyprint  pypdf  pyyaml
-patchright==1.61.2  playwright-stealth==2.0.3
+### Linux PDF prerequisites
+
+Skip this step when you only need Markdown output.
+
+```bash
+sudo apt install -y python3-tk python3-dev chromium-browser \
+  libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
+  libffi-dev shared-mime-info fonts-vazirmatn fonts-noto-core
 ```
 
----
+Package names may vary by distribution.
 
-## Workflows
+## Choose a workflow
 
-| You have… | Run this | You get… |
+| Input or goal | Command | Result |
 |---|---|---|
-| PDFs/DOCX in `inputs/` | `./run_pdf_to_notes.sh --overwrite` | Clean `.md` in `outputs/notes/` |
-| One long `.md` with `##` sections | `MARKDOWN_FILE=lecture.md ./run_md_to_notes.sh` | One `.md` per section |
-| Clean notes on disk | `./run_notes_to_pdf.sh` | Individual PDFs (+ optional combined book) |
-| Original parts + rewritten notes | `ORIGINAL_PARTS_DIR=/path/to/parts ./run_notes_to_pdf.sh` | Notes with `pdf_pages` frontmatter |
-| Parts + notes, need study index | Add `GENERATE_RICH_INDEX=1` | `STUDY_INDEX-rewritten.md` |
-| Full pipeline | `run_pdf_to_notes.sh` with `DO_PDF=1 CREATE_COMBINED=1 ENRICH_SOURCE=1 GENERATE_RICH_INDEX=1` | Rewrite → enrich → index → PDF → combined |
-| OPML mind maps (legacy) | `./run_pdf_to_xmind.sh` | OPML + themed XMind files |
+| PDFs or DOCX files in `inputs/` | `./run_pdf_to_notes.sh --overwrite` | Structured Markdown notes |
+| One Markdown file split by `##` headings | `MARKDOWN_FILE=lecture.md ./run_md_to_notes.sh` | One note per section |
+| Existing notes | `./run_notes_to_pdf.sh` | Individual study PDFs |
+| Notes plus original page metadata | Set `ORIGINAL_PARTS_DIR` | Enriched frontmatter |
+| Rich study index | Add `GENERATE_RICH_INDEX=1` | `STUDY_INDEX-rewritten.md` |
+| Complete pipeline | Enable PDF, enrichment, index, and combined output flags | Notes → index → PDFs → book |
+| OPML/XMind mind maps | `./run_pdf_to_xmind.sh` | OPML and XMind files |
 
 ### Full pipeline example
 
@@ -134,165 +143,71 @@ patchright==1.61.2  playwright-stealth==2.0.3
 ORIGINAL_PARTS_DIR=/path/to/original-parts \
 NOTES_DIR=outputs/clean-notes \
 PDF_DIR=outputs/clean-notes/pdfs \
-DO_PDF=1 CREATE_COMBINED=1 ENRICH_SOURCE=1 GENERATE_RICH_INDEX=1 \
+DO_PDF=1 \
+CREATE_COMBINED=1 \
+ENRICH_SOURCE=1 \
+GENERATE_RICH_INDEX=1 \
 ./run_pdf_to_notes.sh --overwrite
 ```
 
-| Step | Script | Output |
-|---|---|---|
-| 1 | `batch_pdf.py` | Rewritten topic Markdown files |
-| 2 | `enrich_rewritten_notes.py` | Notes with copied source metadata |
-| 3 | `generate_study_index.py` | `STUDY_INDEX-rewritten.md` |
-| 4 | `convert_md_to_pdf.py` | Individual topic PDFs |
-| 5 | `create_combined_pdf.py` | Combined study book |
+The pipeline runs these stages:
 
-Files named `00_INDEX*`, `INDEX`, or `README` are skipped in batch folders.
+1. Rewrite each source into structured Markdown.
+2. Copy source metadata into matching rewritten notes.
+3. Generate a rich study index.
+4. Render individual PDFs.
+5. Merge the index and topics into a combined book.
 
-### Output note format
+Files named like `00_INDEX*`, `INDEX`, or `README` are ignored as batch topics.
 
-The default prompt (`prompts/prompt-rewrite-notes.md`) asks ChatGPT to produce downloadable Markdown:
+## Expected note format
+
+The default prompt in `prompts/prompt-rewrite-notes.md` asks ChatGPT to create a downloadable Markdown file with a predictable structure:
 
 ```markdown
 # Main Title
 
 ## Explanation
-Structured explanation with clear mechanisms and bold key terms.
+A structured explanation with clear mechanisms and **important terms**.
 
 ## Key Points
 - High-yield review point
+- Another concise takeaway
 ```
 
-The automation expects a downloadable file link — not plain chat text.
+The automation expects a **downloadable artifact link**, not only text displayed in the conversation.
 
----
+## Browser sessions and parallel runs
 
-## Study Index
-
-`generate_study_index.py` creates `STUDY_INDEX-rewritten.md` with overview, chapter index, per-chapter tables, and a quick-reference summary.
-
-Original split parts should carry YAML frontmatter for page metadata:
-
-```yaml
----
-part: 1
-chapter: 1
-title: "Blood Cells, Haematopoiesis, and Growth Factors"
-pdf_pages: "1-8"
-book_pages: "—"
-source: "lecture-slides.pdf"
----
-```
-
-`enrich_rewritten_notes.py` copies `pdf_pages`, `book_pages`, `source`, `chapter`, and `part` when filenames match between `ORIGINAL_PARTS_DIR` and `NOTES_DIR`.
-
-Generate manually:
-
-```bash
-python scripts/generate_study_index.py \
-  --parts-dir /path/to/original-parts \
-  --clean-dir outputs/notes \
-  --output outputs/notes/STUDY_INDEX-rewritten.md \
-  --title "Course Notes"
-```
-
-When merging, `create_combined_pdf.py` places the index at the front and rewrites session titles to internal PDF destinations.
-
----
-
-## PDF Export
-
-Powered by `scripts/convert_md_to_pdf.py` (WeasyPrint).
-
-| Theme | Style |
-|---|---|
-| `medical-blue` *(default)* | Blue headings, soft Key Points boxes |
-| `ink` | Neutral grayscale, print-friendly |
-| `emerald` | Green accent, calm reading |
-
-| Preset | Use case |
-|---|---|
-| `study` *(default)* | Balanced density for daily review |
-| `compact` | More content per page |
-| `comfortable` | Larger type and margins |
-| `print` | Conservative ink usage |
-
-```bash
-# Single file
-python scripts/convert_md_to_pdf.py note.md --rtl --preset compact --theme emerald
-
-# Batch folder
-python scripts/convert_md_to_pdf.py outputs/notes --batch --output outputs/notes/pdfs
-
-# Custom CSS via shell wrapper
-CSS_FILE=~/.obsidian/print.css ./run_notes_to_pdf.sh
-```
-
-Strips YAML frontmatter, highlights Key Points/Warnings, auto-detects RTL, and exits with code `2` on partial batch failures.
-
----
-
-## Combined Study Books
-
-`create_combined_pdf.py` merges the study index and topic PDFs into one book.
-
-```bash
-python scripts/create_combined_pdf.py \
-  --notes-dir outputs/notes \
-  --pdf-dir outputs/notes/pdfs \
-  --output outputs/notes/COMBINED_NOTES.pdf \
-  --title "Study Notes"
-```
-
-### Continuous page numbering (v0.8.1)
-
-By default, combined PDFs receive one continuous visible page-number sequence across the index and all topics. PDF page labels match the visible numbering. Per-topic footer counters are masked before the final number is stamped.
-
-```bash
-# Start at page 25
-python scripts/create_combined_pdf.py ... --page-number-start 25
-
-# Keep older per-component numbering
-python scripts/create_combined_pdf.py ... --no-continuous-page-numbers
-
-# Forward custom CSS to index and page-number overlay
-python scripts/create_combined_pdf.py ... --css ~/.obsidian/print.css
-```
-
-Meta files (`STUDY_INDEX-*`, `COMBINED_NOTES`, `README`) are excluded from topic selection.
-
----
-
-## Browser Runtime & Level 6 Resilience
-
-| Provider | Status | Notes |
-|---|---|---|
-| Selenium | Default | Compatible legacy provider |
-| Patchright | Opt-in | Persistent contexts, typed recovery, event-first downloads |
-
-Recommended managed run:
+Recommended first run:
 
 ```bash
 ./run_pdf_to_notes.sh \
   --browser-provider patchright \
   --profile-snapshot default \
-  --parallel-runs 2
+  --parallel-runs 1
 ```
 
-Each worker gets isolated `profile/`, `downloads/`, `logs/`, and `diagnostics/` under `.runtime/runs/<run-id>/workers/<worker-id>/`.
+After confirming that login, uploads, downloads, and validation work reliably, increase the worker count gradually.
 
-**Level 6 resilience** (v0.8.0) adds Coordinator-owned controls without giving workers manifest write access:
+Each worker receives isolated runtime directories for its browser profile, downloads, logs, and diagnostics under:
 
-| Control | Description |
-|---|---|
-| Global rate-limit cooldown | Any worker rate-limit signal pauses new assignments temporarily |
-| Auth circuit | Repeated auth failures stop the run instead of opening many failing sessions |
-| Severe rate circuit | Too many rate-limit events abort the run |
-| Category retry budgets | Separate limits for network, browser, download, and rate-limit failures |
-| Adaptive concurrency | Optional scale-down of active worker slots during rate pressure |
-| Worker recycling | Replace workers after job-count or RSS thresholds |
-| Stale-claim recovery | Reclaim abandoned jobs safely on startup |
+```text
+.runtime/runs/<run-id>/workers/<worker-id>/
+```
 
-Example resilient parallel run:
+### Resilience controls
+
+The coordinator provides:
+
+- global cooldowns after rate-limit signals;
+- authentication and severe-rate circuit breakers;
+- separate retry budgets for network, browser, download, and rate-limit failures;
+- optional adaptive concurrency;
+- worker recycling by job count or memory threshold;
+- stale-claim recovery after interrupted runs.
+
+Example:
 
 ```bash
 ./run_pdf_to_notes.sh \
@@ -308,127 +223,185 @@ Example resilient parallel run:
   --rate-limit-retries 2
 ```
 
-Start with `--parallel-runs 1` or `2` for first use; scale up once stable.
+## Resume, validation, and diagnostics
 
----
+A manifest records the input hash, prompt hash, status, attempts, output path, and validation result for each job.
 
-## CLI Reference
+Common options:
 
-### Shared batch flags
-
-| Flag | Description |
+| Option | Purpose |
 |---|---|
-| `--overwrite` | Regenerate files that already exist |
-| `--limit N` | Process only the first N items |
-| `--model "GPT-4o"` | ChatGPT model label in UI |
-| `--browser-provider {selenium,patchright}` | Choose browser provider |
-| `--profile-snapshot ID_OR_PATH` | Restore worker profile from authenticated snapshot |
-| `--parallel-runs N` | Run 1–16 isolated browser workers |
-| `--manifest PATH` | Custom manifest path |
-| `--no-resume` | Ignore resume decisions |
-| `--retry-failed` | Run failed, interrupted, pending, or invalidated jobs |
+| `--overwrite` | Regenerate outputs that already exist |
+| `--limit N` | Process only the first `N` items |
+| `--no-resume` | Ignore prior manifest decisions |
+| `--retry-failed` | Retry failed, interrupted, pending, or invalidated jobs |
 | `--adopt-existing` | Validate and register existing untracked outputs |
 | `--save-diagnostics` | Save diagnostics for every failed retry |
-| `--pdf` / `--combined` | Aliases for `DO_PDF=1` / `CREATE_COMBINED=1` |
-| `--sections 1,3,5-8` | Markdown mode section filter |
+| `--manifest PATH` | Use a custom manifest file |
+| `--sections 1,3,5-8` | Process selected Markdown sections |
 
-### Resilience flags
+An existing output is only replaced after the new artifact passes structural validation. Final failures can preserve response text, metadata, and screenshots for debugging.
 
-| Flag | Default | Description |
-|---|---:|---|
-| `--global-rate-limit-cooldown SECONDS` | `180` | Pause new assignments after rate-limit signal |
-| `--auth-failures-before-abort N` | `2` | Open auth circuit after repeated auth failures |
-| `--rate-limit-failures-before-abort N` | `6` | Abort after severe rate-limit pressure; `0` disables |
-| `--adaptive-concurrency` | off | Reduce active dispatch slots during repeated rate limits |
-| `--adaptive-recovery-seconds SECONDS` | `900` | Quiet period before recovering one worker slot |
-| `--worker-max-jobs N` | `20` | Recycle worker after completed jobs; `0` disables |
-| `--worker-memory-limit-mb MB` | `0` | Recycle worker after process-tree RSS threshold |
-| `--network-retries N` | `4` | Retry budget for network failures |
-| `--browser-retries N` | `3` | Retry budget for browser/runtime failures |
-| `--download-retries N` | `2` | Retry budget for download failures |
-| `--rate-limit-retries N` | `2` | Retry budget after rate-limit responses |
+## Study index and source metadata
 
-### Combined PDF flags
+Original split parts can include YAML frontmatter:
 
-```text
---page-number-start N          Start visible numbering at N (default: 1)
---no-continuous-page-numbers   Keep per-component numbering
---css FILE                     Custom CSS for index and page-number overlay
---index-md FILE                Supply a custom study index
+```yaml
+---
+part: 1
+chapter: 1
+title: "Blood Cells, Haematopoiesis, and Growth Factors"
+pdf_pages: "1-8"
+book_pages: "—"
+source: "lecture-slides.pdf"
+---
 ```
 
----
+`enrich_rewritten_notes.py` copies matching metadata into rewritten notes. `generate_study_index.py` then creates an overview, chapter index, per-chapter session tables, and a quick-reference section.
 
-## Environment Variables
+Manual generation:
 
-| Variable | Default | Description |
-|---|---|---|
-| `INPUT_DIR` | `inputs` | Source PDFs/DOCX |
-| `NOTES_DIR` | `outputs/notes` | Rewritten Markdown output |
-| `PROMPT_FILE` | `prompts/prompt-rewrite-notes.md` | ChatGPT prompt |
-| `DO_PDF` | `0` | Enable PDF export after rewrite |
-| `PDF_DIR` | `NOTES_DIR/pdfs` | Individual PDF output |
-| `CREATE_COMBINED` | `0` | Build merged PDF |
-| `ENRICH_SOURCE` | `0` | Copy page metadata from original parts |
-| `GENERATE_RICH_INDEX` | `0` | Generate `STUDY_INDEX-rewritten.md` |
-| `ORIGINAL_PARTS_DIR` | — | Source parts for enrich + index |
-| `CSS_FILE` | — | Extra CSS for PDF and combined generation |
-| `CHATGPT_PROFILE_SNAPSHOT` | — | Snapshot id or path for managed workers |
-| `CHATGPT_RUNTIME_DIR` | `.runtime` | Per-run/per-worker runtime root |
+```bash
+python scripts/generate_study_index.py \
+  --parts-dir /path/to/original-parts \
+  --clean-dir outputs/notes \
+  --output outputs/notes/STUDY_INDEX-rewritten.md \
+  --title "Course Notes"
+```
 
----
+## PDF export
+
+PDF rendering is powered by `scripts/convert_md_to_pdf.py` and WeasyPrint.
+
+### Themes
+
+| Theme | Style |
+|---|---|
+| `medical-blue` | Blue headings and soft Key Points boxes |
+| `ink` | Neutral, grayscale, print-friendly output |
+| `emerald` | Calm green accents |
+
+### Presets
+
+| Preset | Best for |
+|---|---|
+| `study` | Balanced everyday reading |
+| `compact` | More content per page |
+| `comfortable` | Larger type and margins |
+| `print` | Conservative ink usage |
+
+```bash
+# One file
+python scripts/convert_md_to_pdf.py note.md --rtl --preset compact --theme emerald
+
+# A directory
+python scripts/convert_md_to_pdf.py outputs/notes --batch --output outputs/notes/pdfs
+
+# Custom CSS
+CSS_FILE=~/.obsidian/print.css ./run_notes_to_pdf.sh
+```
+
+The converter strips YAML frontmatter, styles important sections, detects RTL content, and returns exit code `2` when a batch completes with partial failures.
+
+## Combined study books
+
+```bash
+python scripts/create_combined_pdf.py \
+  --notes-dir outputs/notes \
+  --pdf-dir outputs/notes/pdfs \
+  --output outputs/notes/COMBINED_NOTES.pdf \
+  --title "Study Notes"
+```
+
+Useful options:
+
+```bash
+# Begin visible numbering at 25
+python scripts/create_combined_pdf.py ... --page-number-start 25
+
+# Preserve legacy per-component numbering
+python scripts/create_combined_pdf.py ... --no-continuous-page-numbers
+
+# Apply custom CSS to the index and page-number overlay
+python scripts/create_combined_pdf.py ... --css ~/.obsidian/print.css
+```
+
+Study-index files, combined-book outputs, and README files are excluded from topic selection.
 
 ## Testing
 
-```bash
-./run_tests.sh    # or: npm test
-```
-
-**169 tests** covering browser providers, managed profiles, manifest resume, parallel coordination, Level 6 resilience, PDF rendering, combined books, internal links, and release acceptance.
-
-Deterministic release acceptance (no browser, no ChatGPT):
+Run the main test suite:
 
 ```bash
-./run_phase1_acceptance.sh
-# Windows: run_phase1_acceptance.cmd
+npm test
 ```
 
-Returns `0` on success, `2` on failure. Writes `logs/phase1-acceptance.json`. See [`docs/PHASE1_ACCEPTANCE_FA.md`](docs/PHASE1_ACCEPTANCE_FA.md) and [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
+Run acceptance checks:
 
----
+```bash
+npm run acceptance
+```
+
+Run the Level 6 acceptance suite:
+
+```bash
+npm run acceptance:level6
+```
+
+## Project layout
+
+```text
+note-maker/
+├── inputs/                  # Source PDFs and DOCX files
+├── outputs/                 # Generated notes, PDFs, and books
+├── prompts/                 # ChatGPT prompt templates
+├── scripts/                 # Indexing, enrichment, PDF, and acceptance tools
+├── setup.sh / setup.cmd     # Environment setup
+├── run_login.*              # Login and snapshot creation
+├── run_pdf_to_notes.*       # PDF/DOCX batch workflow
+├── run_md_to_notes.*        # Markdown-section workflow
+├── run_notes_to_pdf.*       # PDF export workflow
+├── run_pdf_to_xmind.*       # Legacy mind-map workflow
+├── requirements.txt         # Python dependencies
+└── package.json             # Test and acceptance command aliases
+```
+
+## Safety and privacy
+
+- Do not commit browser profiles, cookies, login snapshots, credentials, or personal documents.
+- Review generated notes before relying on them for study, clinical, legal, or professional decisions.
+- Use conservative parallelism to reduce account challenges and rate-limit pressure.
+- Keep sensitive source material local and verify what is uploaded to ChatGPT.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| Not logged in | Run `./run_login.sh`, close browser, then use `--profile-snapshot default` |
-| Profile already owned | Close all browsers using that profile; remove stale `.note-maker-profile-owner.json` |
-| No file downloaded | Confirm prompt asks for downloadable file; inspect `logs/last_batch_summary.json` |
-| `Could not load temporary chat` | `python3 scripts/prune_chatgpt_cookies.py` |
-| Batch skips completed files | Normal resume behavior; use `--overwrite`, `--no-resume`, or `--retry-failed` |
-| Existing outputs rebuilt after upgrade | Register once with `./run_pdf_to_notes.sh --adopt-existing` |
-| WeasyPrint / font errors | Install Linux PDF packages and `fonts-vazirmatn` or `fonts-noto-core` |
-| Combined PDF missing index | Generate `STUDY_INDEX-rewritten.md` or set `INDEX_MD=...` |
-| Notes lack `pdf_pages` | Filenames must match exactly between `ORIGINAL_PARTS_DIR` and `NOTES_DIR` |
+**The browser opens but is logged out**  
+Create a fresh snapshot and ensure the reference browser is fully closed before snapshot creation.
 
-**Resume state:** `<output-dir>/manifest.json` — schema-v2 hashes, status, attempts, and diagnostic paths.
+**ChatGPT responds with text instead of a file**  
+Update the prompt so it explicitly requests a downloadable Markdown artifact.
 
-**Diagnostics:** Final failures saved under `<output-dir>/diagnostics/<run-id>/<job>/`. Use `--save-page-source` only when needed — HTML may contain sensitive session data.
+**Downloads are missing or incomplete**  
+Try Patchright, use one worker, increase download retries, and inspect the saved diagnostics.
+
+**PDF rendering fails on Linux**  
+Install the required Cairo, Pango, font, and WeasyPrint system packages.
+
+**A batch was interrupted**  
+Run the same command again with resume enabled, or add `--retry-failed` to retry incomplete jobs.
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), keep changes focused, run the test suite, and avoid committing generated or sensitive runtime data.
+
+## License
+
+No license file is currently included. Until a license is added, the repository remains **all rights reserved** by default.
 
 ---
 
-## Portability & Privacy
+<div align="center">
 
-- Copy the project folder anywhere; set paths via environment variables.
-- `chrome_profile/`, `patchright_profile/`, `chrome_profile_login/`, `profile_templates/`, and `.runtime/` are local, sensitive, and gitignored.
-- Treat `profile_templates/` as credential-equivalent (authenticated snapshots).
+Built for reliable, repeatable study-note production with the ChatGPT web UI.
 
----
-
-## Related
-
-**Repository:** https://github.com/alifazelidehkordi/note-maker
-
-**Grok skill:** https://github.com/alifazelidehkordi/chatgpt-note-maker-skill — use `/chatgpt-note-maker` after installing
-
-Forked from the ChatGPT mind-map automation project. Lecture-note rewriting and PDF export are the primary focus; mind-map features remain supported.
+</div>
