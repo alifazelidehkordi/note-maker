@@ -9,7 +9,19 @@ permissions:
 
 jobs:
   diagnose:
-    name: Exact Windows unittest failures
+    name: Windows traceback — ${{ matrix.module }}
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - test_atomic_artifact_save.py
+          - test_combined_pdf_links.py
+          - test_convert_md_to_pdf.py
+          - test_fake_browser_provider.py
+          - test_job_claims.py
+          - test_phase1_acceptance.py
+          - test_process_hygiene.py
+          - test_profile_manager.py
     runs-on: windows-latest
     steps:
       - name: Clone diagnostic branch
@@ -18,41 +30,15 @@ jobs:
       - name: Install dependencies quietly
         shell: pwsh
         run: py -3.12 -m pip install -q -r requirements.txt
-      - name: Run suspect modules with captured output
+      - name: Run isolated module
         shell: pwsh
+        env:
+          TEST_MODULE: ${{ matrix.module }}
         run: |
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
-          $files = @(
-            'test_atomic_artifact_save.py',
-            'test_combined_pdf_links.py',
-            'test_convert_md_to_pdf.py',
-            'test_fake_browser_provider.py',
-            'test_job_claims.py',
-            'test_phase1_acceptance.py',
-            'test_process_hygiene.py',
-            'test_profile_manager.py',
-            'test_resilience_control.py',
-            'test_resume_integration.py',
-            'test_run_summary_paths.py',
-            'test_runtime_flags.py',
-            'test_session_bootstrap.py'
-          )
-          $failed = $false
-          New-Item -ItemType Directory -Force -Path logs | Out-Null
-          foreach ($file in $files) {
-            $log = "logs/$file.log"
-            Write-Host "RUN $file"
-            cmd.exe /d /s /c "py -3.12 -m unittest discover -s tests -p $file -v > `"$log`" 2>&1"
-            $code = $LASTEXITCODE
-            if ($code -eq 0) {
-              Write-Host "PASS $file"
-              continue
-            }
-            $failed = $true
-            Write-Host "FAIL $file (exit $code)"
-            Get-Content $log | Select-String -Pattern '^(FAIL|ERROR):','AssertionError','File ".*test_.*", line','^FAILED \(' | ForEach-Object {
-              Write-Host ("  " + $_.Line.Trim())
-            }
-          }
-          if ($failed) { exit 1 }
+          $log = 'module.log'
+          cmd.exe /d /s /c "py -3.12 -m unittest discover -s tests -p $env:TEST_MODULE -v > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content $log
+          exit $code
