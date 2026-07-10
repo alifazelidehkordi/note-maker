@@ -597,11 +597,11 @@ def batch_convert(
                 prebuilt_css=shared_css,
                 auto_rtl=auto_rtl,
             )
-            print(f"✓ {md.name} -> {pdf.name}")
+            print(f"[ok] {md.name} -> {pdf.name}")
             created.append(out)
         except Exception as exc:  # noqa: BLE001 - user-facing batch converter
             message = str(exc)
-            print(f"✗ Failed {md.name}: {message}")
+            print(f"[error] Failed {md.name}: {message}")
             failed.append((md, message))
     return BatchResult(created=created, failed=failed)
 
