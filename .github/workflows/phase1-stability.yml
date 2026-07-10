@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - fix/windows-test-stability
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   repair:
-    if: github.event.head_commit.message == 'ci: apply diagnosed Windows repairs'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,8 +72,6 @@ def _windows_pid_is_alive(pid: int) -> bool:
 
     handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
     if not handle:
-        # Access denied proves the process exists; invalid/missing PIDs return
-        # other errors and are safely considered dead.
         return ctypes.get_last_error() == error_access_denied
     try:
         exit_code = wintypes.DWORD()
@@ -175,8 +176,6 @@ from .errors import (
           try:
               from weasyprint import HTML
           except (ModuleNotFoundError, OSError) as exc:  # pragma: no cover - environment dependent
-              # The Python package may be installed while GTK/Pango native
-              # libraries are absent (notably on hosted Windows runners).
               HTML = None
               _WEASYPRINT_IMPORT_ERROR = exc
           ''',
