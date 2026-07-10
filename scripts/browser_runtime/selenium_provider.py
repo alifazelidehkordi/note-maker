@@ -212,6 +212,11 @@ class SeleniumProvider:
         options = options or BrowserLaunchOptions()
         core = _core()
         try:
+            # Legacy download helpers consult the facade-level DOWNLOAD_DIR.
+            # Each coordinator worker is a separate process, so point that
+            # facade at this worker's managed download directory before launch.
+            if options.download_dir is not None:
+                core.DOWNLOAD_DIR = Path(options.download_dir).expanduser().resolve()
             builder = getattr(core, "_build_driver_with_paths", None)
             if builder is None:
                 handle = core.build_driver(headless=options.headless, browser=options.browser)
