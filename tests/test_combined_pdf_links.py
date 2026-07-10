@@ -145,6 +145,7 @@ class CombinedPdfLinkTests(unittest.TestCase):
                     output_path=root / "final.pdf",
                     index_md=index_md,
                     title="Test",
+                    continuous_page_numbers=False,
                 )
 
             self.assertTrue(output.exists())

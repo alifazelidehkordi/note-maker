@@ -22,10 +22,12 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
     markdown = None
 
+_WEASYPRINT_IMPORT_ERROR: Exception | None = None
 try:
     from weasyprint import HTML
-except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
+except (ModuleNotFoundError, OSError) as exc:  # pragma: no cover - environment dependent
     HTML = None
+    _WEASYPRINT_IMPORT_ERROR = exc
 
 
 @dataclass(frozen=True)
@@ -469,18 +471,19 @@ def resolve_style(style: PdfStyle, md_text: str, *, auto_rtl: bool) -> PdfStyle:
     return style
 
 
-def require_dependencies() -> None:
-    """Fail with a helpful message if runtime PDF dependencies are missing."""
+def require_dependencies(*, require_pdf_renderer: bool = True) -> None:
+    """Fail with a helpful message if the requested dependencies are missing."""
     missing: list[str] = []
     if markdown is None:
         missing.append("markdown")
-    if HTML is None:
-        missing.append("weasyprint")
+    if require_pdf_renderer and HTML is None:
+        missing.append("weasyprint native runtime")
     if missing:
-        packages = " ".join(missing)
+        detail = ""
+        if require_pdf_renderer and _WEASYPRINT_IMPORT_ERROR is not None:
+            detail = f"\nRenderer import error: {_WEASYPRINT_IMPORT_ERROR}"
         print(
-            "Missing required Python package(s): " + ", ".join(missing) + "\n"
-            f"Install them with: python -m pip install {packages}",
+            "Missing required dependency: " + ", ".join(missing) + detail,
             file=sys.stderr,
         )
         raise SystemExit(2)
@@ -488,7 +491,7 @@ def require_dependencies() -> None:
 
 def md_to_html(md_text: str, *, cleaned: bool = False) -> str:
     """Convert Markdown to clean HTML and wrap useful study sections."""
-    require_dependencies()
+    require_dependencies(require_pdf_renderer=False)
     if not cleaned:
         md_text = clean_markdown(md_text)
 
@@ -594,11 +597,11 @@ def batch_convert(
                 prebuilt_css=shared_css,
                 auto_rtl=auto_rtl,
             )
-            print(f"✓ {md.name} -> {pdf.name}")
+            print(f"[ok] {md.name} -> {pdf.name}")
             created.append(out)
         except Exception as exc:  # noqa: BLE001 - user-facing batch converter
             message = str(exc)
-            print(f"✗ Failed {md.name}: {message}")
+            print(f"[error] Failed {md.name}: {message}")
             failed.append((md, message))
     return BatchResult(created=created, failed=failed)
 

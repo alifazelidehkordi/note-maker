@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
+from process_liveness import pid_is_alive
+
 from .errors import (
     ActiveProfileError,
     ProfileLeaseError,
@@ -192,17 +194,7 @@ def _sanitize_copied_json(path: Path) -> tuple[str, ...]:
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    return pid_is_alive(pid)
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
