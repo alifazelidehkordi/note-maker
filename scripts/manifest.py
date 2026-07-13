@@ -230,6 +230,18 @@ def _short_write_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
         lock_path.unlink(missing_ok=True)
 
 
+def _replace_with_retry(source: Path, destination: Path, *, attempts: int = 5) -> None:
+    """Retry a transient Windows file lock while publishing a complete manifest."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 class ManifestReaderView:
     """Read-only manifest surface safe to pass into planners or workers."""
 
@@ -415,7 +427,7 @@ class ManifestStore:
                     os.fsync(handle.fileno())
                 if self.path.exists():
                     shutil.copy2(self.path, backup)
-                os.replace(temporary, self.path)
+                _replace_with_retry(temporary, self.path)
             finally:
                 temporary.unlink(missing_ok=True)
 
