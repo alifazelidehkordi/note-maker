@@ -134,6 +134,7 @@ class RunConfig:
     adaptive_recovery_seconds: float = 900.0
     worker_max_jobs: int = 20
     worker_memory_limit_mb: float = 0.0
+    job_timeout: float = 1800.0
     content_attempts: int = 3
     network_retries: int = 4
     browser_retries: int = 3
@@ -166,6 +167,8 @@ class RunConfig:
             raise ValueError("worker_max_jobs must not be negative.")
         if self.worker_memory_limit_mb < 0:
             raise ValueError("worker_memory_limit_mb must not be negative.")
+        if self.job_timeout < 0:
+            raise ValueError("job_timeout must not be negative.")
         for name in ("content_attempts", "network_retries", "browser_retries", "download_retries", "rate_limit_retries"):
             value = int(getattr(self, name))
             if value < (1 if name == "content_attempts" else 0):
@@ -204,6 +207,7 @@ class RunConfig:
             "adaptive_recovery_seconds": self.adaptive_recovery_seconds,
             "worker_max_jobs": self.worker_max_jobs,
             "worker_memory_limit_mb": self.worker_memory_limit_mb,
+            "job_timeout": self.job_timeout,
             "content_attempts": self.content_attempts,
             "network_retries": self.network_retries,
             "browser_retries": self.browser_retries,
@@ -241,6 +245,7 @@ class RunConfig:
             adaptive_recovery_seconds=float(payload.get("adaptive_recovery_seconds", 900.0)),
             worker_max_jobs=int(payload.get("worker_max_jobs", 20)),
             worker_memory_limit_mb=float(payload.get("worker_memory_limit_mb", 0.0)),
+            job_timeout=float(payload.get("job_timeout", 1800.0)),
             content_attempts=int(payload.get("content_attempts", 3)),
             network_retries=int(payload.get("network_retries", 4)),
             browser_retries=int(payload.get("browser_retries", 3)),

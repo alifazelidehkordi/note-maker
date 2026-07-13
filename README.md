@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-0.8.1-2563eb)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-64748b)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-169%20passing-16a34a)](#testing)
+[![Tests](https://img.shields.io/badge/tests-173%20passing-16a34a)](#testing)
 
 </div>
 
@@ -64,6 +64,7 @@ It was built for dense university and medical material, but the workflow works w
 - **Safe resume support** using content hashes and a persistent manifest
 - **Output validation** before an existing note is replaced
 - **Parallel execution** with isolated workers and dynamic job dispatch
+- **Coordinator job watchdog** that recycles workers whose jobs exceed the hard execution deadline
 - **Rate-limit and authentication protection** through global cooldowns and circuit breakers
 - **Diagnostics** including metadata, response captures, and screenshots for final failures
 - **Study-index generation** with chapter, session, page-range, and study-focus metadata
@@ -231,6 +232,7 @@ The coordinator provides:
 - global cooldowns after rate-limit signals;
 - authentication and severe-rate circuit breakers;
 - separate retry budgets for network, browser, download, and rate-limit failures;
+- a hard per-job watchdog that detects stalled Selenium work even while worker heartbeats continue;
 - optional adaptive concurrency;
 - worker recycling by job count or memory threshold;
 - stale-claim recovery after interrupted runs.
@@ -250,6 +252,20 @@ Example:
   --download-retries 2 \
   --rate-limit-retries 2
 ```
+
+### Job timeout watchdog
+
+Worker heartbeats report process liveness, not whether the active Selenium job is still making progress. The coordinator therefore tracks a separate deadline for every assigned job.
+
+The default hard timeout is **1,800 seconds (30 minutes)**. When a job exceeds that deadline, the coordinator:
+
+1. stops the worker and its browser process tree;
+2. marks the job as interrupted;
+3. releases the job claim only after the old process is stopped;
+4. returns the job to the queue; and
+5. starts a replacement worker while the restart budget allows it.
+
+This prevents a worker with a healthy heartbeat thread from holding one file indefinitely while its Selenium execution is hung. Programmatic integrations can customize `RunConfig.job_timeout`; setting it to `0` disables the watchdog.
 
 ## Resume, validation, and diagnostics
 
@@ -411,6 +427,9 @@ Update the prompt so it explicitly requests a downloadable Markdown artifact.
 
 **Downloads are missing or incomplete**  
 Try Patchright, use one worker, increase download retries, and inspect the saved diagnostics.
+
+**A worker remains busy on one file**  
+The coordinator now applies a 30-minute hard deadline to each assigned job. After the deadline it stops the worker and browser process tree, releases the claim, and requeues the file. If the worker restart budget is exhausted, rerun the batch with `--retry-failed`.
 
 **PDF rendering fails on Linux**  
 Install the required Cairo, Pango, font, and WeasyPrint system packages.

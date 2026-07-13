@@ -62,6 +62,7 @@ class _WorkerSlot:
     completed_jobs: int = 0
     recycle_requested: bool = False
     recycle_reason: str | None = None
+    job_started_at: float | None = None
 
 
 class ParallelCoordinator:
@@ -229,6 +230,7 @@ class ParallelCoordinator:
                 continue
             slot.current_job = job
             slot.claim = claim
+            slot.job_started_at = time.monotonic()
             slot.requested_job = False
             slot.command_queue.put(WorkerCommand.run_job(job.to_payload()))
             self.result.assignments[slot.worker_id].append(job.key)
@@ -248,6 +250,7 @@ class ParallelCoordinator:
             self.claims.release(slot.claim)
         slot.current_job = None
         slot.claim = None
+        slot.job_started_at = None
         slot.requested_job = True
         return job
 
@@ -486,6 +489,17 @@ class ParallelCoordinator:
                     self._handle_lost_worker(
                         slot,
                         f"worker heartbeat timed out after {self.config.worker_timeout:.1f}s",
+                    )
+                    continue
+                if (
+                    slot.current_job is not None
+                    and slot.job_started_at is not None
+                    and self.config.job_timeout > 0
+                    and now - slot.job_started_at > self.config.job_timeout
+                ):
+                    self._handle_lost_worker(
+                        slot,
+                        f"job timed out after {self.config.job_timeout:.1f}s",
                     )
                     continue
                 if self.config.worker_memory_limit_mb > 0 and not slot.recycle_requested:
