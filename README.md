@@ -56,6 +56,13 @@ It was built for dense university and medical material, but the workflow works w
 > [!IMPORTANT]
 > This project automates the ChatGPT website. UI changes, rate limits, authentication challenges, and account restrictions can affect runs. Start with one worker and non-sensitive test files.
 
+## Project documentation
+
+- [Implementation reports (فارسی)](docs/implementation-reports/README.md)
+- [Architecture decisions](docs/adr/README.md)
+- [Release checklist](RELEASE_CHECKLIST.md)
+- [Changelog](CHANGELOG.md)
+
 ## Highlights
 
 - **Batch processing** for PDF, DOCX, and Markdown section workflows

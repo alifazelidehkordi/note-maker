@@ -60,6 +60,26 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(entry["attempts"], 1)
             self.assertTrue(entry["output_hash"].startswith("sha256:"))
 
+    def test_save_retries_a_transient_permission_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = manifest.ManifestStore(root / "manifest.json")
+            original_replace = os.replace
+            attempts = 0
+
+            def replace_once_locked(source, destination):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError("temporary Windows file lock")
+                return original_replace(source, destination)
+
+            with mock.patch.object(manifest.os, "replace", side_effect=replace_once_locked):
+                store.register_run("retry-test", mode="test", planned_jobs=1, parallel_runs=1)
+
+            self.assertEqual(attempts, 2)
+            self.assertEqual(manifest.ManifestStore(root / "manifest.json").get_run("retry-test")["mode"], "test")
+
     def test_source_content_change_invalidates_completed_job(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

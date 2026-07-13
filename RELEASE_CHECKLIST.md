@@ -3,7 +3,7 @@
 ## Source and package
 
 - [ ] `VERSION` and `package.json` are both `0.8.0`.
-- [ ] README, CHANGELOG, and the Level 6 implementation report are current.
+- [ ] README, CHANGELOG, and the [Level 6 implementation report](docs/implementation-reports/implementation-report-level6-fa.md) are current.
 - [ ] Final ZIP excludes authenticated snapshots, browser profiles, runtime directories, claims, downloads, logs, outputs, virtual environments, and Python caches.
 - [ ] Selenium remains the default provider and Patchright remains opt-in.
 
