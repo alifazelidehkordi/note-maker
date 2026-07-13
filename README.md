@@ -8,6 +8,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-64748b)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-173%20passing-16a34a)](#testing)
+[![License: MIT](https://img.shields.io/badge/License-MIT-fbbf24.svg)](LICENSE)
 
 </div>
 
