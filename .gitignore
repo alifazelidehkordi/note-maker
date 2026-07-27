@@ -66,6 +66,14 @@ profile_templates/
 .runtime-smoke/
 .profile-snapshots-smoke/
 
+# Browser-auth/session variants (credential-equivalent local data)
+chrome_profile*/
+edge_profile*/
+patchright_profile*/
+profile_templates*/
+.runtime*/
+.profile-snapshots*/
+
 # Parallel job claims
 .note-maker-claims/
 *.claim.json
