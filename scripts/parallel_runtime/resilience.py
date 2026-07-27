@@ -321,11 +321,12 @@ class GlobalRuntimeController:
             self.rate_events.append(now)
         if (
             self.rate_limit_failures_before_abort > 0
-            and self.rate_limit_event_count >= self.rate_limit_failures_before_abort
+            and len(self.rate_events) >= self.rate_limit_failures_before_abort
         ):
             self.circuit_open_reason = (
                 "global rate-limit circuit opened after "
-                f"{self.rate_limit_event_count} events"
+                f"{len(self.rate_events)} events within "
+                f"{self.rate_limit_window_seconds:g}s"
             )
 
     def record_auth_failure(self) -> None:

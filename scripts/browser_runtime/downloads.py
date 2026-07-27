@@ -117,29 +117,42 @@ def score_download_trigger(
 ) -> int:
     expected = normalize_extensions(set(expected_extensions))
     direct = " ".join(part for part in (text, title, aria) if part).strip()
-    haystack = " ".join(part for part in (direct, href, context) if part).lower()
-    if any(phrase in haystack for phrase in NON_FILE_DOWNLOAD_PHRASES):
+    candidate_haystack = " ".join(part for part in (direct, href) if part).lower()
+    context_haystack = context.lower()
+    full_haystack = f"{candidate_haystack} {context_haystack}".strip()
+    if any(phrase in full_haystack for phrase in NON_FILE_DOWNLOAD_PHRASES):
         return 0
 
-    score = 0
-    for extension in expected:
-        if extension in haystack:
-            score = max(score, 90)
-    if ".opml" in expected and re.search(r"\bopml\b", haystack):
-        score = max(score, 75)
-    if expected & MARKDOWN_EXTENSIONS and re.search(r"\bmarkdown\b", haystack):
-        score = max(score, 75)
-    # Generic download wording is not enough on its own. At least one
-    # expected extension or explicit expected format must be present in the
-    # candidate or its assistant-message context.
+    def expected_reference(value: str) -> int:
+        reference_score = 0
+        for extension in expected:
+            if extension in value:
+                reference_score = max(reference_score, 90)
+        if ".opml" in expected and re.search(r"\bopml\b", value):
+            reference_score = max(reference_score, 75)
+        if expected & MARKDOWN_EXTENSIONS and re.search(r"\bmarkdown\b", value):
+            reference_score = max(reference_score, 75)
+        return reference_score
+
+    # Never promote every control in an assistant message merely because the
+    # surrounding response mentions ".md", "Markdown", or "OPML". The
+    # candidate itself must name the expected format, point at a matching
+    # artifact, or be an explicit Download control whose surrounding context
+    # identifies the expected artifact.
+    score = expected_reference(candidate_haystack)
+    direct_lower = direct.lower()
+    explicit_download = "download" in direct_lower or "دانلود" in direct
+    if score == 0 and explicit_download and expected_reference(context_haystack):
+        score = 60
+    if score == 0 and direct_lower.strip() in {"download", "دانلود"}:
+        score = 40
     if score == 0:
         return 0
     if "sandbox:" in href.lower():
         score += 20
     if "/download" in href.lower() or "/file-" in href.lower():
         score += 15
-    direct_lower = direct.lower()
-    if "download" in direct_lower or "دانلود" in direct:
+    if explicit_download:
         score += 25
     return min(score, 100)
 

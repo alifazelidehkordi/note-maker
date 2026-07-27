@@ -326,17 +326,34 @@ def click_candidate_and_wait(
     # first click and the preview header's Download button starts the real save.
     preview_deadline = time.time() + 5
     while time.time() < preview_deadline:
+        preview_root = driver
+        for modal_selector in (
+            "#modal-code-execution",
+            "[data-testid='modal-code-execution']",
+        ):
+            try:
+                visible_modals = [
+                    modal
+                    for modal in driver.find_elements(_legacy.By.CSS_SELECTOR, modal_selector)
+                    if modal.is_displayed()
+                ]
+                if visible_modals:
+                    preview_root = visible_modals[-1]
+                    break
+            except Exception:
+                continue
         preview_buttons = []
         for selector in (
-            "button[aria-label='Download' i]",
-            "button[title='Download' i]",
-            "button[data-testid='download' i]",
-            "[role='button'][aria-label='Download' i]",
-            "[role='button'][title='Download' i]",
+            "button[aria-label*='Download' i]",
+            "button[title*='Download' i]",
+            "button[data-testid*='download' i]",
+            "[role='button'][aria-label*='Download' i]",
+            "[role='button'][title*='Download' i]",
+            "a[download]",
         ):
             try:
                 preview_buttons.extend(
-                    driver.find_elements(_legacy.By.CSS_SELECTOR, selector)
+                    preview_root.find_elements(_legacy.By.CSS_SELECTOR, selector)
                 )
             except Exception:
                 continue
@@ -350,7 +367,7 @@ def click_candidate_and_wait(
                     or button.text
                     or 'Download'
                 )
-                if button_label.strip().lower() != 'download':
+                if 'download' not in button_label.strip().lower():
                     continue
                 log(f"Clicking artifact preview download button: {button_label!r}")
                 driver.execute_script("arguments[0].click();", button)

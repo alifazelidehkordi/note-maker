@@ -42,6 +42,40 @@ class PatchrightDownloadTests(unittest.TestCase):
             0,
         )
 
+    def test_unrelated_control_does_not_inherit_format_from_assistant_context(self):
+        context = "The generated Markdown artifact Lecture_Notes.md is ready."
+        self.assertEqual(
+            score_download_trigger(
+                text="Coding Citation",
+                context=context,
+                expected_extensions={".md"},
+            ),
+            0,
+        )
+        self.assertGreater(
+            score_download_trigger(
+                text="Lecture_Notes.md",
+                context=context,
+                expected_extensions={".md"},
+            ),
+            0,
+        )
+        self.assertGreater(
+            score_download_trigger(
+                text="Download",
+                context=context,
+                expected_extensions={".md"},
+            ),
+            0,
+        )
+        self.assertGreater(
+            score_download_trigger(
+                text="Download",
+                expected_extensions={".opml"},
+            ),
+            0,
+        )
+
     def test_filesystem_salvage_detects_fresh_overwritten_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

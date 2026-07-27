@@ -111,8 +111,9 @@ def run_batch(
     worker_startup_stagger: float = runtime_flags.DEFAULT_WORKER_STARTUP_STAGGER,
     max_worker_restarts: int = runtime_flags.DEFAULT_MAX_WORKER_RESTARTS,
     shutdown_grace_seconds: float = runtime_flags.DEFAULT_SHUTDOWN_GRACE_SECONDS,
+    runtime_settings: runtime_flags.RuntimeSettings | None = None,
 ) -> int:
-    runtime = runtime_flags.validate_runtime_settings(
+    runtime = runtime_settings or runtime_flags.validate_runtime_settings(
         browser_provider,
         parallel_runs,
         runtime_dir=runtime_dir,
@@ -572,7 +573,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        runtime_flags.settings_from_namespace(args)
+        runtime = runtime_flags.settings_from_namespace(args)
     except runtime_flags.RuntimeConfigurationError as exc:
         parser.error(str(exc))
 
@@ -607,6 +608,7 @@ def main() -> int:
             worker_startup_stagger=args.worker_startup_stagger,
             max_worker_restarts=args.max_worker_restarts,
             shutdown_grace_seconds=args.shutdown_grace_seconds,
+            runtime_settings=runtime,
         )
     except Exception as exc:
         core.log(f"ERROR: {exc}")

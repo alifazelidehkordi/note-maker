@@ -108,6 +108,26 @@ class GlobalControlTests(unittest.TestCase):
         control.record_auth_failure()
         self.assertIn("authentication circuit", control.circuit_open_reason or "")
 
+    def test_rate_limit_circuit_counts_only_events_inside_window(self):
+        clock = _Clock()
+        control = GlobalRuntimeController(
+            requested_limit=1,
+            cooldown_seconds=0,
+            rate_limit_failures_before_abort=3,
+            rate_limit_window_seconds=10,
+            clock=clock,
+        )
+        control.request_cooldown()
+        clock.advance(11)
+        control.request_cooldown()
+        clock.advance(11)
+        control.request_cooldown()
+        self.assertEqual(control.rate_limit_event_count, 3)
+        self.assertIsNone(control.circuit_open_reason)
+        control.request_cooldown()
+        control.request_cooldown()
+        self.assertIn("within 10s", control.circuit_open_reason or "")
+
 
 if __name__ == "__main__":
     unittest.main()

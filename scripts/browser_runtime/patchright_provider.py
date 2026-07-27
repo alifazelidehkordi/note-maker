@@ -431,8 +431,15 @@ class PatchrightBrowserSession:
     def _login_buttons_visible(self) -> bool:
         try:
             pattern = re.compile(LOGIN_BUTTON_PATTERN, re.I)
-            button = self._page.get_by_role("button", name=pattern).first
-            return _locator_visible(button)
+            for role in ("button", "link"):
+                control = self._page.get_by_role(role, name=pattern).first
+                if _locator_visible(control):
+                    return True
+            explicit = self._page.locator(
+                "a[href*='/auth/login'], a[href*='auth0'], "
+                "[data-testid*='login' i], [data-testid*='log-in' i]"
+            ).first
+            return _locator_visible(explicit)
         except Exception:
             return False
 
@@ -492,6 +499,10 @@ class PatchrightBrowserSession:
         try:
             self._navigate_with_retry(CHATGPT_URL, attempts=3)
             self._wait_for_editor(timeout=self._options.navigation_timeout)
+            if self._login_buttons_visible():
+                raise AuthenticationRequiredError(
+                    "ChatGPT opened an anonymous composer; the saved login session is not active."
+                )
             self._last_send_hash = None
             self._last_send_assistant_count = None
             self._last_send_completed = False
@@ -554,14 +565,48 @@ class PatchrightBrowserSession:
             raise BrowserUploadError(f"Upload source does not exist: {request.file_path}")
         self._set_state(SessionState.UPLOADING)
         try:
-            file_input = self._page.locator(FILE_INPUT_SELECTOR).first
-            if int(file_input.count()) == 0:
+            def compatible_file_input():
+                inputs = self._page.locator(FILE_INPUT_SELECTOR)
+                try:
+                    count = int(inputs.count())
+                except Exception:
+                    return None
+                suffix = request.file_path.suffix.lower()
+                fallback = None
+                for index in range(count):
+                    candidate = inputs.nth(index)
+                    try:
+                        accept = str(candidate.get_attribute("accept") or "").lower()
+                    except Exception:
+                        accept = ""
+                    if not accept or "*/*" in accept:
+                        fallback = fallback or candidate
+                        continue
+                    tokens = {token.strip() for token in accept.split(",")}
+                    if suffix in tokens:
+                        return candidate
+                    # ChatGPT now keeps a separate image-only file input in
+                    # the composer. Never feed Markdown/PDF documents to it.
+                    if all("image/" in token or token in {".gif", ".png", ".jpg", ".jpeg", ".webp", ".mpo"} for token in tokens):
+                        continue
+                    fallback = fallback or candidate
+                return fallback
+
+            file_input = compatible_file_input()
+            if file_input is None:
                 attach = _first_visible(self._page, ATTACH_BUTTON_SELECTORS, timeout_ms=800)
                 if attach is None:
                     raise PageStateError("Attach button and file input are both unavailable.")
-                attach.click()
-                time.sleep(0.5)
-                file_input = self._page.locator(FILE_INPUT_SELECTOR).first
+                try:
+                    attach.evaluate("(element) => element.click()")
+                except Exception:
+                    attach.click()
+                deadline = time.monotonic() + 3
+                while file_input is None and time.monotonic() < deadline:
+                    time.sleep(0.25)
+                    file_input = compatible_file_input()
+            if file_input is None:
+                raise PageStateError("A document-compatible file input is unavailable.")
             file_input.set_input_files(str(request.file_path))
 
             deadline = time.monotonic() + request.timeout
@@ -646,6 +691,7 @@ class PatchrightBrowserSession:
 
         try:
             if self._rate_limit_visible():
+                self._dismiss_rate_limit_modal()
                 raise RateLimitError(
                     "Rate limit is visible before send.",
                     retry_after=RATE_LIMIT_WAIT_SECONDS,
@@ -661,11 +707,21 @@ class PatchrightBrowserSession:
 
             button = _first_visible(self._page, SEND_BUTTON_SELECTORS, timeout_ms=1000)
             if button is not None and _locator_enabled(button):
-                button.click()
+                # ChatGPT's current composer can leave Playwright/Patchright's
+                # pointer-style click unhandled even though the send button is
+                # visible and enabled. Selenium already uses a DOM click for
+                # this UI. Prefer the same path here, with the normal locator
+                # click retained for test doubles and older browser builds.
+                try:
+                    button.evaluate("(element) => element.click()")
+                except Exception:
+                    button.click()
             else:
                 self._page.keyboard.press("Enter")
 
-            deadline = time.monotonic() + 20
+            acknowledgement_started_at = time.monotonic()
+            deadline = acknowledgement_started_at + 20
+            keyboard_fallback_used = False
             while time.monotonic() < deadline:
                 current_count = self.assistant_message_count()
                 composer_text = self._editor_text(editor)
@@ -673,6 +729,22 @@ class PatchrightBrowserSession:
                     self._last_send_completed = True
                     self._set_state(SessionState.GENERATING)
                     return
+                if (
+                    not keyboard_fallback_used
+                    and time.monotonic() - acknowledgement_started_at >= 2
+                    and not self._generation_visible()
+                ):
+                    # The current ChatGPT UI occasionally ignores synthetic
+                    # pointer/DOM clicks under Patchright while leaving the
+                    # prompt visibly untouched. Enter is the native composer
+                    # submit shortcut, so use it only after proving the click
+                    # did not clear the editor or start generation.
+                    keyboard_fallback_used = True
+                    try:
+                        editor.press("Enter")
+                    except Exception:
+                        editor.click()
+                        self._page.keyboard.press("Enter")
                 if self._rate_limit_visible():
                     raise RateLimitError(
                         "Rate limit appeared while sending.",
@@ -698,7 +770,14 @@ class PatchrightBrowserSession:
         try:
             button = self._page.get_by_role("button", name=re.compile(r"Got it|OK|باشه", re.I)).first
             if _locator_visible(button):
-                button.click()
+                # Keep this modal handling deliberately narrow: activate the
+                # acknowledgement button itself and do not click elsewhere in
+                # the dialog/page. A DOM click is more reliable in the current
+                # ChatGPT UI than Patchright's pointer-style click.
+                try:
+                    button.evaluate("(element) => element.click()")
+                except Exception:
+                    button.click()
         except Exception:
             pass
         return True
@@ -864,21 +943,81 @@ class PatchrightBrowserSession:
         candidates = self._find_download_candidates(request.expected_extensions)
         if not candidates:
             return None
-        per_candidate_timeout = max(1000, min(30_000, request.timeout * 1000))
+        per_candidate_timeout = max(1000, min(5_000, request.timeout * 1000))
         for _score, element in candidates:
+            before_pages = tuple(getattr(self._context, "pages", (self._page,)))
+            _text, candidate_href, _title, _aria = self._candidate_fields(element)
+            _log(f"Patchright activating download candidate href={candidate_href[:240]!r}")
             try:
                 element.scroll_into_view_if_needed()
             except Exception:
                 pass
             try:
                 with self._page.expect_download(timeout=per_candidate_timeout) as pending:
-                    element.click()
+                    try:
+                        element.evaluate("(candidate) => candidate.click()")
+                    except Exception:
+                        try:
+                            element.click(force=True)
+                        except TypeError:
+                            element.click()
                 return self._save_download_event(pending.value, request)
             except Exception as exc:
                 # A click can navigate to a sandbox link without emitting a
-                # Playwright download event. Continue to the bounded fallback.
+                # Playwright download event, or open ChatGPT's artifact preview
+                # in either the current tab or a newly-created tab.
                 _log(f"Patchright download event miss: {exc}")
-                continue
+            selectors = (
+                "button[aria-label*='Download' i]",
+                "button[title*='Download' i]",
+                "button[data-testid*='download' i]",
+                "[role='button'][aria-label*='Download' i]",
+                "[role='button'][title*='Download' i]",
+                "a[download]",
+            )
+            preview_deadline = time.monotonic() + min(30, request.timeout)
+            while time.monotonic() < preview_deadline:
+                current_pages = tuple(getattr(self._context, "pages", (self._page,)))
+                # Newly-created preview tabs are searched first, followed by
+                # the original page/modal. This mirrors ChatGPT's current UI.
+                new_pages = [page for page in current_pages if page not in before_pages]
+                preview_pages = list(reversed(new_pages)) + [
+                    page for page in reversed(current_pages) if page not in new_pages
+                ]
+                for preview_page in preview_pages:
+                    preview_root = preview_page
+                    try:
+                        modal = preview_page.locator(
+                            "#modal-code-execution, [data-testid='modal-code-execution']"
+                        ).last
+                        if _locator_visible(modal):
+                            preview_root = modal
+                    except Exception:
+                        pass
+                    for selector in selectors:
+                        try:
+                            preview = preview_root.locator(selector).last
+                            if not _locator_visible(preview):
+                                continue
+                            label = (
+                                str(preview.get_attribute("aria-label") or "")
+                                or str(preview.get_attribute("title") or "")
+                                or str(preview.inner_text() or "")
+                            ).strip()
+                            if "download" not in label.lower() and selector != "a[download]":
+                                continue
+                            with preview_page.expect_download(
+                                timeout=max(1000, min(30_000, request.timeout * 1000))
+                            ) as pending:
+                                try:
+                                    preview.evaluate("(element) => element.click()")
+                                except Exception:
+                                    preview.click()
+                            return self._save_download_event(pending.value, request)
+                        except Exception as exc:
+                            _log(f"Patchright preview download miss: {exc}")
+                            continue
+                time.sleep(0.5)
         return None
 
     def resolve_download(self, request: DownloadRequest) -> Path | None:
@@ -984,6 +1123,14 @@ class PatchrightProvider:
                 "accept_downloads": True,
                 "downloads_path": str(download_dir),
                 "no_viewport": True,
+                # The reference-login browser uses the desktop keyring. Keep
+                # Chromium on that same cookie-encryption backend; Patchright's
+                # defaults otherwise force a mock keychain and make a valid
+                # copied ChatGPT session appear signed out.
+                "ignore_default_args": [
+                    "--password-store=basic",
+                    "--use-mock-keychain",
+                ],
                 "args": [
                     "--no-first-run",
                     "--no-default-browser-check",

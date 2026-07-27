@@ -260,11 +260,44 @@ class RuntimeFlagsTests(unittest.TestCase):
 
     def test_batch_main_accepts_parallel_mode_and_forwards_it(self):
         with mock.patch.object(
-            sys, "argv", ["batch_pdf.py", "--parallel-runs", "2"]
+            sys,
+            "argv",
+            [
+                "batch_pdf.py",
+                "--parallel-runs",
+                "2",
+                "--rate-limit-failures-before-abort",
+                "1000",
+                "--worker-max-jobs",
+                "0",
+            ],
         ), mock.patch.object(batch_pdf, "run_batch", return_value=0) as run_batch:
             code = batch_pdf.main()
         self.assertEqual(code, 0)
         self.assertEqual(run_batch.call_args.kwargs["parallel_runs"], 2)
+        settings = run_batch.call_args.kwargs["runtime_settings"]
+        self.assertEqual(settings.rate_limit_failures_before_abort, 1000)
+        self.assertEqual(settings.worker_max_jobs, 0)
+
+    def test_markdown_main_forwards_complete_runtime_settings(self):
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "batch_markdown.py",
+                "--markdown-file",
+                "lecture.md",
+                "--rate-limit-failures-before-abort",
+                "777",
+                "--worker-max-jobs",
+                "0",
+            ],
+        ), mock.patch.object(batch_markdown, "run_batch", return_value=0) as run_batch:
+            code = batch_markdown.main()
+        self.assertEqual(code, 0)
+        settings = run_batch.call_args.kwargs["runtime_settings"]
+        self.assertEqual(settings.rate_limit_failures_before_abort, 777)
+        self.assertEqual(settings.worker_max_jobs, 0)
 
 
 if __name__ == "__main__":

@@ -67,6 +67,36 @@ class DownloadDetectionTests(unittest.TestCase):
             )
         )
 
+    def test_unrelated_button_does_not_inherit_artifact_type_from_message(self):
+        context = "Your generated Markdown file is ready: Lecture_Notes.md"
+        self.assertFalse(
+            core.is_artifact_download_trigger(
+                text="Coding Citation",
+                context=context,
+                expected_extensions={".md"},
+            )
+        )
+        self.assertTrue(
+            core.is_artifact_download_trigger(
+                text="Lecture_Notes.md",
+                context=context,
+                expected_extensions={".md"},
+            )
+        )
+        self.assertTrue(
+            core.is_artifact_download_trigger(
+                text="Download",
+                context=context,
+                expected_extensions={".md"},
+            )
+        )
+        self.assertTrue(
+            core.is_artifact_download_trigger(
+                text="Download",
+                expected_extensions={".opml"},
+            )
+        )
+
     def test_trigger_must_match_expected_extension(self):
         self.assertTrue(
             core.is_artifact_download_trigger(

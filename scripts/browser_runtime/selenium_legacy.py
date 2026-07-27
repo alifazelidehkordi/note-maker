@@ -853,15 +853,23 @@ def is_artifact_download_trigger(
 ) -> bool:
     """Detect a download control only when it names the expected artifact type."""
     expected = normalize_expected_extensions(expected_extensions)
-    fields = [text, href, title, aria, context]
-    haystack = " ".join(field.lower() for field in fields if field)
-    if any(phrase in haystack for phrase in NON_FILE_DOWNLOAD_PHRASES):
+    direct = " ".join(field for field in (text, href, title, aria) if field)
+    direct_haystack = direct.lower()
+    context_haystack = context.lower()
+    full_haystack = f"{direct_haystack} {context_haystack}".strip()
+    if any(phrase in full_haystack for phrase in NON_FILE_DOWNLOAD_PHRASES):
         return False
 
-    # Generic words such as "file" and "notes" are intentionally insufficient.
-    # The expected extension or explicit artifact format must be present somewhere
-    # on the link/button or its nearest assistant-message context.
-    return _has_expected_reference(haystack, expected)
+    if _has_expected_reference(direct_haystack, expected):
+        return True
+
+    # A plain Download button is valid only when the surrounding artifact card
+    # names the expected format. Unrelated controls such as "Coding Citation"
+    # must not inherit format words from the whole assistant message.
+    explicit_download = "download" in direct_haystack or "دانلود" in direct
+    return (
+        explicit_download and _has_expected_reference(context_haystack, expected)
+    ) or direct_haystack.strip() in {"download", "دانلود"}
 
 
 def is_opml_download_trigger(
