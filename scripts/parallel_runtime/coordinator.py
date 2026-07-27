@@ -50,10 +50,10 @@ class _WorkerSlot:
     generation: int
     process: object
     command_queue: object
-    event_queue: object
     started_at: float
     last_heartbeat: float
     last_manifest_heartbeat: float
+    event_queue: object | None = None
     ready: bool = False
     current_job: ExecutionJob | None = None
     claim: JobClaim | None = None
@@ -134,8 +134,11 @@ class ParallelCoordinator:
         deadline = time.monotonic() + self.config.poll_interval
         while True:
             for slot in list(self.slots.values()):
+                event_queue = slot.event_queue
+                if event_queue is None:
+                    continue
                 try:
-                    event = slot.event_queue.get_nowait()
+                    event = event_queue.get_nowait()
                 except Empty:
                     continue
                 except (EOFError, OSError, ValueError):
@@ -423,7 +426,8 @@ class ParallelCoordinator:
         cleaned = cleanup_descendants(pid, known_descendants=descendants, grace_seconds=0.25)
         self.result.zombie_processes_cleaned += len(cleaned)
         self._close_queue(slot.command_queue)
-        self._close_queue(slot.event_queue)
+        if slot.event_queue is not None:
+            self._close_queue(slot.event_queue)
         try:
             slot.process.close()
         except (AttributeError, ValueError):
