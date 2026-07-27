@@ -50,6 +50,7 @@ class _WorkerSlot:
     generation: int
     process: object
     command_queue: object
+    event_queue: object
     started_at: float
     last_heartbeat: float
     last_manifest_heartbeat: float
@@ -80,6 +81,9 @@ class ParallelCoordinator:
         self.jobs = tuple(jobs)
         self.manifest = manifest or ManifestCoordinator(config.manifest_path)
         self.context = mp_context or mp.get_context("spawn")
+        # Retained for compatibility with callers that close the coordinator queue
+        # directly. Worker generations use isolated queues so a force-killed worker
+        # cannot poison the event channel used by its replacement.
         self.event_queue = self.context.Queue()
         self.claims = ClaimStore(config.claims_dir, stale_after=config.claim_stale_after)
         self.pending = deque(sorted(self.jobs, key=lambda job: (-job.estimated_weight, job.key)))
@@ -126,8 +130,26 @@ class ParallelCoordinator:
     def _runtime_worker_id(slot: _WorkerSlot) -> str:
         return slot.worker_id if slot.generation == 1 else f"{slot.worker_id}-g{slot.generation:03d}"
 
+    def _next_event(self) -> WorkerEvent | None:
+        deadline = time.monotonic() + self.config.poll_interval
+        while True:
+            for slot in list(self.slots.values()):
+                try:
+                    event = slot.event_queue.get_nowait()
+                except Empty:
+                    continue
+                except (EOFError, OSError, ValueError):
+                    continue
+                if isinstance(event, WorkerEvent):
+                    return event
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            time.sleep(min(0.001, remaining))
+
     def _spawn_worker(self, worker_id: str, *, generation: int = 1, restarts: int = 0) -> _WorkerSlot:
-        queue = self.context.Queue()
+        command_queue = self.context.Queue()
+        event_queue = self.context.Queue()
         runtime_worker_id = worker_id if generation == 1 else f"{worker_id}-g{generation:03d}"
         process = self.context.Process(
             target=worker_process_main,
@@ -136,8 +158,8 @@ class ParallelCoordinator:
                 worker_id,
                 runtime_worker_id,
                 self.config.to_payload(),
-                queue,
-                self.event_queue,
+                command_queue,
+                event_queue,
             ),
         )
         process.start()
@@ -146,7 +168,8 @@ class ParallelCoordinator:
             worker_id=worker_id,
             generation=generation,
             process=process,
-            command_queue=queue,
+            command_queue=command_queue,
+            event_queue=event_queue,
             started_at=now,
             last_heartbeat=now,
             last_manifest_heartbeat=0.0,
@@ -400,6 +423,7 @@ class ParallelCoordinator:
         cleaned = cleanup_descendants(pid, known_descendants=descendants, grace_seconds=0.25)
         self.result.zombie_processes_cleaned += len(cleaned)
         self._close_queue(slot.command_queue)
+        self._close_queue(slot.event_queue)
         try:
             slot.process.close()
         except (AttributeError, ValueError):
@@ -610,10 +634,7 @@ class ParallelCoordinator:
         self._start_workers()
         try:
             while True:
-                try:
-                    event = self.event_queue.get(timeout=self.config.poll_interval)
-                except Empty:
-                    event = None
+                event = self._next_event()
                 if isinstance(event, WorkerEvent):
                     self._handle_event(event)
                 self._maybe_start_more_workers()
