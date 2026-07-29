@@ -1,0 +1,4 @@
+# Runtime dependencies are declared in pyproject.toml.
+# Regenerate with:
+#   python -m piptools compile pyproject.toml --output-file requirements.lock
+-e .
