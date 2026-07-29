@@ -60,7 +60,7 @@ class PatchrightDownloadTests(unittest.TestCase):
             ),
             0,
         )
-        self.assertGreater(
+        self.assertEqual(
             score_download_trigger(
                 text="Download",
                 context=context,
@@ -68,13 +68,35 @@ class PatchrightDownloadTests(unittest.TestCase):
             ),
             0,
         )
-        self.assertGreater(
+        self.assertEqual(
             score_download_trigger(
                 text="Download",
                 expected_extensions={".opml"},
             ),
             0,
         )
+        self.assertGreater(
+            score_download_trigger(
+                text="Download",
+                href="sandbox:/mnt/data/Lecture_Notes.md",
+                context=context,
+                expected_extensions={".md"},
+            ),
+            0,
+        )
+
+    def test_multiple_generic_controls_remain_ambiguous(self):
+        context = "The generated Markdown artifact Lecture_Notes.md is ready."
+        for label in ("Download", "Copy", "Share", "Coding Citation"):
+            self.assertEqual(
+                score_download_trigger(
+                    text=label,
+                    context=context,
+                    expected_extensions={".md"},
+                ),
+                0,
+                label,
+            )
 
     def test_filesystem_salvage_detects_fresh_overwritten_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
