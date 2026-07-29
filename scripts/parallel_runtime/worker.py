@@ -20,6 +20,15 @@ def _load_symbol(path: str):
     return getattr(module, symbol_name)
 
 
+def rate_limit_incident_id(
+    runtime_worker_id: str,
+    job_key: str | None,
+    sequence: int,
+) -> str:
+    source = job_key or "startup"
+    return f"{runtime_worker_id}:{source}:rate-{max(1, int(sequence)):04d}"
+
+
 def worker_process_main(
     worker_id: str,
     runtime_worker_id: str,
@@ -30,16 +39,37 @@ def worker_process_main(
     """Spawn-safe worker entry point. Workers never open or mutate ManifestStore."""
     config = RunConfig.from_payload(run_config_payload)
     current_job_key: list[str | None] = [None]
+    rate_incident_sequence = [0]
     stop_heartbeat = threading.Event()
 
     def emit(kind: EventKind, *, job_key: str | None = None, **payload: object) -> None:
+        resolved_job_key = job_key if job_key is not None else current_job_key[0]
+        event_job_key = resolved_job_key
+        event_payload = dict(payload)
+        if kind == EventKind.GLOBAL_COOLDOWN_REQUESTED:
+            incident_id = str(event_payload.get("incident_id") or "").strip()
+            if not incident_id:
+                rate_incident_sequence[0] += 1
+                incident_id = rate_limit_incident_id(
+                    runtime_worker_id,
+                    resolved_job_key,
+                    rate_incident_sequence[0],
+                )
+            event_payload["incident_id"] = incident_id
+            if resolved_job_key is not None:
+                event_payload.setdefault("source_job_key", resolved_job_key)
+            # Coordinator versions before explicit incident-id support use
+            # WorkerEvent.job_key as their deduplication key. Supplying the
+            # incident id here counts distinct rate-limit events from one job
+            # while still deduplicating retransmission of the same incident.
+            event_job_key = incident_id
         event_queue.put(
             WorkerEvent(
                 kind=kind,
                 worker_id=worker_id,
                 runtime_worker_id=runtime_worker_id,
-                job_key=job_key if job_key is not None else current_job_key[0],
-                payload=payload,
+                job_key=event_job_key,
+                payload=event_payload,
             )
         )
 
@@ -109,7 +139,11 @@ def worker_process_main(
                     failure_category=category.value,
                     retryable=False,
                     retry_after=getattr(exc, "retry_after", None),
-                    metadata={"traceback": traceback.format_exc()},
+                    metadata={
+                        "traceback": traceback.format_exc(),
+                        "auth_signaled": category == FailureCategory.AUTH,
+                        "rate_limit_signaled": category == FailureCategory.RATE_LIMIT,
+                    },
                 )
 
             if not result.success:
