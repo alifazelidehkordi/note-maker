@@ -1,0 +1,4 @@
+# Development and CI dependency input.
+# Regenerate with:
+#   python -m piptools compile --extra dev pyproject.toml --output-file requirements-dev.lock
+-e .[dev]
