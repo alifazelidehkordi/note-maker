@@ -3,87 +3,73 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-echo "=== Note Maker: Markdown → Styled PDF ==="
-echo "Project dir: $(pwd)"
+echo "=== Note Maker: prepared Markdown -> final verified PDF ==="
 
-VENV_DIR=".venv-linux"
-PYTHON="${VENV_DIR}/bin/python"
-
-if [[ ! -x "${PYTHON}" ]]; then
+VENV_DIR="${VENV_DIR:-.venv-linux}"
+PYTHON="${PYTHON:-${VENV_DIR}/bin/python}"
+if [[ ! -x "$PYTHON" ]]; then
   ./setup.sh
 fi
 
 NOTES_DIR="${NOTES_DIR:-${INPUT_DIR:-outputs/notes}}"
 PDF_DIR="${PDF_DIR:-${OUTPUT_DIR:-${NOTES_DIR}/pdfs}}"
-CREATE_COMBINED="${CREATE_COMBINED:-0}"
-COMBINED_OUTPUT="${COMBINED_OUTPUT:-${NOTES_DIR}/../COMBINED_NOTES.pdf}"
-ENRICH_SOURCE="${ENRICH_SOURCE:-0}"
-GENERATE_RICH_INDEX="${GENERATE_RICH_INDEX:-0}"
 ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-}"
-INDEX_MD="${INDEX_MD:-${NOTES_DIR}/../STUDY_INDEX-rewritten.md}"
+SOURCE_INDEX="${SOURCE_INDEX:-}"
+if [[ -z "$SOURCE_INDEX" ]]; then
+  if [[ -n "$ORIGINAL_PARTS_DIR" && -f "$ORIGINAL_PARTS_DIR/INDEX.md" ]]; then
+    SOURCE_INDEX="$ORIGINAL_PARTS_DIR/INDEX.md"
+  else
+    SOURCE_INDEX="$NOTES_DIR/INDEX.md"
+  fi
+fi
+INDEX_MD="${INDEX_MD:-${NOTES_DIR}/STUDY_INDEX-rewritten.md}"
+COMBINED_OUTPUT="${COMBINED_OUTPUT:-${NOTES_DIR}/FINAL_STUDY_NOTES.pdf}"
 CSS_FILE="${CSS_FILE:-}"
-BOOK_TITLE="${BOOK_TITLE:-Study Notes}"
+BOOK_TITLE="${BOOK_TITLE:-}"
 
-echo ""
-echo "Notes dir : ${NOTES_DIR}"
-echo "PDF dir   : ${PDF_DIR}"
-if [[ -n "$CSS_FILE" ]]; then
-  echo "Extra CSS : ${CSS_FILE}"
-fi
-if [[ "$CREATE_COMBINED" == "1" ]]; then
-  echo "Combined  : ${COMBINED_OUTPUT}"
-fi
-echo ""
+for directory in "$NOTES_DIR"; do
+  [[ -d "$directory" && -r "$directory" ]] || { echo "Required directory is missing or unreadable: $directory" >&2; exit 2; }
+done
+[[ -f "$SOURCE_INDEX" && -r "$SOURCE_INDEX" ]] || { echo "Primary INDEX is missing or unreadable: $SOURCE_INDEX" >&2; exit 2; }
+[[ -n "${FONT_FILE:-}" && -f "$FONT_FILE" && -r "$FONT_FILE" ]] || { echo "FONT_FILE is missing or unreadable" >&2; exit 2; }
+[[ -n "${FONT_BOLD_FILE:-}" && -f "$FONT_BOLD_FILE" && -r "$FONT_BOLD_FILE" ]] || { echo "FONT_BOLD_FILE is missing or unreadable" >&2; exit 2; }
 
-"${PYTHON}" -c "import weasyprint, markdown, pypdf" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown pypdf
+"$PYTHON" -c "import weasyprint, markdown, pypdf, yaml" 2>/dev/null || "$PYTHON" -m pip install weasyprint markdown pypdf pyyaml
 
-if [[ "$ENRICH_SOURCE" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
-  echo "Enriching notes from: ${ORIGINAL_PARTS_DIR}"
-  "${PYTHON}" scripts/enrich_rewritten_notes.py \
-    --original-parts "$ORIGINAL_PARTS_DIR" \
-    --rewritten-dir "${NOTES_DIR}" \
-    --inplace
-fi
-
-if [[ "$GENERATE_RICH_INDEX" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
-  echo "Generating rich STUDY_INDEX..."
-  "${PYTHON}" scripts/generate_study_index.py \
-    --parts-dir "$ORIGINAL_PARTS_DIR" \
-    --clean-dir "${NOTES_DIR}" \
-    --output "$INDEX_MD" \
-    --title "$BOOK_TITLE"
-fi
-
-mkdir -p "${PDF_DIR}"
+mkdir -p "$PDF_DIR" "$(dirname "$COMBINED_OUTPUT")"
 
 CSS_ARG=()
-if [[ -n "$CSS_FILE" ]]; then
-  CSS_ARG=(--css "$CSS_FILE")
-fi
+[[ -n "$CSS_FILE" ]] && CSS_ARG=(--css "$CSS_FILE")
+TITLE_ARG=()
+[[ -n "$BOOK_TITLE" ]] && TITLE_ARG=(--title "$BOOK_TITLE")
 
-echo "Converting topic notes to PDF..."
-"${PYTHON}" scripts/convert_md_to_pdf.py \
-  --batch \
-  "${NOTES_DIR}" \
-  --output "${PDF_DIR}" \
+echo "Notes dir       : $NOTES_DIR"
+echo "Source INDEX    : $SOURCE_INDEX"
+echo "Rich index      : $INDEX_MD"
+echo "Topic PDF dir   : $PDF_DIR"
+echo "Final PDF       : $COMBINED_OUTPUT"
+
+echo "Generating bilingual Study Index from the prepared source INDEX..."
+"$PYTHON" scripts/generate_study_index.py \
+  --index "$SOURCE_INDEX" \
+  --notes-dir "$NOTES_DIR" \
+  --output "$INDEX_MD"
+
+echo "Converting numbered topic notes to A4 portrait PDFs..."
+"$PYTHON" scripts/convert_md_to_pdf.py \
+  --batch "$NOTES_DIR" \
+  --output "$PDF_DIR" \
+  --no-page-numbers \
   "${CSS_ARG[@]}"
 
-if [[ "$CREATE_COMBINED" == "1" ]]; then
-  echo ""
-  echo "Building combined PDF..."
-  INDEX_ARG=()
-  if [[ -f "$INDEX_MD" ]]; then
-    INDEX_ARG=(--index-md "$INDEX_MD")
-  fi
-  "${PYTHON}" scripts/create_combined_pdf.py \
-    --notes-dir "${NOTES_DIR}" \
-    --pdf-dir "${PDF_DIR}" \
-    --output "${COMBINED_OUTPUT}" \
-    --title "$BOOK_TITLE" \
-    "${CSS_ARG[@]}" \
-    "${INDEX_ARG[@]}"
-fi
+echo "Building and verifying the final combined PDF..."
+"$PYTHON" scripts/create_combined_pdf.py \
+  --notes-dir "$NOTES_DIR" \
+  --pdf-dir "$PDF_DIR" \
+  --source-index "$SOURCE_INDEX" \
+  --index-md "$INDEX_MD" \
+  --output "$COMBINED_OUTPUT" \
+  "${TITLE_ARG[@]}" \
+  "${CSS_ARG[@]}"
 
-echo ""
-echo "✅ PDFs in: ${PDF_DIR}/"
-ls -lh "${PDF_DIR}/" | head -12
+echo "Final verified PDF: $COMBINED_OUTPUT"
