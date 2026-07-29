@@ -108,22 +108,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {_version()}")
     parser.add_argument("--config", type=Path, default=None, help="Path to note-maker.toml.")
-    parser.add_argument("--profile", default=None, help="Named profile from the configuration file.")
-    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON where supported.")
+    parser.add_argument(
+        "--profile", default=None, help="Named profile from the configuration file."
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON where supported."
+    )
 
     commands = parser.add_subparsers(dest="command", required=True)
 
-    doctor = commands.add_parser("doctor", help="Check dependencies, configuration, and browser availability.")
-    doctor.add_argument("--strict", action="store_true", help="Treat missing optional browsers as errors.")
+    doctor = commands.add_parser(
+        "doctor", help="Check dependencies, configuration, and browser availability."
+    )
+    doctor.add_argument(
+        "--strict", action="store_true", help="Treat missing optional browsers as errors."
+    )
 
     status = commands.add_parser("status", help="Show the latest batch summary.")
     status.add_argument("--summary", type=Path, default=Path("logs/last_batch_summary.json"))
 
-    validate = commands.add_parser("validate", help="Validate generated Markdown or OPML artifacts.")
+    validate = commands.add_parser(
+        "validate", help="Validate generated Markdown or OPML artifacts."
+    )
     validate.add_argument("paths", nargs="+", type=Path)
     validate.add_argument("--extension", choices=("md", "markdown", "opml"), default=None)
 
-    config = commands.add_parser("config", help="Display the resolved configuration and source precedence.")
+    config = commands.add_parser(
+        "config", help="Display the resolved configuration and source precedence."
+    )
     config.add_argument("target", choices=("pdf", "markdown"), default="pdf", nargs="?")
     config.add_argument("--markdown-file", type=Path, default=None)
     _add_runtime_shortcuts(config)
@@ -131,12 +143,16 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="Run a configured batch.")
     run_commands = run.add_subparsers(dest="run_command", required=True)
 
-    pdf = run_commands.add_parser("pdf", help="Process PDF, DOCX, or Markdown files from a directory.")
+    pdf = run_commands.add_parser(
+        "pdf", help="Process PDF, DOCX, or Markdown files from a directory."
+    )
     pdf.add_argument("--input-dir", type=Path, default=None)
     pdf.add_argument("--max-attempts", type=int, default=None)
     _add_shared_run_arguments(pdf)
 
-    markdown = run_commands.add_parser("markdown", help="Process each level-2 section in one Markdown file.")
+    markdown = run_commands.add_parser(
+        "markdown", help="Process each level-2 section in one Markdown file."
+    )
     markdown.add_argument("--markdown-file", type=Path, default=None)
     markdown.add_argument("--sections", default=None)
     markdown.add_argument("--max-section-attempts", type=int, default=None)
@@ -180,7 +196,9 @@ def _doctor(args: argparse.Namespace) -> int:
             {
                 "name": f"dependency:{module}",
                 "ok": importlib.util.find_spec(module) is not None,
-                "detail": "installed" if importlib.util.find_spec(module) is not None else "missing",
+                "detail": "installed"
+                if importlib.util.find_spec(module) is not None
+                else "missing",
             }
         )
 
@@ -194,7 +212,9 @@ def _doctor(args: argparse.Namespace) -> int:
         {
             "name": "system-browser",
             "ok": browser_ok or not args.strict,
-            "detail": next((path for path in browsers.values() if path), "bundled browser may be used"),
+            "detail": next(
+                (path for path in browsers.values() if path), "bundled browser may be used"
+            ),
         }
     )
 

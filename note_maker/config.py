@@ -232,11 +232,7 @@ def _normalize_paths(values: dict[str, Any], base_dir: Path) -> None:
 
 
 def _runtime_from_values(values: Mapping[str, Any]) -> runtime_flags.RuntimeSettings:
-    runtime_values = {
-        key: values[key]
-        for key in RUNTIME_KEYS
-        if key in values
-    }
+    runtime_values = {key: values[key] for key in RUNTIME_KEYS if key in values}
     try:
         return runtime_flags.validate_runtime_settings(**runtime_values)
     except runtime_flags.RuntimeConfigurationError as exc:
