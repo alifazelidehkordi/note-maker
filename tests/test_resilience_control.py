@@ -20,6 +20,7 @@ from parallel_runtime.resilience import (
     classify_failure,
 )
 from parallel_runtime.executors import _BrowserExecutorBase
+from parallel_runtime.worker import rate_limit_incident_id
 
 
 class _Clock:
@@ -91,6 +92,13 @@ class RetryPolicyTests(unittest.TestCase):
         self.assertTrue(decision.retry)
         self.assertEqual(decision.delay_seconds, 17)
 
+    def test_rate_limit_incident_ids_are_unique_within_one_job(self):
+        first = rate_limit_incident_id("worker-001", "job-a", 1)
+        second = rate_limit_incident_id("worker-001", "job-a", 2)
+        self.assertNotEqual(first, second)
+        self.assertIn("job-a", first)
+        self.assertIn("job-a", second)
+
 
 class GlobalControlTests(unittest.TestCase):
     def test_cooldown_pauses_dispatch_and_adaptive_limit_recovers(self):
@@ -120,7 +128,7 @@ class GlobalControlTests(unittest.TestCase):
         self.assertEqual(snapshot.scale_ups, 1)
         self.assertEqual(snapshot.cooldown_requested_seconds, 12)
 
-    def test_repeated_rate_limit_for_same_job_extends_without_double_counting(self):
+    def test_repeated_same_incident_extends_without_double_counting(self):
         clock = _Clock()
         control = GlobalRuntimeController(
             requested_limit=4,
@@ -132,10 +140,11 @@ class GlobalControlTests(unittest.TestCase):
             adaptive_recovery_seconds=30,
             clock=clock,
         )
-        self.assertTrue(control.request_cooldown(incident_key="job-a"))
+        incident = rate_limit_incident_id("worker-001", "job-a", 1)
+        self.assertTrue(control.request_cooldown(incident_key=incident))
         clock.advance(5)
         self.assertFalse(
-            control.request_cooldown(retry_after=20, incident_key="job-a")
+            control.request_cooldown(retry_after=20, incident_key=incident)
         )
         snapshot = control.snapshot()
         self.assertEqual(snapshot.rate_limit_events, 1)
@@ -143,7 +152,23 @@ class GlobalControlTests(unittest.TestCase):
         self.assertIsNone(snapshot.circuit_open_reason)
         self.assertGreaterEqual(snapshot.cooldown_remaining, 20)
 
-        self.assertTrue(control.request_cooldown(incident_key="job-b"))
+    def test_distinct_incidents_from_same_job_are_counted(self):
+        clock = _Clock()
+        control = GlobalRuntimeController(
+            requested_limit=4,
+            cooldown_seconds=10,
+            rate_limit_failures_before_abort=2,
+            rate_limit_window_seconds=300,
+            adaptive_enabled=True,
+            adaptive_scale_down_threshold=2,
+            adaptive_recovery_seconds=30,
+            clock=clock,
+        )
+        first = rate_limit_incident_id("worker-001", "job-a", 1)
+        second = rate_limit_incident_id("worker-001", "job-a", 2)
+        self.assertTrue(control.request_cooldown(incident_key=first))
+        clock.advance(5)
+        self.assertTrue(control.request_cooldown(incident_key=second))
         snapshot = control.snapshot()
         self.assertEqual(snapshot.rate_limit_events, 2)
         self.assertEqual(snapshot.active_limit, 3)
