@@ -116,6 +116,21 @@ def translate_patchright_error(operation: str, exc: BaseException) -> BrowserRun
         return exc
     message = _message(exc)
     lowered = message.lower()
+    if operation == "start" and any(
+        marker in lowered
+        for marker in (
+            "crashpad",
+            "setsockopt: operation not permitted",
+            "signal=sigtrap",
+            "no usable sandbox",
+            "failed to move to new namespace",
+        )
+    ):
+        return BrowserConfigurationError(
+            "Browser launch is blocked by the host sandbox/security policy. "
+            "Run the browser workflow with permission to launch Chromium. "
+            f"Original startup error: {message}"
+        )
     if any(
         marker in lowered
         for marker in (
@@ -269,6 +284,7 @@ class PatchrightBrowserSession:
         self._playwright = playwright
         self._context = context
         self._page = page
+        self._crashed = False
         self._options = options
         self._profile_dir = profile_dir
         self._download_dir = download_dir
@@ -278,6 +294,25 @@ class PatchrightBrowserSession:
         self._last_send_assistant_count: int | None = None
         self._last_send_completed = False
         self._last_send_started_at: float | None = None
+        self._bind_page(page)
+
+    def _bind_page(self, page: Any) -> None:
+        self._page = page
+        self._crashed = False
+        try:
+            page.on("crash", self._on_page_crash)
+        except Exception:
+            pass
+
+    def _on_page_crash(self, *_args: object) -> None:
+        self._crashed = True
+        self._set_state(SessionState.FAILED)
+
+    def _translate_failure(self, operation: str, exc: BaseException) -> BrowserRuntimeError:
+        translated = translate_patchright_error(operation, exc)
+        if isinstance(translated, BrowserCrashedError):
+            self._on_page_crash()
+        return translated
 
     @property
     def raw_handle(self) -> object:
@@ -303,10 +338,10 @@ class PatchrightBrowserSession:
             return function(*args, **kwargs)
         except Exception as exc:
             self._state = SessionState.FAILED
-            raise translate_patchright_error(operation, exc) from exc
+            raise self._translate_failure(operation, exc) from exc
 
     def is_alive(self) -> bool:
-        if self._closed:
+        if self._closed or self._crashed:
             return False
         try:
             if hasattr(self._page, "is_closed") and self._page.is_closed():
@@ -337,7 +372,7 @@ class PatchrightBrowserSession:
         try:
             if not self.is_alive():
                 try:
-                    self._page = self._context.new_page()
+                    self._bind_page(self._context.new_page())
                 except Exception:
                     return False
             target = str(getattr(self._page, "url", "") or self._options.url or CHATGPT_URL)
@@ -528,7 +563,7 @@ class PatchrightBrowserSession:
         except BrowserRuntimeError:
             raise
         except Exception as exc:
-            translated = translate_patchright_error("new_chat", exc)
+            translated = self._translate_failure("new_chat", exc)
             if isinstance(translated, (BrowserCrashedError, NetworkUnavailableError)):
                 raise translated from exc
             raise TemporaryChatError(f"Could not open a fresh temporary chat: {_message(exc)}") from exc
@@ -548,13 +583,13 @@ class PatchrightBrowserSession:
             option.click()
             time.sleep(0.5)
         except Exception as exc:
-            raise translate_patchright_error("select_model", exc) from exc
+            raise self._translate_failure("select_model", exc) from exc
 
     def assistant_message_count(self) -> int:
         try:
             return int(self._page.locator(ASSISTANT_MESSAGE_SELECTOR).count())
         except Exception as exc:
-            raise translate_patchright_error("wait_response", exc) from exc
+            raise self._translate_failure("wait_response", exc) from exc
 
     def _upload_error_text(self) -> str:
         for selector in UPLOAD_ERROR_SELECTORS:
@@ -649,7 +684,7 @@ class PatchrightBrowserSession:
             raise BrowserUploadError(f"Timed out waiting for upload: {request.file_path.name}")
         except Exception as exc:
             self._set_state(SessionState.FAILED)
-            raise translate_patchright_error("upload", exc) from exc
+            raise self._translate_failure("upload", exc) from exc
 
     @staticmethod
     def _prompt_hash(text: str) -> str:
@@ -767,7 +802,7 @@ class PatchrightBrowserSession:
             )
         except Exception as exc:
             self._set_state(SessionState.FAILED)
-            raise translate_patchright_error("send", exc) from exc
+            raise self._translate_failure("send", exc) from exc
 
     def _generation_visible(self) -> bool:
         return _first_visible(self._page, STOP_BUTTON_SELECTORS, timeout_ms=250) is not None
@@ -1128,7 +1163,7 @@ class PatchrightBrowserSession:
             return fallback
         except Exception as exc:
             self._set_state(SessionState.FAILED)
-            raise translate_patchright_error("download", exc) from exc
+            raise self._translate_failure("download", exc) from exc
 
     def latest_assistant_text(self) -> str:
         try:
@@ -1139,7 +1174,7 @@ class PatchrightBrowserSession:
                     return text
             return _body_text(self._page)
         except Exception as exc:
-            raise translate_patchright_error("diagnostics", exc) from exc
+            raise self._translate_failure("diagnostics", exc) from exc
 
     def save_screenshot(self, path: Path) -> bool:
         try:
@@ -1154,13 +1189,13 @@ class PatchrightBrowserSession:
         try:
             return str(self._page.content())
         except Exception as exc:
-            raise translate_patchright_error("diagnostics", exc) from exc
+            raise self._translate_failure("diagnostics", exc) from exc
 
     def get_cookies(self) -> Sequence[Mapping[str, Any]]:
         try:
             return tuple(self._context.cookies())
         except Exception as exc:
-            raise translate_patchright_error("cookies", exc) from exc
+            raise self._translate_failure("cookies", exc) from exc
 
     def delete_cookie(self, name: str) -> None:
         try:
@@ -1169,7 +1204,7 @@ class PatchrightBrowserSession:
             if cookies:
                 self._context.add_cookies(cookies)
         except Exception as exc:
-            raise translate_patchright_error("cookies", exc) from exc
+            raise self._translate_failure("cookies", exc) from exc
 
 
 class PatchrightProvider:

@@ -5,13 +5,19 @@ import time
 import unittest
 from pathlib import Path
 import sys
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from browser_runtime.errors import AuthenticationRequiredError, DownloadNotFoundError, RateLimitError
+from browser_runtime.errors import (
+    AuthenticationRequiredError,
+    BrowserConfigurationError,
+    DownloadNotFoundError,
+    RateLimitError,
+)
 from parallel_runtime.resilience import (
     FailureCategory,
     GlobalRuntimeController,
@@ -85,6 +91,37 @@ class RetryPolicyTests(unittest.TestCase):
         self.assertFalse(third.retry)
         self.assertEqual([first.delay_seconds, second.delay_seconds], [1.0, 2.0])
         self.assertEqual(tracker.as_dict()["network"], 3)
+
+    def test_browser_configuration_failure_is_not_retried(self):
+        tracker = RetryTracker(RetryBudgetPolicy(browser_retries=5, jitter_ratio=0.0))
+        decision = tracker.record(BrowserConfigurationError("sandbox blocked Chromium"))
+        self.assertEqual(decision.category, FailureCategory.BROWSER)
+        self.assertFalse(decision.retry)
+        self.assertEqual(decision.count, 1)
+
+    def test_executor_discards_dead_session_before_reuse(self):
+        executor = _BrowserExecutorBase(
+            config={"browser_provider": "patchright"},
+            run_id="run",
+            worker_id="worker-001",
+            emit=lambda *a, **k: None,
+        )
+        dead = object()
+        fresh = object()
+        provider = object()
+        executor.driver = dead
+        executor.provider = provider
+
+        with mock.patch("batch_common.driver_is_alive", return_value=False), mock.patch(
+            "batch_common.quit_driver"
+        ) as quit_driver, mock.patch(
+            "batch_common.bootstrap_session", return_value=fresh
+        ) as bootstrap:
+            self.assertIs(executor._ensure_session(), fresh)
+
+        quit_driver.assert_called_once_with(dead)
+        bootstrap.assert_called_once()
+        self.assertEqual(executor.browser_restarts, 1)
 
     def test_rate_limit_retry_after_overrides_backoff(self):
         tracker = RetryTracker(RetryBudgetPolicy(rate_limit_retries=1, jitter_ratio=0.0))

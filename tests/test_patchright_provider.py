@@ -19,6 +19,7 @@ from browser_runtime import (
     ResponseWaitRequest,
 )
 from browser_runtime.errors import (
+    BrowserConfigurationError,
     BrowserCrashedError,
     BrowserSendError,
     NetworkUnavailableError,
@@ -129,6 +130,10 @@ class FakePage:
     def __init__(self) -> None:
         self.candidate = Candidate()
         self.closed = False
+        self.handlers = {}
+
+    def on(self, event: str, handler):
+        self.handlers[event] = handler
 
     def is_closed(self):
         return self.closed
@@ -213,6 +218,13 @@ class PatchrightProviderTests(unittest.TestCase):
             self.assertEqual(session.health().status, BrowserHealthStatus.HEALTHY)
             session.delete_cookie("drop")
             self.assertEqual([item["name"] for item in session.get_cookies()], ["keep"])
+
+    def test_page_crash_event_marks_session_dead(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            session.raw_handle.handlers["crash"]()
+            self.assertFalse(session.is_alive())
+            self.assertEqual(session.health().status, BrowserHealthStatus.DEAD)
 
     def test_rate_limit_modal_uses_dom_click_and_verifies_dismissal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -367,6 +379,14 @@ class PatchrightProviderTests(unittest.TestCase):
             translate_patchright_error("send", RuntimeError("Target page, context or browser has been closed")),
             BrowserCrashedError,
         )
+        sandbox_error = translate_patchright_error(
+            "start",
+            RuntimeError(
+                "browser closed; crashpad setsockopt: Operation not permitted; signal=SIGTRAP"
+            ),
+        )
+        self.assertIsInstance(sandbox_error, BrowserConfigurationError)
+        self.assertIn("host sandbox/security policy", str(sandbox_error))
 
 
 if __name__ == "__main__":

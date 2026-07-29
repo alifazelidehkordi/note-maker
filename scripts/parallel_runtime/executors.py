@@ -17,6 +17,7 @@ class _BrowserExecutorBase:
         self.emit = emit
         self.driver = None
         self.provider = None
+        self._terminal_startup_error: BaseException | None = None
         self.failed = False
         self.browser_restarts = 0
         self.rate_limit_count = 0
@@ -39,8 +40,14 @@ class _BrowserExecutorBase:
     def _ensure_session(self):
         import batch_common as common
 
+        if self._terminal_startup_error is not None:
+            raise self._terminal_startup_error
         if self.provider is None:
             self.provider = common.get_browser_provider(str(self.config["browser_provider"]))
+        if self.driver is not None and not common.driver_is_alive(self.driver):
+            common.quit_driver(self.driver)
+            self.driver = None
+            self.browser_restarts += 1
         if self.driver is None:
             self.driver = common.bootstrap_session(
                 self.model,
@@ -68,14 +75,33 @@ class _BrowserExecutorBase:
             try:
                 return self._ensure_session()
             except Exception as exc:
+                from browser_runtime.errors import BrowserConfigurationError
+
+                if isinstance(exc, BrowserConfigurationError):
+                    self._terminal_startup_error = exc
                 decision = tracker.record(exc, default_delay=policy.backoff_base)
                 self._retry_event(decision, exc)
                 if not decision.retry:
                     raise
-                self.driver = None
+                if self.driver is not None:
+                    import batch_common as common
+
+                    common.quit_driver(self.driver)
+                    self.driver = None
                 if decision.delay_seconds > 0:
                     time.sleep(decision.delay_seconds)
 
+    def _discard_dead_session(self) -> None:
+        """Quarantine a crashed browser before this worker accepts another job."""
+        if self.driver is None:
+            return
+        import batch_common as common
+
+        if common.driver_is_alive(self.driver):
+            return
+        common.quit_driver(self.driver)
+        self.driver = None
+        self.browser_restarts += 1
 
     def _retry_policy(self, content_attempts: int) -> RetryBudgetPolicy:
         return RetryBudgetPolicy.from_mapping(
@@ -207,6 +233,7 @@ class PdfJobExecutor(_BrowserExecutorBase):
         )
         if self.driver is not previous:
             self.browser_restarts += 1
+        self._discard_dead_session()
         if self.driver is not None:
             common.prune_driver_cookies(self.driver)
         self.failed = self.failed or not ok
@@ -283,6 +310,7 @@ class MarkdownJobExecutor(_BrowserExecutorBase):
         )
         if self.driver is not previous:
             self.browser_restarts += 1
+        self._discard_dead_session()
         if self.driver is not None:
             common.prune_driver_cookies(self.driver)
         self.failed = self.failed or not ok

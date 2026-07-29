@@ -8,6 +8,7 @@ from typing import Callable, Mapping
 
 from browser_runtime.errors import (
     BrowserAuthenticationError,
+    BrowserConfigurationError,
     BrowserCrashedError,
     BrowserDownloadError,
     BrowserNavigationError,
@@ -56,7 +57,10 @@ def classify_failure(error: BaseException | str | None) -> FailureCategory:
         return FailureCategory.RATE_LIMIT
     if isinstance(error, NetworkUnavailableError):
         return FailureCategory.NETWORK
-    if isinstance(error, (BrowserCrashedError, BrowserStartupError, ProfileRuntimeError)):
+    if isinstance(
+        error,
+        (BrowserConfigurationError, BrowserCrashedError, BrowserStartupError, ProfileRuntimeError),
+    ):
         return FailureCategory.BROWSER
     if isinstance(error, BrowserDownloadError):
         return FailureCategory.DOWNLOAD
@@ -213,6 +217,8 @@ class RetryTracker:
         else:
             retry = count <= limit
         if category == FailureCategory.AUTH:
+            retry = False
+        if isinstance(error, BrowserConfigurationError):
             retry = False
         decision = RetryDecision(
             category=category,
