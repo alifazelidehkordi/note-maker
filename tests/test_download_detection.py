@@ -83,19 +83,39 @@ class DownloadDetectionTests(unittest.TestCase):
                 expected_extensions={".md"},
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             core.is_artifact_download_trigger(
                 text="Download",
                 context=context,
                 expected_extensions={".md"},
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             core.is_artifact_download_trigger(
                 text="Download",
                 expected_extensions={".opml"},
             )
         )
+        self.assertTrue(
+            core.is_artifact_download_trigger(
+                text="Download",
+                href="sandbox:/mnt/data/Lecture_Notes.md",
+                context=context,
+                expected_extensions={".md"},
+            )
+        )
+
+    def test_multiple_generic_controls_are_rejected(self):
+        context = "The Markdown artifact Lecture_Notes.md is ready."
+        for label in ("Download", "Copy", "Share", "Coding Citation"):
+            self.assertFalse(
+                core.is_artifact_download_trigger(
+                    text=label,
+                    context=context,
+                    expected_extensions={".md"},
+                ),
+                label,
+            )
 
     def test_trigger_must_match_expected_extension(self):
         self.assertTrue(
