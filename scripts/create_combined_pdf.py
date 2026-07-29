@@ -10,7 +10,7 @@ from pathlib import Path
 import fitz
 from pypdf import PdfReader
 
-from convert_md_to_pdf import build_css, note_to_html, write_html_pdf
+from convert_md_to_pdf import build_final_css, note_to_html, write_html_pdf
 from generate_study_index import build_study_index_html, group_sessions, parse_index
 from pdf_common import locate_index, validate_required_paths
 
@@ -37,7 +37,7 @@ def create_combined(notes_dir: Path, output_path: Path, index_md: Path, font_fil
         note_blocks.append(note_to_html(session, group_start=is_new_group))
         last_group = session.group
 
-    css = build_css(font_file, font_bold_file)
+    css = build_final_css(font_file, font_bold_file)
     document = f'''<!doctype html>
 <html lang="en" dir="auto">
 <head>
