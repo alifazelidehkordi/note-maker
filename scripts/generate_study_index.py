@@ -1,275 +1,292 @@
 #!/usr/bin/env python3
-"""Generate a structured bilingual STUDY_INDEX.md for split study notes.
+"""Build a bilingual, data-driven Study Index from the source INDEX.md.
 
-Links use ``note://<note-stem>`` markers. create_combined_pdf.py rewrites
-those markers to internal destinations in the final merged PDF.
+The source INDEX.md is authoritative. Markdown frontmatter/content are used only
+for missing values. Session links intentionally use note:// markers; the final
+merge step rewrites them to PDF destinations.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
-from collections import defaultdict
+from html import escape as html_escape
+from collections import OrderedDict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover
+    yaml = None
 
-FRONT = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.S)
-H1 = re.compile(r"^#\s+(.+?)\s*$", re.M)
-NAME = re.compile(r"^(\d{1,3})(?:_(\d{1,3}))?_(.+)$")
-PP = re.compile(r"(?:^|_)pp(\d{1,4})[-–](\d{1,4})(?:_|$)", re.I)
 DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
-META_NAMES = {"study_index.md", "study_index-rewritten.md", "study_index_verification.md", "combined_notes.md", "readme.md"}
+FRONT_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.S)
+H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
+SESSION_RE = re.compile(
+    r"^###\s+(?P<number>\d{1,3})\.\s+\[(?P<title>[^\]]+)\]\((?P<link>[^)]+\.md)\)\s*$"
+    r"(?P<body>.*?)(?=^###\s+\d{1,3}\.\s+|\Z)",
+    re.M | re.S,
+)
+FIELD_RE = re.compile(r"^-\s+\*\*(?P<key>[^*]+):\*\*\s*(?P<value>.+?)\s*$", re.M)
+EXCLUDED_NAMES = {
+    "readme.md", "index.md", "study_index.md", "study_index-rewritten.md",
+    "study_index_verification.md", "qa_report.md", "structure.md", "boundaries.md",
+    "combined_notes.md", "verification.md",
+}
 
 
-def natural_key(path: Path) -> tuple:
-    return tuple(int(x) if x.isdigit() else x for x in re.split(r"(\d+)", path.name.casefold()))
+@dataclass(frozen=True)
+class Session:
+    number: int
+    title: str
+    title_fa: str
+    note_path: str
+    stem: str
+    group: str
+    group_fa: str
+    source_pages: str
+    book_pages: str
+    duration: str
+    focus: str
+    key_concepts: str
 
 
-def is_note(path: Path) -> bool:
-    name = path.name.casefold()
-    return path.is_file() and path.suffix.casefold() == ".md" and name not in META_NAMES and not name.startswith(("study_index", "combined_notes", "."))
+@dataclass(frozen=True)
+class StudyData:
+    course_title: str
+    total_sessions: int
+    overall_source_pages: str
+    overall_book_pages: str
+    total_study_time: str
+    sessions: list[Session]
 
 
-def frontmatter(path: Path) -> dict:
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    match = FRONT.match(text)
+def natural_key(value: str | Path) -> tuple:
+    name = Path(value).name.casefold()
+    return tuple(int(x) if x.isdigit() else x for x in re.split(r"(\d+)", name))
+
+
+def _frontmatter(path: Path) -> dict:
+    if not path.is_file() or yaml is None:
+        return {}
+    match = FRONT_RE.match(path.read_text(encoding="utf-8", errors="ignore"))
     if not match:
         return {}
     try:
-        data = yaml.safe_load(match.group(1)) or {}
-        return data if isinstance(data, dict) else {}
+        value = yaml.safe_load(match.group(1)) or {}
+        return value if isinstance(value, dict) else {}
     except Exception:
         return {}
 
 
-def heading(path: Path) -> str:
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    match = H1.search(text)
-    if match:
-        return match.group(1).strip()
-    match = NAME.match(path.stem)
-    raw = match.group(3) if match else path.stem
-    return raw.replace("_", " ").replace("-", " ").strip().title()
+def _heading(path: Path) -> str:
+    if not path.is_file():
+        return path.stem.replace("_", " ").replace("-", " ").strip().title()
+    match = H1_RE.search(path.read_text(encoding="utf-8", errors="ignore"))
+    return match.group(1).strip() if match else path.stem.replace("_", " ").replace("-", " ").title()
 
 
-def first(meta: dict, *keys: str, default=None):
+def is_topic_note(path: Path) -> bool:
+    name = path.name.casefold()
+    if not path.is_file() or path.suffix.casefold() != ".md" or name in EXCLUDED_NAMES:
+        return False
+    if name.startswith(("study_index", "combined_", ".", "~")):
+        return False
+    return bool(re.match(r"^\d{1,3}(?:_\d{1,3})?[_-]", path.stem))
+
+
+def _field_map(body: str) -> dict[str, str]:
+    return {m.group("key").strip().casefold(): m.group("value").strip() for m in FIELD_RE.finditer(body)}
+
+
+def _first(mapping: dict, *keys: str, default: str = "") -> str:
     for key in keys:
-        value = meta.get(key)
+        value = mapping.get(key.casefold())
         if value not in (None, ""):
-            return value
+            return str(value).strip()
     return default
 
 
-def integer(value, default: int) -> int:
-    try:
-        return int(str(value).translate(DIGITS))
-    except (TypeError, ValueError):
-        return default
+def _find_note(notes_dir: Path, link: str, number: int) -> Path:
+    candidate = notes_dir / Path(link).name
+    if candidate.is_file():
+        return candidate
+    matches = sorted(notes_dir.glob(f"{number:02d}_*.md"), key=natural_key)
+    if not matches:
+        matches = sorted(notes_dir.glob(f"{number}_*.md"), key=natural_key)
+    if not matches:
+        raise FileNotFoundError(f"Session {number} from INDEX.md has no Markdown file in {notes_dir}")
+    if len(matches) > 1:
+        raise ValueError(f"Session {number} maps to multiple Markdown files: {[p.name for p in matches]}")
+    return matches[0]
 
 
-def excerpt(path: Path, limit: int = 180) -> str:
-    text = FRONT.sub("", path.read_text(encoding="utf-8", errors="ignore"), count=1)
-    text = H1.sub("", text, count=1)
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith(("|", "---", "```", "#")):
-            continue
-        line = re.sub(r"\[([^]]+)\]\([^)]+\)", r"\1", line)
-        line = re.sub(r"[*_`>#]+", "", line)
-        line = re.sub(r"\s+", " ", line).strip()
-        if line:
-            return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
-    return "مرور نکات کلیدی، سازوکارها و کاربردهای این بخش"
-
-
-def collect_parts(parts_dir: Path, clean_dir: Path | None = None, focus_map: dict | None = None) -> list[dict]:
-    focus_map = focus_map or {}
-    source_files = sorted((p for p in Path(parts_dir).glob("*.md") if is_note(p)), key=natural_key)
-    result = []
-    for order, source in enumerate(source_files, 1):
-        display = Path(clean_dir) / source.name if clean_dir else source
-        if not display.is_file():
-            display = source
-        meta = frontmatter(source)
-        if display != source:
-            meta.update({k: v for k, v in frontmatter(display).items() if v not in (None, "")})
-        match = NAME.match(source.stem)
-        n1 = int(match.group(1)) if match else order
-        n2 = int(match.group(2)) if match and match.group(2) else None
-        chapter = integer(first(meta, "chapter", "group", default=None), n1 if n2 else 1)
-        part = integer(first(meta, "part", "session", "section", default=None), n2 or n1)
-        page_value = first(meta, "pdf_pages", "pages", "page_range", default=None)
-        if page_value in (None, ""):
-            pm = PP.search(source.stem)
-            page_value = f"{int(pm.group(1))}-{int(pm.group(2))}" if pm else "—"
-        title = str(first(meta, "title", default=heading(display))).strip()
-        result.append({
-            "path": source,
-            "display_path": display,
-            "stem": display.stem,
-            "chapter": chapter,
-            "part": part,
-            "title": title,
-            "title_en": str(first(meta, "title_en", "english_title", default=title)).strip(),
-            "pdf_pages": str(page_value).strip(),
-            "book_pages": str(first(meta, "book_pages", default="—")).strip(),
-            "duration": str(first(meta, "estimated_time", "duration", "time", default="—")).strip(),
-            "study_focus": str(focus_map.get(source.name, first(meta, "study_focus", "focus", default=excerpt(display)))).strip(),
-            "study_focus_en": str(first(meta, "study_focus_en", "focus_en", default=focus_map.get(source.name, first(meta, "study_focus", "focus", default=excerpt(display))))).strip(),
-            "source": str(first(meta, "source", "source_pdf", default="")).strip(),
-            "chapter_title_fa": str(first(meta, "chapter_title_fa", "chapter_title", "group_title", default="")).strip(),
-            "chapter_title_en": str(first(meta, "chapter_title_en", "group_title_en", default="")).strip(),
-        })
-    return sorted(result, key=lambda p: (p["chapter"], p["part"], natural_key(p["display_path"])))
-
-
-def group_by_chapter(parts: list[dict]) -> dict[int, list[dict]]:
-    out: dict[int, list[dict]] = defaultdict(list)
-    for part in parts:
-        out[int(part["chapter"])].append(part)
-    return dict(sorted(out.items()))
-
-
-def bounds(value: str) -> tuple[int, int] | None:
+def _range_bounds(value: str) -> tuple[int, int] | None:
     nums = [int(x) for x in re.findall(r"\d+", str(value).translate(DIGITS))]
     return (min(nums), max(nums)) if nums else None
 
 
-def coverage(parts: list[dict]) -> str:
-    values = [bounds(p["pdf_pages"]) for p in parts]
-    values = [v for v in values if v]
-    return f"{min(v[0] for v in values)}-{max(v[1] for v in values)}" if values else "—"
+def coverage(values: list[str]) -> str:
+    bounds = [b for value in values if (b := _range_bounds(value))]
+    return f"{min(x[0] for x in bounds)}-{max(x[1] for x in bounds)}" if bounds else "—"
 
 
-def duration_minutes(value: str) -> int | None:
-    text = str(value).translate(DIGITS).casefold()
-    if text.strip() in {"", "—", "-"}:
-        return None
-    h = re.search(r"(\d+(?:\.\d+)?)\s*(?:h|hr|hour|ساعت)", text)
-    m = re.search(r"(\d+)\s*(?:m|min|minute|دقیقه)", text)
-    if not h and not m:
-        plain = re.fullmatch(r"\s*(\d+)\s*", text)
-        return int(plain.group(1)) if plain else None
-    return round(float(h.group(1)) * 60) if h and not m else ((round(float(h.group(1)) * 60) if h else 0) + (int(m.group(1)) if m else 0))
+def parse_source_index(index_path: Path, notes_dir: Path) -> StudyData:
+    index_path = Path(index_path).resolve()
+    notes_dir = Path(notes_dir).resolve()
+    text = index_path.read_text(encoding="utf-8", errors="strict")
+    title_match = H1_RE.search(text)
+    raw_title = title_match.group(1).strip() if title_match else "Study Notes"
+    course_title = re.sub(r"^Index\s*[-—–:]\s*", "", raw_title, flags=re.I).strip() or raw_title
+
+    overview = _field_map(text.split("## Numbered study sequence", 1)[0])
+    total_time = _first(overview, "Approximate total study time", default="—")
+    declared_total = _first(overview, "Numbered study parts", default="0")
+
+    sessions: list[Session] = []
+    for match in SESSION_RE.finditer(text):
+        number = int(match.group("number"))
+        fields = _field_map(match.group("body"))
+        note = _find_note(notes_dir, match.group("link"), number)
+        meta = {str(k).casefold(): v for k, v in _frontmatter(note).items()}
+        title = match.group("title").strip() or _first(meta, "title", default=_heading(note))
+        title_fa = _first(meta, "title_fa", "persian_title", default=title)
+        group = _first(fields, "Major division", default=_first(meta, "chapter_title_en", "group", default="Study Sections"))
+        group_fa = _first(meta, "chapter_title_fa", "group_title_fa", default=group)
+        source_pages = _first(fields, "PDF pages", default=_first(meta, "pdf_pages", "pages", default="—"))
+        book_pages = _first(fields, "Book pages", default=_first(meta, "book_pages", default="—"))
+        duration = _first(fields, "Approximate study time", default=_first(meta, "estimated_time", "duration", default="—"))
+        focus = _first(fields, "Scope/objective", default=_first(meta, "study_focus", "focus", default="—"))
+        key_concepts = _first(fields, "Key concepts and skills", default=_first(meta, "key_concepts", default="—"))
+        sessions.append(Session(number, title, title_fa, str(note), note.stem, group, group_fa, source_pages, book_pages, duration, focus, key_concepts))
+
+    if not sessions:
+        raise ValueError(f"No numbered sessions found in source Index: {index_path}")
+    sessions.sort(key=lambda s: s.number)
+    numbers = [s.number for s in sessions]
+    if len(numbers) != len(set(numbers)):
+        raise ValueError("Duplicate session numbers found in source Index")
+    expected = list(range(min(numbers), max(numbers) + 1))
+    if numbers != expected:
+        raise ValueError(f"Non-contiguous session numbering in source Index: {numbers}")
+    if declared_total.isdigit() and int(declared_total) != len(sessions):
+        raise ValueError(f"Index declares {declared_total} sessions but {len(sessions)} were parsed")
+
+    return StudyData(
+        course_title=course_title,
+        total_sessions=len(sessions),
+        overall_source_pages=coverage([s.source_pages for s in sessions]),
+        overall_book_pages=coverage([s.book_pages for s in sessions]),
+        total_study_time=total_time,
+        sessions=sessions,
+    )
 
 
-def format_duration(minutes: int | None, english: bool = False) -> str:
-    if minutes is None:
-        return "—"
-    h, m = divmod(minutes, 60)
-    if english:
-        return f"{h} h {m} min" if h and m else (f"{h} h" if h else f"{m} min")
-    return f"{h} ساعت و {m} دقیقه" if h and m else (f"{h} ساعت" if h else f"{m} دقیقه")
+def group_sessions(sessions: list[Session]) -> OrderedDict[str, list[Session]]:
+    groups: OrderedDict[str, list[Session]] = OrderedDict()
+    for session in sessions:
+        groups.setdefault(session.group, []).append(session)
+    return groups
 
 
-def chapter_name(number: int, items: list[dict], count: int, english: bool = False) -> str:
-    key = "chapter_title_en" if english else "chapter_title_fa"
-    explicit = next((x[key] for x in items if x.get(key)), None)
-    if explicit:
-        return explicit
-    if count == 1:
-        return "Study Sections" if english else "بخش‌های مطالعه"
-    return f"Chapter {number}" if english else f"فصل {number}"
+def _escape_cell(value: str) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ").strip() or "—"
 
 
-def topic_summary(items: list[dict], english: bool = False) -> str:
-    key = "title_en" if english else "title"
-    titles = [x[key] for x in items]
-    return "، ".join(titles[:3]) + ("، …" if len(titles) > 3 else "")
+def _bi(fa: str, en: str) -> str:
+    return (
+        f'<span dir="rtl">{html_escape(fa)}</span> / '
+        f'<span dir="ltr">{html_escape(en)}</span>'
+    )
 
 
-def span(items: list[dict]) -> str:
-    a, b = items[0]["part"], items[-1]["part"]
-    return str(a) if a == b else f"{a}-{b}"
-
-
-def total_time(items: list[dict]) -> int | None:
-    values = [duration_minutes(x["duration"]) for x in items]
-    return sum(v for v in values if v is not None) if any(v is not None for v in values) else None
-
-
-def link(part: dict) -> str:
-    return f"note://{quote(part['stem'], safe='_-')}"
-
-
-def build_index_md(parts: list[dict], clean_dir: Path | None = None, course_title: str = "Study Notes") -> str:
-    del clean_dir
-    if not parts:
-        raise ValueError("No Markdown topic notes were found for the study index.")
-    chapters = group_by_chapter(parts)
-    count = len(chapters)
-    sources = sorted({p["source"] for p in parts if p["source"]})
-    lines = [f"# فهرست مطالعه {course_title}", "", "## نمای کلی", ""]
-    if sources:
-        lines.append(f"- منبع: {', '.join(sources)}")
-    lines += [
-        f"- تعداد جلسات مطالعه: {len(parts)}",
-        f"- پوشش کلی جلسات: صفحات {coverage(parts)}",
-        f"- زمان کل تخمینی: {format_duration(total_time(parts))}",
-        "- هر عنوان جلسه مستقیماً به محل شروع همان بخش در PDF نهایی لینک می‌شود.",
-        "", "## فهرست فصل‌ها و گروه‌ها", "",
-        "| فصل/بخش | موضوع | جلسات | صفحات PDF | صفحات کتاب | زمان تقریبی |",
-        "|---|---|---:|---:|---:|---:|",
+def build_index_markdown(data: StudyData) -> str:
+    groups = group_sessions(data.sessions)
+    lines = [
+        "---",
+        "document_type: study_index",
+        f"course_title: {json.dumps(data.course_title, ensure_ascii=False)}",
+        f"total_sessions: {data.total_sessions}",
+        "---",
+        "",
+        f"# {_bi('فهرست مطالعه', f'Study Index — {data.course_title}')}",
+        "",
+        '> <span dir="rtl"><strong>راهنما:</strong> عنوان هر جلسه قابل کلیک است و مستقیماً به نخستین صفحه همان جلسه در PDF نهایی می‌رود.</span>',
+        ">",
+        '> <span dir="ltr"><strong>Guide:</strong> Every session title is clickable and opens the first page of that session in the final PDF.</span>',
+        "",
+        f"## {_bi('نمای کلی', 'Overview')}",
+        "",
+        f"| {_bi('شاخص', 'Metric')} | {_bi('مقدار', 'Value')} |",
+        "|---|---:|",
+        f"| {_bi('عنوان دوره', 'Course')} | {_escape_cell(data.course_title)} |",
+        f"| {_bi('تعداد کل جلسات', 'Total sessions')} | {data.total_sessions} |",
+        f"| {_bi('محدوده صفحات منبع', 'Source PDF pages')} | {_escape_cell(data.overall_source_pages)} |",
+        f"| {_bi('محدوده صفحات کتاب', 'Book pages')} | {_escape_cell(data.overall_book_pages)} |",
+        f"| {_bi('زمان تقریبی کل', 'Estimated total study time')} | {_escape_cell(data.total_study_time)} |",
+        "",
+        f"## {_bi('فصل‌ها و گروه‌ها', 'Chapters and Groups')}",
+        "",
+        f"| # | {_bi('فصل یا گروه', 'Chapter or group')} | {_bi('جلسات', 'Sessions')} | {_bi('صفحات منبع', 'Source pages')} | {_bi('صفحات کتاب', 'Book pages')} |",
+        "|---:|---|---:|---:|---:|",
     ]
-    for number, items in chapters.items():
-        name = chapter_name(number, items, count)
-        lines.append(f"| [{name}](#chapter-{number}-fa) | {topic_summary(items)} | {span(items)} | {coverage(items)} | — | {format_duration(total_time(items))} |")
-    lines += ["", "## روش پیشنهادی مطالعه", "", "1. ابتدا تیترها، شکل‌ها و جدول‌های هر بخش را سریع مرور کنید.", "2. مسیر اصلی مطلب، الگوریتم، سازوکار یا زنجیره تصمیم‌گیری را مشخص کنید.", "3. نکات کلیدی، محدودیت‌ها و موارد مقایسه‌ای را جدا یادداشت کنید.", "4. در پایان هر بخش، نکات اصلی را بدون نگاه‌کردن بازسازی کنید.", ""]
-    for number, items in chapters.items():
-        name = chapter_name(number, items, count)
-        lines += [f'## {name} <a id="chapter-{number}-fa"></a>', "", f"{len(items)} جلسه · صفحات PDF {coverage(items)} · زمان تقریبی: {format_duration(total_time(items))}", "", "| جلسه | موضوع | صفحات PDF | صفحات کتاب | زمان | تمرکز مطالعه |", "|---:|---|---:|---:|---:|---|"]
-        for p in items:
-            lines.append(f"| {p['part']} | [{p['title']}]({link(p)}) | {p['pdf_pages']} | {p['book_pages']} | {p['duration']} | {p['study_focus']} |")
-        lines.append("")
-    lines += ["---", "", f"# {course_title} Study Index", "", "## Overview", ""]
-    if sources:
-        lines.append(f"- Source: {', '.join(sources)}")
-    lines += [f"- Total study sessions: {len(parts)}", f"- Overall coverage: PDF pages {coverage(parts)}", f"- Total estimated time: {format_duration(total_time(parts), True)}", "- Every session title links to the beginning of that section inside the final combined PDF.", "", "## Table of Contents", "", "| Chapter/Group | Topic | Sessions | PDF pages | Book pages | Estimated time |", "|---|---|---:|---:|---:|---:|"]
-    for number, items in chapters.items():
-        name = chapter_name(number, items, count, True)
-        lines.append(f"| [{name}](#chapter-{number}-en) | {topic_summary(items, True)} | {span(items)} | {coverage(items)} | — | {format_duration(total_time(items), True)} |")
-    lines.append("")
-    for number, items in chapters.items():
-        name = chapter_name(number, items, count, True)
-        lines += [f'## {name} <a id="chapter-{number}-en"></a>', "", f"{len(items)} sessions · PDF pages {coverage(items)} · Estimated time: {format_duration(total_time(items), True)}", "", "| Session | Topic | PDF pages | Book pages | Time | Study focus |", "|---:|---|---:|---:|---:|---|"]
-        for p in items:
-            lines.append(f"| {p['part']} | [{p['title_en']}]({link(p)}) | {p['pdf_pages']} | {p['book_pages']} | {p['duration']} | {p['study_focus_en']} |")
+    for index, (group, items) in enumerate(groups.items(), 1):
+        first, last = items[0].number, items[-1].number
+        span = str(first) if first == last else f"{first}-{last}"
+        group_fa = items[0].group_fa
+        group_display = _escape_cell(group) if group_fa == group else _bi(group_fa, group)
+        lines.append(
+            f"| {index} | [{group_display}](#chapter-{index:03d}) | {span} | "
+            f"{coverage([x.source_pages for x in items])} | {coverage([x.book_pages for x in items])} |"
+        )
+
+    lines += ["", f"## {_bi('جدول کامل جلسات', 'Complete Session Table')}", ""]
+    for index, (group, items) in enumerate(groups.items(), 1):
+        group_fa = items[0].group_fa
+        bilingual = _escape_cell(group) if group_fa == group else _bi(group_fa, group)
+        lines += [
+            f'<a id="chapter-{index:03d}"></a>',
+            f"### {index}. {bilingual}",
+            "",
+            f"| {_bi('جلسه', 'Session')} | {_bi('عنوان', 'Title')} | {_bi('صفحات منبع', 'Source pages')} | {_bi('صفحات کتاب', 'Book pages')} | {_bi('زمان', 'Time')} | {_bi('تمرکز مطالعه', 'Study focus')} |",
+            "|---:|---|---:|---:|---:|---|",
+        ]
+        for session in items:
+            uri = f"note://{quote(session.stem, safe='_-')}"
+            title = _escape_cell(session.title) if session.title_fa == session.title else _bi(session.title_fa, session.title)
+            lines.append(
+                f"| {session.number} | [{title}]({uri}) | {_escape_cell(session.source_pages)} | "
+                f"{_escape_cell(session.book_pages)} | {_escape_cell(session.duration)} | {_escape_cell(session.focus)} |"
+            )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def load_original_index(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    result = {}
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        match = re.search(r"\[[^]]+\]\(([^)]+\.md)\)", line, re.I)
-        cells = [x.strip() for x in line.strip().strip("|").split("|")]
-        if match and len(cells) >= 4:
-            result[Path(match.group(1)).name] = cells[-1]
-    return result
-
-
-def generate_index(parts_dir: Path, output: Path, *, clean_dir: Path | None = None, original_index: Path | None = None, title: str = "Study Notes") -> Path:
-    parts = collect_parts(parts_dir, clean_dir, load_original_index(original_index) if original_index else None)
-    output = Path(output)
+def generate_index(source_index: Path, notes_dir: Path, output: Path, metadata_output: Path | None = None) -> tuple[Path, StudyData]:
+    data = parse_source_index(source_index, notes_dir)
+    output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(build_index_md(parts, course_title=title), encoding="utf-8")
-    return output
+    output.write_text(build_index_markdown(data), encoding="utf-8")
+    if metadata_output:
+        meta_path = Path(metadata_output).resolve()
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(json.dumps(asdict(data), ensure_ascii=False, indent=2), encoding="utf-8")
+    return output, data
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate a rich STUDY_INDEX.md from split topic notes")
-    parser.add_argument("--parts-dir", required=True)
-    parser.add_argument("--clean-dir")
-    parser.add_argument("--original-index")
+    parser = argparse.ArgumentParser(description="Generate a bilingual Study Index from the authoritative INDEX.md")
+    parser.add_argument("--source-index", "--original-index", dest="source_index", required=True)
+    parser.add_argument("--notes-dir", "--clean-dir", dest="notes_dir", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--title", default="Study Notes")
+    parser.add_argument("--metadata-output")
     args = parser.parse_args()
-    output = generate_index(Path(args.parts_dir), Path(args.output), clean_dir=Path(args.clean_dir) if args.clean_dir else None, original_index=Path(args.original_index) if args.original_index else None, title=args.title)
-    print(f"Generated rich index: {output}")
-    print(f"Found {len(collect_parts(Path(args.parts_dir), Path(args.clean_dir) if args.clean_dir else None))} parts.")
+    output, data = generate_index(Path(args.source_index), Path(args.notes_dir), Path(args.output), Path(args.metadata_output) if args.metadata_output else None)
+    print(f"Generated Study Index: {output}")
+    print(f"Sessions: {data.total_sessions}")
+    print(f"Source page range: {data.overall_source_pages}")
     return 0
 
 
