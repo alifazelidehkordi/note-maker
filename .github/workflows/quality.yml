@@ -59,8 +59,12 @@ jobs:
         run: |
           python -m piptools compile pyproject.toml --resolver backtracking --strip-extras --output-file /tmp/requirements.lock
           python -m piptools compile pyproject.toml --extra dev --resolver backtracking --strip-extras --output-file /tmp/requirements-dev.lock
-          diff -u requirements.lock /tmp/requirements.lock
-          diff -u requirements-dev.lock /tmp/requirements-dev.lock
+          sed '/^#    pip-compile /d' requirements.lock > /tmp/expected-runtime.lock
+          sed '/^#    pip-compile /d' /tmp/requirements.lock > /tmp/actual-runtime.lock
+          sed '/^#    pip-compile /d' requirements-dev.lock > /tmp/expected-dev.lock
+          sed '/^#    pip-compile /d' /tmp/requirements-dev.lock > /tmp/actual-dev.lock
+          diff -u /tmp/expected-runtime.lock /tmp/actual-runtime.lock
+          diff -u /tmp/expected-dev.lock /tmp/actual-dev.lock
       - name: Verify version synchronization
         run: |
           python - <<'PY'
