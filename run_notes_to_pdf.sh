@@ -3,87 +3,69 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-echo "=== Note Maker: Markdown → Styled PDF ==="
-echo "Project dir: $(pwd)"
-
-VENV_DIR=".venv-linux"
-PYTHON="${VENV_DIR}/bin/python"
-
-if [[ ! -x "${PYTHON}" ]]; then
-  ./setup.sh
-fi
-
-NOTES_DIR="${NOTES_DIR:-${INPUT_DIR:-outputs/notes}}"
-PDF_DIR="${PDF_DIR:-${OUTPUT_DIR:-${NOTES_DIR}/pdfs}}"
-CREATE_COMBINED="${CREATE_COMBINED:-0}"
-COMBINED_OUTPUT="${COMBINED_OUTPUT:-${NOTES_DIR}/../COMBINED_NOTES.pdf}"
-ENRICH_SOURCE="${ENRICH_SOURCE:-0}"
-GENERATE_RICH_INDEX="${GENERATE_RICH_INDEX:-0}"
-ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-}"
-INDEX_MD="${INDEX_MD:-${NOTES_DIR}/../STUDY_INDEX-rewritten.md}"
-CSS_FILE="${CSS_FILE:-}"
-BOOK_TITLE="${BOOK_TITLE:-Study Notes}"
-
-echo ""
-echo "Notes dir : ${NOTES_DIR}"
-echo "PDF dir   : ${PDF_DIR}"
-if [[ -n "$CSS_FILE" ]]; then
-  echo "Extra CSS : ${CSS_FILE}"
-fi
-if [[ "$CREATE_COMBINED" == "1" ]]; then
-  echo "Combined  : ${COMBINED_OUTPUT}"
-fi
-echo ""
-
-"${PYTHON}" -c "import weasyprint, markdown, pypdf" 2>/dev/null || "${PYTHON}" -m pip install weasyprint markdown pypdf
-
-if [[ "$ENRICH_SOURCE" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
-  echo "Enriching notes from: ${ORIGINAL_PARTS_DIR}"
-  "${PYTHON}" scripts/enrich_rewritten_notes.py \
-    --original-parts "$ORIGINAL_PARTS_DIR" \
-    --rewritten-dir "${NOTES_DIR}" \
-    --inplace
-fi
-
-if [[ "$GENERATE_RICH_INDEX" == "1" ]] && [[ -n "$ORIGINAL_PARTS_DIR" ]]; then
-  echo "Generating rich STUDY_INDEX..."
-  "${PYTHON}" scripts/generate_study_index.py \
-    --parts-dir "$ORIGINAL_PARTS_DIR" \
-    --clean-dir "${NOTES_DIR}" \
-    --output "$INDEX_MD" \
-    --title "$BOOK_TITLE"
-fi
-
-mkdir -p "${PDF_DIR}"
-
-CSS_ARG=()
-if [[ -n "$CSS_FILE" ]]; then
-  CSS_ARG=(--css "$CSS_FILE")
-fi
-
-echo "Converting topic notes to PDF..."
-"${PYTHON}" scripts/convert_md_to_pdf.py \
-  --batch \
-  "${NOTES_DIR}" \
-  --output "${PDF_DIR}" \
-  "${CSS_ARG[@]}"
-
-if [[ "$CREATE_COMBINED" == "1" ]]; then
-  echo ""
-  echo "Building combined PDF..."
-  INDEX_ARG=()
-  if [[ -f "$INDEX_MD" ]]; then
-    INDEX_ARG=(--index-md "$INDEX_MD")
+PYTHON="${PYTHON:-}"
+if [[ -z "$PYTHON" ]]; then
+  if [[ -x ".venv-linux/bin/python" ]]; then
+    PYTHON=".venv-linux/bin/python"
+  else
+    PYTHON="python3"
   fi
-  "${PYTHON}" scripts/create_combined_pdf.py \
-    --notes-dir "${NOTES_DIR}" \
-    --pdf-dir "${PDF_DIR}" \
-    --output "${COMBINED_OUTPUT}" \
-    --title "$BOOK_TITLE" \
-    "${CSS_ARG[@]}" \
-    "${INDEX_ARG[@]}"
 fi
 
-echo ""
-echo "✅ PDFs in: ${PDF_DIR}/"
-ls -lh "${PDF_DIR}/" | head -12
+NOTES_DIR="${NOTES_DIR:-outputs/notes}"
+PDF_DIR="${PDF_DIR:-${NOTES_DIR}/pdfs}"
+ORIGINAL_PARTS_DIR="${ORIGINAL_PARTS_DIR:-${NOTES_DIR}}"
+COMBINED_OUTPUT="${COMBINED_OUTPUT:-outputs/notes/FINAL_STUDY_NOTES.pdf}"
+INDEX_MD="${INDEX_MD:-}"
+CSS_FILE="${CSS_FILE:-}"
+BOOK_TITLE="${BOOK_TITLE:-}"
+QA_REPORT="${QA_REPORT:-${COMBINED_OUTPUT%.pdf}_QA.json}"
+BUILD_INDIVIDUAL_PDFS="${BUILD_INDIVIDUAL_PDFS:-0}"
+
+: "${FONT_FILE:?FONT_FILE is required. It may contain path-separated supplied regular font files.}"
+: "${FONT_BOLD_FILE:?FONT_BOLD_FILE is required. It may contain path-separated supplied bold font files.}"
+
+[[ -d "$NOTES_DIR" ]] || { echo "ERROR: NOTES_DIR not found: $NOTES_DIR" >&2; exit 2; }
+[[ -d "$ORIGINAL_PARTS_DIR" ]] || { echo "ERROR: ORIGINAL_PARTS_DIR not found: $ORIGINAL_PARTS_DIR" >&2; exit 2; }
+
+IFS=':' read -r -a REGULAR_FONTS <<< "$FONT_FILE"
+IFS=':' read -r -a BOLD_FONTS <<< "$FONT_BOLD_FILE"
+for font in "${REGULAR_FONTS[@]}" "${BOLD_FONTS[@]}"; do
+  [[ -r "$font" ]] || { echo "ERROR: supplied font is not readable: $font" >&2; exit 2; }
+done
+
+mkdir -p "$PDF_DIR" "$(dirname "$COMBINED_OUTPUT")" "$(dirname "$QA_REPORT")"
+
+COMMON_ARGS=()
+[[ -n "$INDEX_MD" ]] && COMMON_ARGS+=(--index-md "$INDEX_MD")
+[[ -n "$CSS_FILE" ]] && COMMON_ARGS+=(--css "$CSS_FILE")
+[[ -n "$BOOK_TITLE" ]] && COMMON_ARGS+=(--title "$BOOK_TITLE")
+
+printf '%s\n' "=== Note Maker: final study-book PDF ===" \
+  "Notes dir       : $NOTES_DIR" \
+  "Original parts  : $ORIGINAL_PARTS_DIR" \
+  "PDF dir         : $PDF_DIR" \
+  "Combined output : $COMBINED_OUTPUT" \
+  "QA report       : $QA_REPORT"
+
+# Browser Automation is intentionally not invoked. Input Markdown and Index files
+# are treated as complete, final inputs.
+
+if [[ "$BUILD_INDIVIDUAL_PDFS" == "1" ]]; then
+  INDIVIDUAL_ARGS=()
+  [[ -n "$CSS_FILE" ]] && INDIVIDUAL_ARGS+=(--css "$CSS_FILE")
+  "$PYTHON" scripts/convert_md_to_pdf.py \
+    --batch "$NOTES_DIR" \
+    --output "$PDF_DIR" \
+    "${INDIVIDUAL_ARGS[@]}"
+fi
+
+"$PYTHON" scripts/create_combined_pdf.py \
+  --notes-dir "$NOTES_DIR" \
+  --pdf-dir "$PDF_DIR" \
+  --output "$COMBINED_OUTPUT" \
+  --qa-report "$QA_REPORT" \
+  "${COMMON_ARGS[@]}"
+
+printf '\nCreated files:\n'
+ls -lh "$COMBINED_OUTPUT" "$QA_REPORT" "${QA_REPORT%.json}.txt"
