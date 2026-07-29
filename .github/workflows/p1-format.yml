@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install -r requirements-dev.lock
           python -m ruff format note_maker tests/test_configuration.py tests/test_unified_cli.py
-      - name: Commit formatting
+      - name: Commit formatting from the latest branch head
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
