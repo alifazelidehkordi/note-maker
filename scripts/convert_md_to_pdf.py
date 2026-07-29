@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import html
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 try:
     import markdown as py_markdown
@@ -66,7 +68,7 @@ class PdfStyle:
     margin: str = "1.45cm 1.55cm 1.75cm"
     font_size: str = "10.2pt"
     line_height: str = "1.48"
-    index_landscape: bool = True
+    index_landscape: bool = False
     page_numbers: bool = True
 
 
@@ -199,6 +201,8 @@ def markdown_to_html(text: str) -> str:
     else:  # pragma: no cover
         raise RuntimeError("Install the 'markdown' package (or mistune) before conversion")
     rendered = BLOCK_TAG_RE.sub(r'<\1 dir="auto"', rendered)
+    # U+21CC is absent from the supplied font family. Render the same equilibrium
+    # symbol as vector artwork so no external fallback font is introduced.
     rendered = rendered.replace(
         "⇌",
         '<svg class="equilibrium-symbol" viewBox="0 0 28 16" role="img" aria-label="equilibrium">'
@@ -289,7 +293,7 @@ def main() -> int:
     parser.add_argument("--arabic-font-bold-file")
     parser.add_argument("--no-page-numbers", action="store_true")
     parser.add_argument("--title")
-    parser.add_argument("--index", action="store_true", help="Force Study Index landscape styling")
+    parser.add_argument("--index", action="store_true", help="Force Study Index-specific styling")
     args = parser.parse_args()
     if not args.input:
         parser.error("input path is required")
