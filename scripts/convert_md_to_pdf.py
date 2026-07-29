@@ -1,701 +1,306 @@
 #!/usr/bin/env python3
-"""
-Convert clean Markdown study notes to high-quality PDFs with WeasyPrint.
-
-Optimized for medical/study notes, Persian/English mixed text, printing, and
-Obsidian-like exports. The visual style is controlled through CLI settings
-instead of editing the Python source every time.
-"""
-
+"""Convert study-note Markdown to styled PDFs using only supplied fonts."""
 from __future__ import annotations
 
 import argparse
 import html
 import re
-import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 try:
-    import markdown
-except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
-    markdown = None
+    import markdown as py_markdown
+except ModuleNotFoundError:  # pragma: no cover
+    py_markdown = None
 
-_WEASYPRINT_IMPORT_ERROR: Exception | None = None
+try:
+    import mistune
+except ModuleNotFoundError:  # pragma: no cover
+    mistune = None
+
 try:
     from weasyprint import HTML
-except (ModuleNotFoundError, OSError) as exc:  # pragma: no cover - environment dependent
+except (ModuleNotFoundError, OSError) as exc:  # pragma: no cover
     HTML = None
-    _WEASYPRINT_IMPORT_ERROR = exc
+    _WEASYPRINT_ERROR = exc
+else:
+    _WEASYPRINT_ERROR = None
+
+FRONT_RE = re.compile(r"\A---\s*\n.*?\n---\s*(?:\n|\Z)", re.S)
+H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
+TOPIC_RE = re.compile(r"^\d{1,3}(?:_\d{1,3})?[_-]", re.I)
+EXCLUDED_NAMES = {
+    "readme.md", "index.md", "study_index.md", "study_index-rewritten.md",
+    "study_index_verification.md", "qa_report.md", "structure.md", "boundaries.md",
+    "combined_notes.md", "verification.md",
+}
+RTL_RE = re.compile(r"[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]")
+BLOCK_TAG_RE = re.compile(r"<(p|li|td|th|blockquote)(?=[ >])", re.I)
+KEY_HEADING_RE = re.compile(r"^(key points|نکات کلیدی|خلاصه(?: کلیدی)?)$", re.I)
+WARNING_HEADING_RE = re.compile(r"^(warnings?|هشدارها?|pitfalls?|اشتباهات رایج)$", re.I)
 
 
 @dataclass(frozen=True)
-class BatchResult:
-    """Outcome of a batch conversion, including partial failures."""
+class FontConfig:
+    arabic_regular: Path
+    latin_regular: Path
+    latin_bold: Path
+    arabic_bold: Path | None = None
 
-    created: list[Path]
-    failed: list[tuple[Path, str]]
-
-    @property
-    def succeeded(self) -> bool:
-        return not self.failed
+    def validate(self) -> "FontConfig":
+        for label, path in {
+            "FONT_FILE": self.arabic_regular,
+            "LATIN_FONT_FILE": self.latin_regular,
+            "FONT_BOLD_FILE": self.latin_bold,
+        }.items():
+            if not Path(path).is_file():
+                raise FileNotFoundError(f"{label} not found: {path}")
+        if self.arabic_bold and not Path(self.arabic_bold).is_file():
+            raise FileNotFoundError(f"ARABIC_FONT_BOLD_FILE not found: {self.arabic_bold}")
+        return self
 
 
 @dataclass(frozen=True)
 class PdfStyle:
     page_size: str = "A4"
-    margin: str = "1.45cm 1.55cm"
-    font_size: str = "10.4pt"
+    margin: str = "1.45cm 1.55cm 1.75cm"
+    font_size: str = "10.2pt"
     line_height: str = "1.48"
-    font_family: str = (
-        'Vazirmatn, "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, '
-        'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    )
-    theme: str = "medical-blue"
-    preset: str = "study"
-    rtl: bool = False
+    index_landscape: bool = True
     page_numbers: bool = True
 
 
-THEMES: dict[str, dict[str, str]] = {
-    "medical-blue": {
-        "text": "#172033",
-        "muted": "#64748b",
-        "heading": "#0f3a66",
-        "accent": "#2563eb",
-        "accent_soft": "#dbeafe",
-        "accent_border": "#60a5fa",
-        "surface": "#f8fafc",
-        "surface_strong": "#eff6ff",
-        "border": "#dbe4ee",
-        "code_bg": "#eef2f7",
-        "danger": "#b91c1c",
-    },
-    "ink": {
-        "text": "#111827",
-        "muted": "#6b7280",
-        "heading": "#111827",
-        "accent": "#374151",
-        "accent_soft": "#f3f4f6",
-        "accent_border": "#9ca3af",
-        "surface": "#fafafa",
-        "surface_strong": "#f4f4f5",
-        "border": "#d4d4d8",
-        "code_bg": "#f4f4f5",
-        "danger": "#991b1b",
-    },
-    "emerald": {
-        "text": "#17231d",
-        "muted": "#64746c",
-        "heading": "#064e3b",
-        "accent": "#059669",
-        "accent_soft": "#d1fae5",
-        "accent_border": "#6ee7b7",
-        "surface": "#f8faf9",
-        "surface_strong": "#ecfdf5",
-        "border": "#d1e7dd",
-        "code_bg": "#eef7f2",
-        "danger": "#b91c1c",
-    },
-}
-
-
-PRESETS: dict[str, dict[str, str]] = {
-    # Balanced: readable but not wasteful.
-    "study": {"font_size": "10.4pt", "line_height": "1.48", "margin": "1.45cm 1.55cm"},
-    # Fits more notes per page while staying legible.
-    "compact": {"font_size": "9.6pt", "line_height": "1.34", "margin": "1.15cm 1.25cm"},
-    # Better for long review sessions and tablet reading.
-    "comfortable": {"font_size": "11pt", "line_height": "1.6", "margin": "1.7cm 1.8cm"},
-    # More conservative ink/print layout.
-    "print": {"font_size": "10pt", "line_height": "1.42", "margin": "1.35cm 1.45cm"},
-}
-
-
-FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL | re.MULTILINE)
-METADATA_LINE_RE = re.compile(
-    r"(?m)^\s*(?:"
-    r"\*\*منبع اصلی:\*\*.*|"
-    r"منبع اصلی:.*|"
-    r"book_pages:.*|"
-    r"chapter:.*|"
-    r"part:.*|"
-    r"pdf_pages:.*|"
-    r"source:.*"
-    r")$"
-)
-
-
-KEY_SECTION_RE = re.compile(
-    r"(<h2[^>]*>\s*(?:Key Points|نکات کلیدی|خلاصه(?:\s+کلیدی)?)\s*</h2>)(.*?)(?=<h2|$)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-WARNING_SECTION_RE = re.compile(
-    r"(<h2[^>]*>\s*(?:Warnings?|هشدارها?|Pitfalls?|اشتباهات رایج)\s*</h2>)(.*?)(?=<h2|$)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-RTL_SCRIPT_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
-TOPIC_NOTE_RE = re.compile(r"^\d{1,3}(?:_\d{1,3})?_", re.IGNORECASE)
-RICH_INDEX_NAMES = ("STUDY_INDEX-rewritten.md", "STUDY_INDEX.md")
-META_NOTE_NAMES = {"study_index.md", "study_index-rewritten.md", "study_index_verification.md", "combined_notes.md", "readme.md"}
-
-MARKDOWN_EXTENSIONS = [
-    "extra",
-    "sane_lists",
-    "smarty",
-    "tables",
-    "fenced_code",
-    "footnotes",
-    "toc",
-]
-MARKDOWN_EXTENSION_CONFIGS: dict[str, dict[str, Any]] = {
-    "toc": {"permalink": False},
-}
-
-
-def apply_preset(style: PdfStyle) -> PdfStyle:
-    """Return a PdfStyle with preset defaults applied before explicit CLI values."""
-    values = PRESETS.get(style.preset, PRESETS["study"]).copy()
-    defaults = PdfStyle()
-    return PdfStyle(
-        page_size=style.page_size,
-        margin=style.margin if style.margin != defaults.margin else values["margin"],
-        font_size=style.font_size if style.font_size != defaults.font_size else values["font_size"],
-        line_height=(
-            style.line_height
-            if style.line_height != defaults.line_height
-            else values["line_height"]
-        ),
-        font_family=style.font_family,
-        theme=style.theme,
-        preset=style.preset,
-        rtl=style.rtl,
-        page_numbers=style.page_numbers,
-    )
-
-
-def build_css(style: PdfStyle, extra_css: str | None = None, css_file: Path | None = None) -> str:
-    """Build the final CSS used by WeasyPrint."""
-    palette = THEMES.get(style.theme, THEMES["medical-blue"])
-    direction = "rtl" if style.rtl else "ltr"
-    text_align = "right" if style.rtl else "left"
-    border_side = "right" if style.rtl else "left"
-    padding_side = "padding-right" if style.rtl else "padding-left"
-    code_direction = "ltr"
-    page_counter = "content: counter(page);" if style.page_numbers else "content: '';"
-
-    css = f"""
-@page {{
-  size: {style.page_size};
-  margin: {style.margin};
-  @bottom-center {{
-    {page_counter}
-    font-size: 8.5pt;
-    color: {palette['muted']};
-  }}
-}}
-
-html {{
-  font-variant-ligatures: common-ligatures;
-}}
-
-body {{
-  direction: {direction};
-  text-align: {text_align};
-  font-family: {style.font_family};
-  font-size: {style.font_size};
-  line-height: {style.line_height};
-  color: {palette['text']};
-  max-width: 100%;
-  counter-reset: figures tables;
-}}
-
-body, p, li, blockquote, td, th, h1, h2, h3, h4 {{
-  unicode-bidi: plaintext;
-}}
-
-h1, h2, h3, h4 {{
-  color: {palette['heading']};
-  line-height: 1.25;
-  page-break-after: avoid;
-  break-after: avoid;
-  orphans: 3;
-  widows: 3;
-}}
-
-h1 {{
-  font-size: 18pt;
-  margin: 0 0 14pt 0;
-  padding-bottom: 7pt;
-  border-bottom: 2.5px solid {palette['accent']};
-}}
-
-h2 {{
-  font-size: 14pt;
-  margin: 17pt 0 7pt 0;
-  border-{border_side}: 5px solid {palette['accent_border']};
-  {padding_side}: 9pt;
-}}
-
-h3 {{
-  font-size: 12.1pt;
-  font-weight: 700;
-  margin: 11pt 0 4pt 0;
-}}
-
-h4 {{
-  font-size: 10.9pt;
-  font-weight: 700;
-  margin: 9pt 0 3pt 0;
-}}
-
-p {{
-  margin: 3.5pt 0;
-}}
-
-strong, b {{
-  color: {palette['heading']};
-  font-weight: 700;
-}}
-
-em {{
-  color: {palette['text']};
-}}
-
-ul, ol {{
-  margin-top: 5pt;
-  margin-bottom: 8pt;
-  padding-inline-start: 18pt;
-}}
-
-li {{
-  margin: 3.3pt 0;
-}}
-
-li > p {{
-  margin: 2pt 0;
-}}
-
-blockquote {{
-  margin: 10pt 0;
-  padding: 7pt 10pt;
-  background: {palette['surface']};
-  border-{border_side}: 4px solid {palette['border']};
-  color: {palette['text']};
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-hr {{
-  border: none;
-  border-top: 1px solid {palette['border']};
-  margin: 11pt 0;
-}}
-
-a {{
-  color: {palette['accent']};
-  text-decoration: none;
-}}
-
-code {{
-  direction: {code_direction};
-  unicode-bidi: isolate;
-  background: {palette['code_bg']};
-  padding: 1.6pt 4pt;
-  border-radius: 3pt;
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 8.7pt;
-}}
-
-pre {{
-  direction: {code_direction};
-  unicode-bidi: isolate;
-  background: {palette['code_bg']};
-  padding: 7pt 9pt;
-  border-radius: 5pt;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-pre code {{
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-}}
-
-table {{
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10pt 0 12pt 0;
-  font-size: 9.5pt;
-  page-break-inside: auto;
-}}
-
-th, td {{
-  border: 1px solid {palette['border']};
-  padding: 5pt 6pt;
-  vertical-align: top;
-}}
-
-th {{
-  background: {palette['surface_strong']};
-  color: {palette['heading']};
-  font-weight: 700;
-}}
-
-tr {{
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-img, svg {{
-  max-width: 100%;
-  height: auto;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-sup, sub {{
-  line-height: 0;
-}}
-
-.key-points, .keypoints, .summary-box {{
-  background: {palette['accent_soft']};
-  border: 1.4px solid {palette['accent_border']};
-  border-radius: 7pt;
-  padding: 8.5pt 11pt;
-  margin: 13pt 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-.key-points h2, .keypoints h2, .summary-box h2 {{
-  margin-top: 0;
-  border: none;
-  padding: 0;
-  color: {palette['heading']};
-  font-size: 13.2pt;
-}}
-
-.warning-box {{
-  background: #fff7ed;
-  border: 1.4px solid #fb923c;
-  border-radius: 7pt;
-  padding: 8.5pt 11pt;
-  margin: 13pt 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-.warning-box h2 {{
-  margin-top: 0;
-  border: none;
-  padding: 0;
-  color: {palette['danger']};
-  font-size: 13.2pt;
-}}
-
-.footnote, .footnote-ref {{
-  font-size: 8.5pt;
-}}
-
-/* Force page breaks between major sections in combined documents. */
-.page-break, div[style*="page-break-before"] {{
-  page-break-before: always;
-  break-before: page;
-  display: block;
-  height: 0;
-  margin: 0;
-  padding: 0;
-}}
-
-/* Use this class when each major note should start on a fresh page. */
-.note-heading {{
-  page-break-before: always;
-  break-before: page;
-}}
-"""
-
-    if css_file and css_file.exists():
-        css += "\n" + css_file.read_text(encoding="utf-8")
-    if extra_css:
-        css += "\n" + extra_css
-    return css
-
-
-def clean_markdown(md_text: str) -> str:
-    """Remove note-maker metadata that should not appear in the PDF."""
-    if md_text.lstrip().startswith("---"):
-        md_text = FRONTMATTER_RE.sub("", md_text, count=1).lstrip()
-
-    md_text = METADATA_LINE_RE.sub("", md_text)
-    return md_text.strip()
+def natural_key(path: Path) -> tuple:
+    return tuple(int(x) if x.isdigit() else x for x in re.split(r"(\d+)", path.name.casefold()))
 
 
 def is_topic_note(path: Path) -> bool:
-    """Accept study-note Markdown files while excluding generated/meta files."""
-    if path.suffix.lower() != ".md":
-        return False
     name = path.name.casefold()
-    if name in META_NOTE_NAMES or name.startswith(("study_index", "combined_notes", ".")):
-        return False
-    return bool(TOPIC_NOTE_RE.match(path.name)) or path.is_file()
+    return path.is_file() and path.suffix.casefold() == ".md" and name not in EXCLUDED_NAMES and bool(TOPIC_RE.match(path.stem))
+
+
+def infer_title(markdown_text: str, fallback: str = "Study Notes") -> str:
+    match = H1_RE.search(FRONT_RE.sub("", markdown_text, count=1))
+    return match.group(1).strip() if match else fallback
 
 
 def find_rich_index_md(notes_dir: Path) -> Path | None:
-    """Locate a rich STUDY_INDEX next to or inside the notes folder."""
-    notes_dir = Path(notes_dir)
-    for name in RICH_INDEX_NAMES:
+    for name in ("STUDY_INDEX.md", "STUDY_INDEX-rewritten.md", "study_index.md"):
         for candidate in (notes_dir / name, notes_dir.parent / name):
             if candidate.is_file():
                 return candidate
     return None
 
 
-def contains_rtl_script(text: str) -> bool:
-    """Return True when Persian/Arabic script is present."""
-    return bool(RTL_SCRIPT_RE.search(text))
+def _path_uri(path: Path) -> str:
+    return Path(path).resolve().as_uri()
 
 
-def resolve_style(style: PdfStyle, md_text: str, *, auto_rtl: bool) -> PdfStyle:
-    """Apply preset defaults and optional RTL auto-detection."""
-    style = apply_preset(style)
-    if auto_rtl and not style.rtl and contains_rtl_script(md_text):
-        return replace(style, rtl=True)
-    return style
+def _font_css(fonts: FontConfig) -> str:
+    arabic_bold = fonts.arabic_bold or fonts.arabic_regular
+    return f"""
+@font-face {{ font-family: 'StudyArabic'; src: url('{_path_uri(fonts.arabic_regular)}'); font-style: normal; font-weight: 400; }}
+@font-face {{ font-family: 'StudyArabic'; src: url('{_path_uri(arabic_bold)}'); font-style: normal; font-weight: 700; }}
+@font-face {{ font-family: 'StudyLatin'; src: url('{_path_uri(fonts.latin_regular)}'); font-style: normal; font-weight: 400; }}
+@font-face {{ font-family: 'StudyLatin'; src: url('{_path_uri(fonts.latin_bold)}'); font-style: normal; font-weight: 700; }}
+"""
 
 
-def require_dependencies(*, require_pdf_renderer: bool = True) -> None:
-    """Fail with a helpful message if the requested dependencies are missing."""
-    missing: list[str] = []
-    if markdown is None:
-        missing.append("markdown")
-    if require_pdf_renderer and HTML is None:
-        missing.append("weasyprint native runtime")
-    if missing:
-        detail = ""
-        if require_pdf_renderer and _WEASYPRINT_IMPORT_ERROR is not None:
-            detail = f"\nRenderer import error: {_WEASYPRINT_IMPORT_ERROR}"
-        print(
-            "Missing required dependency: " + ", ".join(missing) + detail,
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
+def build_css(style: PdfStyle, fonts: FontConfig, *, is_index: bool = False, extra_css: str = "") -> str:
+    orientation = " landscape" if is_index and style.index_landscape else ""
+    page_counter = "content: counter(page);" if style.page_numbers else "content: '';"
+    index_rules = """
+body.study-index { font-size: 8.4pt; line-height: 1.35; }
+body.study-index h1 { font-size: 18pt; }
+body.study-index h2 { font-size: 13.5pt; margin-top: 15pt; }
+body.study-index h3 { font-size: 11.2pt; margin-top: 12pt; }
+body.study-index table { font-size: 7.8pt; table-layout: fixed; }
+body.study-index th:nth-child(1), body.study-index td:nth-child(1) { width: 5%; }
+body.study-index th:nth-child(2), body.study-index td:nth-child(2) { width: 25%; }
+body.study-index th:nth-child(3), body.study-index td:nth-child(3) { width: 10%; }
+body.study-index th:nth-child(4), body.study-index td:nth-child(4) { width: 10%; }
+body.study-index th:nth-child(5), body.study-index td:nth-child(5) { width: 10%; }
+body.study-index th:nth-child(6), body.study-index td:nth-child(6) { width: 40%; }
+""" if is_index else ""
+    return f"""
+{_font_css(fonts)}
+@page {{
+  size: {style.page_size}{orientation};
+  margin: {style.margin};
+  @bottom-center {{
+    {page_counter}
+    font-family: 'StudyArabic', 'StudyLatin';
+    font-size: 8.5pt;
+    color: #64748b;
+  }}
+}}
+html, body {{ margin: 0; padding: 0; }}
+body {{
+  font-family: 'StudyArabic', 'StudyLatin';
+  font-size: {style.font_size};
+  line-height: {style.line_height};
+  color: #172033;
+  direction: ltr;
+  text-align: start;
+  font-variant-ligatures: common-ligatures;
+}}
+[dir='rtl'] {{ direction: rtl; unicode-bidi: isolate; }}
+[dir='ltr'] {{ direction: ltr; unicode-bidi: isolate; }}
+p, li, td, th, blockquote, h1, h2, h3, h4, a, code, pre {{
+  font-family: 'StudyArabic', 'StudyLatin';
+  unicode-bidi: plaintext;
+  overflow-wrap: anywhere;
+}}
+h1, h2, h3, h4 {{
+  color: #123f6d;
+  font-weight: 700;
+  line-height: 1.25;
+  break-after: avoid;
+  page-break-after: avoid;
+}}
+h1 {{ font-size: 18pt; margin: 0 0 14pt; padding-bottom: 7pt; border-bottom: 2.5px solid #2563eb; }}
+h2 {{ font-size: 14pt; margin: 17pt 0 7pt; border-inline-start: 5px solid #60a5fa; padding-inline-start: 9pt; }}
+h3 {{ font-size: 12pt; margin: 12pt 0 4pt; }}
+h4 {{ font-size: 10.8pt; margin: 9pt 0 3pt; }}
+p {{ margin: 3.5pt 0; orphans: 3; widows: 3; }}
+strong, b {{ color: #123f6d; font-weight: 700; }}
+ul, ol {{ margin: 5pt 0 8pt; padding-inline-start: 20pt; }}
+li {{ margin: 3pt 0; }}
+li::marker {{ font-family: 'StudyArabic', 'StudyLatin'; }}
+ul li::marker {{ content: '•  '; }}
+a {{ color: #1d4ed8; text-decoration: none; }}
+blockquote {{ margin: 10pt 0; padding: 8pt 11pt; background: #f8fafc; border-inline-start: 4px solid #cbd5e1; break-inside: avoid; }}
+hr {{ border: 0; border-top: 1px solid #dbe4ee; margin: 12pt 0; }}
+table {{ width: 100%; border-collapse: collapse; margin: 10pt 0 12pt; font-size: 9.1pt; table-layout: auto; }}
+th, td {{ border: 1px solid #dbe4ee; padding: 5pt 6pt; vertical-align: top; }}
+th {{ background: #eff6ff; color: #123f6d; font-weight: 700; }}
+tr {{ break-inside: avoid; page-break-inside: avoid; }}
+img, svg {{ max-width: 100%; height: auto; break-inside: avoid; }}
+svg.equilibrium-symbol {{ width: 1.25em; height: 0.85em; vertical-align: -0.12em; overflow: visible; }}
+code, pre {{ font-family: 'StudyLatin', 'StudyArabic'; background: #eef2f7; direction: ltr; unicode-bidi: isolate; }}
+code {{ padding: 1.5pt 4pt; border-radius: 3pt; font-size: 8.7pt; }}
+pre {{ padding: 8pt 10pt; border-radius: 5pt; white-space: pre-wrap; break-inside: avoid; }}
+.key-points {{ background: #dbeafe; border: 1.4px solid #60a5fa; border-radius: 7pt; padding: 9pt 11pt; margin: 13pt 0; break-inside: avoid; }}
+.warning-box {{ background: #fff7ed; border: 1.4px solid #fb923c; border-radius: 7pt; padding: 9pt 11pt; margin: 13pt 0; break-inside: avoid; }}
+.key-points > h2:first-child, .warning-box > h2:first-child {{ margin-top: 0; }}
+{index_rules}
+{extra_css}
+"""
 
 
-def md_to_html(md_text: str, *, cleaned: bool = False) -> str:
-    """Convert Markdown to clean HTML and wrap useful study sections."""
-    require_dependencies(require_pdf_renderer=False)
-    if not cleaned:
-        md_text = clean_markdown(md_text)
-
-    converter = markdown.Markdown(
-        extensions=MARKDOWN_EXTENSIONS,
-        extension_configs=MARKDOWN_EXTENSION_CONFIGS,
-        output_format="html5",
+def markdown_to_html(text: str) -> str:
+    clean = FRONT_RE.sub("", text, count=1)
+    if py_markdown is not None:
+        rendered = py_markdown.markdown(clean, extensions=["extra", "sane_lists", "tables", "fenced_code", "footnotes", "toc"], extension_configs={"toc": {"permalink": False}}, output_format="html5")
+    elif mistune is not None:  # local validation fallback
+        renderer = mistune.HTMLRenderer(escape=False)
+        md = mistune.create_markdown(renderer=renderer, plugins=["table", "strikethrough", "footnotes"])
+        rendered = md(clean)
+    else:  # pragma: no cover
+        raise RuntimeError("Install the 'markdown' package (or mistune) before conversion")
+    rendered = BLOCK_TAG_RE.sub(r'<\1 dir="auto"', rendered)
+    rendered = rendered.replace(
+        "⇌",
+        '<svg class="equilibrium-symbol" viewBox="0 0 28 16" role="img" aria-label="equilibrium">'
+        '<path d="M2 5 H23 M19 2 L23 5 L19 8 M26 11 H5 M9 8 L5 11 L9 14" '
+        'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
     )
-    try:
-        html_body = converter.convert(md_text)
-    finally:
-        converter.reset()
-
-    html_body = KEY_SECTION_RE.sub(r'<div class="key-points">\1\2</div>', html_body)
-    html_body = WARNING_SECTION_RE.sub(r'<div class="warning-box">\1\2</div>', html_body)
-    return html_body
+    return _wrap_special_sections(rendered)
 
 
-def infer_title(md_text: str, fallback: str, *, cleaned: bool = False) -> str:
-    """Extract the first H1 as the document title."""
-    text = md_text if cleaned else clean_markdown(md_text)
-    title_match = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
-    return title_match.group(1).strip() if title_match else fallback
+def _wrap_special_sections(rendered: str) -> str:
+    heading_pattern = re.compile(r"<h2([^>]*)>(.*?)</h2>", re.I | re.S)
+    matches = list(heading_pattern.finditer(rendered))
+    if not matches:
+        return rendered
+    output: list[str] = []
+    cursor = 0
+    for idx, match in enumerate(matches):
+        plain = re.sub(r"<[^>]+>", "", html.unescape(match.group(2))).strip()
+        cls = "key-points" if KEY_HEADING_RE.match(plain) else "warning-box" if WARNING_HEADING_RE.match(plain) else None
+        if not cls:
+            continue
+        start = match.start()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(rendered)
+        output.append(rendered[cursor:start])
+        output.append(f'<section class="{cls}">{rendered[start:end]}</section>')
+        cursor = end
+    output.append(rendered[cursor:])
+    return "".join(output)
 
 
 def make_pdf(
-    md_path: Path,
-    output_pdf: Path | None = None,
+    markdown_path: Path,
+    output_path: Path,
     *,
-    style: PdfStyle | None = None,
     title: str | None = None,
-    extra_css: str | None = None,
     css_file: Path | None = None,
-    prebuilt_css: str | None = None,
-    auto_rtl: bool = True,
+    font_config: FontConfig,
+    page_numbers: bool = True,
+    force_index: bool | None = None,
 ) -> Path:
-    """Convert one Markdown note to a styled PDF."""
-    require_dependencies()
-    md_text = md_path.read_text(encoding="utf-8")
-    cleaned = clean_markdown(md_text)
-    style = resolve_style(style or PdfStyle(), cleaned, auto_rtl=auto_rtl)
-    body_html = md_to_html(cleaned, cleaned=True)
-    document_title = title or infer_title(cleaned, md_path.stem, cleaned=True)
-    css = prebuilt_css if prebuilt_css is not None else build_css(
-        style, extra_css=extra_css, css_file=css_file
-    )
-    dir_attr = "rtl" if style.rtl else "auto"
-    lang_attr = "fa" if style.rtl else "en"
-
-    full_html = f"""<!DOCTYPE html>
-<html lang="{lang_attr}" dir="{dir_attr}">
-<head>
-  <meta charset="utf-8">
-  <title>{html.escape(document_title)}</title>
-  <style>{css}</style>
-</head>
-<body>
-{body_html}
-</body>
-</html>"""
-
-    if output_pdf is None:
-        output_pdf = md_path.with_suffix(".pdf")
-
-    output_pdf.parent.mkdir(parents=True, exist_ok=True)
-    HTML(string=full_html, base_url=str(md_path.parent)).write_pdf(output_pdf)
-    return output_pdf
+    if HTML is None:  # pragma: no cover
+        raise RuntimeError(f"WeasyPrint is unavailable: {_WEASYPRINT_ERROR}")
+    markdown_path = Path(markdown_path).resolve()
+    output_path = Path(output_path).resolve()
+    font_config.validate()
+    text = markdown_path.read_text(encoding="utf-8", errors="strict")
+    doc_title = title or infer_title(text, markdown_path.stem)
+    is_index = force_index if force_index is not None else ("study_index" in markdown_path.name.casefold() or "document_type: study_index" in text[:500].casefold())
+    extra_css = ""
+    if css_file:
+        extra_css = Path(css_file).resolve().read_text(encoding="utf-8")
+    style = PdfStyle(page_numbers=page_numbers)
+    body_class = "study-index" if is_index else "study-note"
+    content = markdown_to_html(text)
+    language = "fa" if RTL_RE.search(text) else "en"
+    document = f"""<!doctype html>
+<html lang="{language}"><head><meta charset="utf-8"><title>{html.escape(doc_title)}</title><style>{build_css(style, font_config, is_index=is_index, extra_css=extra_css)}</style></head>
+<body class="{body_class}" dir="auto">{content}</body></html>"""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    HTML(string=document, base_url=str(markdown_path.parent)).write_pdf(output_path)
+    return output_path
 
 
-def batch_convert(
-    input_dir: Path,
-    output_dir: Path,
-    *,
-    pattern: str = "*.md",
-    style: PdfStyle | None = None,
-    css_file: Path | None = None,
-    auto_rtl: bool = True,
-) -> BatchResult:
-    """Convert all matching Markdown files and report every partial failure."""
-    require_dependencies()
-    input_dir = Path(input_dir)
+def batch_convert(input_dir: Path, output_dir: Path, *, css_file: Path | None, font_config: FontConfig, page_numbers: bool) -> list[Path]:
+    notes = sorted((p for p in Path(input_dir).glob("*.md") if is_topic_note(p)), key=natural_key)
+    if not notes:
+        raise ValueError(f"No topic Markdown files found in {input_dir}")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    base_style = apply_preset(style or PdfStyle())
-    extra_css = css_file.read_text(encoding="utf-8") if css_file and css_file.exists() else None
-    # Shared CSS is safe only when direction is fixed for every file.
-    shared_css: str | None = None
-    if not auto_rtl or base_style.rtl:
-        shared_css = build_css(base_style, extra_css=extra_css)
-
-    created: list[Path] = []
-    failed: list[tuple[Path, str]] = []
-    for md in sorted(input_dir.glob(pattern)):
-        if not md.is_file() or not is_topic_note(md):
-            continue
-        pdf = output_dir / (md.stem + ".pdf")
-        try:
-            out = make_pdf(
-                md,
-                pdf,
-                style=base_style,
-                extra_css=None if shared_css else extra_css,
-                prebuilt_css=shared_css,
-                auto_rtl=auto_rtl,
-            )
-            print(f"[ok] {md.name} -> {pdf.name}")
-            created.append(out)
-        except Exception as exc:  # noqa: BLE001 - user-facing batch converter
-            message = str(exc)
-            print(f"[error] Failed {md.name}: {message}")
-            failed.append((md, message))
-    return BatchResult(created=created, failed=failed)
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Markdown notes -> styled study PDFs with WeasyPrint"
-    )
-    parser.add_argument("input", help="Single .md file or directory")
-    parser.add_argument("--output", help="Output PDF path for single mode, or output directory for batch mode")
-    parser.add_argument("--batch", action="store_true", help="Process a whole directory")
-    parser.add_argument("--pattern", default="*.md", help="Glob pattern for batch mode, default: *.md")
-    parser.add_argument("--css", help="Path to an extra CSS file appended after the built-in style")
-
-    parser.add_argument(
-        "--preset",
-        choices=sorted(PRESETS),
-        default="study",
-        help="Layout density preset: study, compact, comfortable, or print",
-    )
-    parser.add_argument(
-        "--theme",
-        choices=sorted(THEMES),
-        default="medical-blue",
-        help="Color theme",
-    )
-    parser.add_argument("--page-size", default="A4", help="CSS page size, e.g. A4, Letter")
-    parser.add_argument("--margin", default=None, help="CSS page margin, e.g. '1.4cm 1.6cm'")
-    parser.add_argument("--font-size", default=None, help="Base font size, e.g. 10.5pt")
-    parser.add_argument("--line-height", default=None, help="Base line height, e.g. 1.5")
-    parser.add_argument("--font-family", default=None, help="CSS font-family override")
-    parser.add_argument("--rtl", action="store_true", help="Force RTL direction for Persian/Arabic notes")
-    parser.add_argument(
-        "--no-auto-rtl",
-        action="store_true",
-        help="Disable automatic RTL detection from note content",
-    )
-    parser.add_argument("--no-page-numbers", action="store_true", help="Hide footer page numbers")
-    parser.add_argument("--title", help="Override PDF document title")
-    return parser.parse_args()
-
-
-def style_from_args(args: argparse.Namespace) -> PdfStyle:
-    preset_values = PRESETS[args.preset]
-    return apply_preset(
-        PdfStyle(
-            page_size=args.page_size,
-            margin=args.margin or preset_values["margin"],
-            font_size=args.font_size or preset_values["font_size"],
-            line_height=args.line_height or preset_values["line_height"],
-            font_family=args.font_family or PdfStyle.font_family,
-            theme=args.theme,
-            preset=args.preset,
-            rtl=args.rtl,
-            page_numbers=not args.no_page_numbers,
-        )
-    )
+    created = []
+    for note in notes:
+        out = output_dir / f"{note.stem}.pdf"
+        print(f"Converting {note.name} -> {out.name}")
+        created.append(make_pdf(note, out, css_file=css_file, font_config=font_config, page_numbers=page_numbers))
+    return created
 
 
 def main() -> int:
-    args = parse_args()
-    inp = Path(args.input)
-    css_file = Path(args.css) if args.css else None
-    style = style_from_args(args)
-    auto_rtl = not args.no_auto_rtl
-
-    if args.batch or inp.is_dir():
-        out_dir = Path(args.output) if args.output else inp / "pdfs"
-        result = batch_convert(
-            inp,
-            out_dir,
-            pattern=args.pattern,
-            style=style,
-            css_file=css_file,
-            auto_rtl=auto_rtl,
-        )
-        print(
-            f"Batch complete: {len(result.created)} created, "
-            f"{len(result.failed)} failed."
-        )
-        if result.failed:
-            return 2
+    parser = argparse.ArgumentParser(description="Convert Markdown study notes to PDF with supplied fonts")
+    parser.add_argument("input", nargs="?", help="Markdown file, or directory with --batch")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--batch", action="store_true")
+    parser.add_argument("--css")
+    parser.add_argument("--font-file", required=True, help="Arabic/Persian regular font")
+    parser.add_argument("--font-bold-file", required=True, help="Latin bold font")
+    parser.add_argument("--latin-font-file", required=True, help="Latin regular font")
+    parser.add_argument("--arabic-font-bold-file")
+    parser.add_argument("--no-page-numbers", action="store_true")
+    parser.add_argument("--title")
+    parser.add_argument("--index", action="store_true", help="Force Study Index landscape styling")
+    args = parser.parse_args()
+    if not args.input:
+        parser.error("input path is required")
+    fonts = FontConfig(Path(args.font_file), Path(args.latin_font_file), Path(args.font_bold_file), Path(args.arabic_font_bold_file) if args.arabic_font_bold_file else None)
+    css = Path(args.css) if args.css else None
+    if args.batch:
+        created = batch_convert(Path(args.input), Path(args.output), css_file=css, font_config=fonts, page_numbers=not args.no_page_numbers)
+        print(f"Created {len(created)} PDFs in {Path(args.output).resolve()}")
     else:
-        out = Path(args.output) if args.output else inp.with_suffix(".pdf")
-        result = make_pdf(
-            inp,
-            out,
-            style=style,
-            title=args.title,
-            css_file=css_file,
-            auto_rtl=auto_rtl,
-        )
-        print(f"Created PDF: {result}")
-
+        output = make_pdf(Path(args.input), Path(args.output), title=args.title, css_file=css, font_config=fonts, page_numbers=not args.no_page_numbers, force_index=True if args.index else None)
+        print(f"Created PDF: {output}")
     return 0
 
 
