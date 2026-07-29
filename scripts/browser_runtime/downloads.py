@@ -134,23 +134,31 @@ def score_download_trigger(
             reference_score = max(reference_score, 75)
         return reference_score
 
-    # Never promote every control in an assistant message merely because the
-    # surrounding response mentions ".md", "Markdown", or "OPML". The
-    # candidate itself must name the expected format, point at a matching
-    # artifact, or be an explicit Download control whose surrounding context
-    # identifies the expected artifact.
+    # A candidate must carry its own artifact evidence. Surrounding assistant
+    # text alone is not enough because one response can contain multiple generic
+    # controls. Plain "Download" buttons are handled only after an artifact card
+    # opens a dedicated preview, where the provider has already selected a
+    # format-specific card or link.
     score = expected_reference(candidate_haystack)
     direct_lower = direct.lower()
     explicit_download = "download" in direct_lower or "دانلود" in direct
-    if score == 0 and explicit_download and expected_reference(context_haystack):
+    href_lower = href.lower()
+    artifact_href = any(
+        marker in href_lower
+        for marker in ("sandbox:", "/download", "/file-", "blob:", "data:")
+    )
+    if (
+        score == 0
+        and explicit_download
+        and artifact_href
+        and expected_reference(context_haystack)
+    ):
         score = 60
-    if score == 0 and direct_lower.strip() in {"download", "دانلود"}:
-        score = 40
     if score == 0:
         return 0
-    if "sandbox:" in href.lower():
+    if "sandbox:" in href_lower:
         score += 20
-    if "/download" in href.lower() or "/file-" in href.lower():
+    if "/download" in href_lower or "/file-" in href_lower:
         score += 15
     if explicit_download:
         score += 25
