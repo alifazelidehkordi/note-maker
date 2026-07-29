@@ -6,6 +6,7 @@ on:
       - agent/p1-foundation
     paths:
       - .github/workflows/p1-lock-generation.yml
+      - pyproject.toml
 
 permissions:
   contents: write
