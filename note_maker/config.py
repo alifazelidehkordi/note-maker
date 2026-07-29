@@ -6,10 +6,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
-    import tomli as tomllib
+import tomli as tomllib
 
 from scripts import runtime_flags
 
@@ -225,6 +222,8 @@ def _normalize_paths(values: dict[str, Any], base_dir: Path) -> None:
         if raw in (None, ""):
             values[key] = None if raw == "" else raw
             continue
+        if not isinstance(raw, (str, Path)):
+            raise ConfigError(f"{key} must be a filesystem path, not {type(raw).__name__}.")
         path = Path(raw).expanduser()
         if not path.is_absolute():
             path = base_dir / path
