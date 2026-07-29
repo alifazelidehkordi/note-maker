@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=75,<82", "wheel>=0.44,<1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "note-maker"
+version = "0.8.2"
+description = "Reliable browser-assisted generation of structured study notes and artifacts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Ali Fazeli Dehkordi" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "selenium>=4.20,<5",
+  "PyAutoGUI>=0.9.54,<1",
+  "pyperclip>=1.8.2,<2",
+  "Markdown>=3.6,<4",
+  "WeasyPrint>=62,<70",
+  "pypdf>=4,<7",
+  "PyYAML>=6,<7",
+  "patchright==1.61.2",
+  "playwright-stealth==2.0.3",
+  "tomli>=2,<3; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "coverage[toml]>=7.6,<8",
+  "mypy>=1.11,<2",
+  "pip-audit>=2.7,<3",
+  "pip-tools>=7.4,<8",
+  "ruff>=0.8,<1",
+  "twine>=5.1,<7",
+  "types-PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+note-maker = "note_maker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["note_maker*", "scripts*"]
+exclude = ["tests*", "inputs*", "outputs*", "logs*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [
+  ".runtime",
+  ".venv*",
+  "chrome_profile",
+  "patchright_profile",
+  "outputs",
+  "downloads",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+exclude = "^(outputs|downloads|logs|\\.runtime)/"
+
+[tool.coverage.run]
+branch = true
+source = ["note_maker", "scripts"]
+omit = [
+  "scripts/*acceptance.py",
+  "scripts/run_chatgpt_temporary_test.py",
+  "scripts/browser_runtime/selenium_legacy.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 45
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+]
