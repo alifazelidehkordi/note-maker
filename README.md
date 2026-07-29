@@ -4,10 +4,10 @@
 
 **Turn PDFs, DOCX files, and long Markdown documents into structured study notes through the ChatGPT web interface — then export polished PDFs and combined study books.**
 
-[![Version](https://img.shields.io/badge/version-0.8.1-2563eb)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.2-2563eb)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-64748b)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-173%20passing-16a34a)](#testing)
+[![Tests](https://img.shields.io/badge/tests-CI%20verified-16a34a)](#testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-fbbf24.svg)](LICENSE)
 
 </div>
@@ -451,7 +451,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), keep changes
 
 ## License
 
-No license file is currently included. Until a license is added, the repository remains **all rights reserved** by default.
+This project is licensed under the [MIT License](LICENSE). See [SECURITY.md](SECURITY.md) for private vulnerability reporting guidance.
 
 ---
 

@@ -2,6 +2,27 @@
 
 All notable changes to Note Maker are documented here.
 
+## [0.8.2] — 2026-07-29
+
+### Fixed
+
+- Persistent ChatGPT rate-limit dialogs now raise a typed `RateLimitError` when acknowledgement fails, ensuring the global cooldown and retry policy activate instead of degrading into generic send or response timeouts.
+- Context-free generic controls such as `Download`, `Copy`, `Share`, and `Coding Citation` are no longer accepted as artifact triggers merely because the surrounding assistant response mentions Markdown or OPML.
+- Distinct rate-limit incidents from the same job now receive unique incident-scoped keys, while duplicate signaling from one failure path is suppressed.
+- Patchright and the Selenium compatibility facade now share the same strict artifact-trigger policy.
+
+### Security and release
+
+- Added `SECURITY.md` with private reporting guidance and a sensitive-local-data handling policy.
+- Replaced the version-specific release checklist with a reusable checklist covering rate-limit escalation, artifact identity, process hygiene, archive privacy, and independent review.
+- Corrected the README license section to match the repository's MIT license and made version/test badges resistant to documentation drift.
+- Synchronized `VERSION` and `package.json` at `0.8.2`.
+
+### Verification
+
+- Added regression coverage for persistent rate-limit dialogs, ambiguous download controls, and distinct rate-limit incidents within one job.
+- The cross-platform Phase 1 CI matrix and browser-free release acceptance remain required before tagging `v0.8.2`.
+
 ## [0.8.1] — 2026-07-10
 
 ### Fixed
