@@ -16,6 +16,7 @@ from browser_runtime import (
     BrowserSession,
     DownloadRequest,
     PatchrightBrowserSession,
+    ResponseWaitRequest,
 )
 from browser_runtime.errors import (
     BrowserCrashedError,
@@ -280,7 +281,7 @@ class PatchrightProviderTests(unittest.TestCase):
                 mock.patch.object(session, "_find_editor", return_value=editor),
                 mock.patch.object(session, "_rate_limit_visible", return_value=True),
                 mock.patch.object(
-                    session, "_dismiss_rate_limit_modal", return_value=True
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
                 ) as dismiss,
                 mock.patch.object(
                     session, "assistant_message_count", side_effect=[0, 1]
@@ -293,6 +294,43 @@ class PatchrightProviderTests(unittest.TestCase):
                 session.send_message("continue despite modal")
             dismiss.assert_called_once()
             self.assertEqual(button.clicks, 1)
+
+    def test_send_raises_rate_limit_when_modal_cannot_be_dismissed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            editor = Editor()
+            button = SendButton(editor)
+            with (
+                mock.patch.object(session, "_find_editor", return_value=editor),
+                mock.patch.object(session, "_rate_limit_visible", return_value=True),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=False
+                ),
+                mock.patch.object(session, "assistant_message_count", return_value=0),
+                mock.patch(
+                    "browser_runtime.patchright_provider._first_visible",
+                    return_value=button,
+                ),
+            ):
+                with self.assertRaisesRegex(RateLimitError, "remained visible"):
+                    session.send_message("blocked by persistent modal")
+            self.assertEqual(button.clicks, 0)
+
+    def test_wait_raises_rate_limit_when_modal_cannot_be_dismissed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(session, "_rate_limit_visible", return_value=True),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=False
+                ),
+                mock.patch.object(session, "assistant_message_count", return_value=0),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+            ):
+                with self.assertRaisesRegex(RateLimitError, "remained visible"):
+                    session.wait_for_response(
+                        ResponseWaitRequest(min_assistant_count=1, timeout=1)
+                    )
 
     def test_uncertain_send_blocks_a_second_click_for_same_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:
