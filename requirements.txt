@@ -1,9 +1,1 @@
-selenium
-pyautogui
-pyperclip
-markdown
-weasyprint
-pypdf
-pyyaml
-patchright==1.61.2
-playwright-stealth==2.0.3
+-r requirements.lock
