@@ -2,8 +2,11 @@ selenium
 pyautogui
 pyperclip
 markdown
+mistune
+beautifulsoup4
 weasyprint
 pypdf
+PyMuPDF
 pyyaml
 patchright==1.61.2
 playwright-stealth==2.0.3
