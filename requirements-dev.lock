@@ -212,7 +212,9 @@ tinycss2==1.5.1
 tinyhtml5==2.1.0
     # via weasyprint
 tomli==2.4.1
-    # via pip-audit
+    # via
+    #   note-maker (pyproject.toml)
+    #   pip-audit
 tomli-w==1.2.0
     # via pip-audit
 trio==0.33.0

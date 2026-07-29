@@ -90,6 +90,8 @@ tinycss2==1.5.1
     #   weasyprint
 tinyhtml5==2.1.0
     # via weasyprint
+tomli==2.4.1
+    # via note-maker (pyproject.toml)
 trio==0.33.0
     # via
     #   selenium
