@@ -273,14 +273,21 @@ def recreate_driver(
         worker_id=effective_worker_id,
         previous_session=previous,
     )
-    batch_log("Checking login state...")
-    session.wait_until_logged_in()
-    batch_log("Logged-in chat box is visible.")
-    if not skip_warmup:
-        warm_up(session, model)
-    else:
-        reset_chat(session, model)
-    return session
+    try:
+        batch_log("Checking login state...")
+        session.wait_until_logged_in()
+        batch_log("Logged-in chat box is visible.")
+        if not skip_warmup:
+            warm_up(session, model)
+        else:
+            reset_chat(session, model)
+        return session
+    except BaseException:
+        # The browser and its profile lease already exist at this point. If
+        # login validation or warm-up fails (notably on a rate-limit modal),
+        # close both before the retry path attempts to reuse this worker id.
+        quit_driver(session)
+        raise
 
 
 def warm_up(driver, model: str | None) -> None:
@@ -378,16 +385,23 @@ def bootstrap_session(
         validate_login=False,
         before_open=lambda worker_context: prune_automation_cookies(worker_context.profile_dir),
     )
-    batch_log("ChatGPT opened.")
-    batch_log("Checking login state...")
-    session.wait_until_logged_in()
-    batch_log("Logged-in chat box is visible.")
-    if skip_warmup:
-        reset_chat(session, model)
-        batch_log("Skipped warm-up hello message.")
-    else:
-        warm_up(session, model)
-    return session
+    try:
+        batch_log("ChatGPT opened.")
+        batch_log("Checking login state...")
+        session.wait_until_logged_in()
+        batch_log("Logged-in chat box is visible.")
+        if skip_warmup:
+            reset_chat(session, model)
+            batch_log("Skipped warm-up hello message.")
+        else:
+            warm_up(session, model)
+        return session
+    except BaseException:
+        # Do not leak an active Chromium process/profile lease when a
+        # post-launch check fails. A leaked lease makes the next retry fail
+        # with ActiveProfileError instead of handling the original condition.
+        quit_driver(session)
+        raise
 
 
 def _fsync_file(path: Path) -> None:
@@ -609,6 +623,33 @@ def _emit_retry_diagnostic(
         batch_log(f"WARNING: could not save diagnostics: {exc}")
 
 
+def _wait_retry_delay(
+    session,
+    seconds: float,
+    *,
+    sleep_fn: Callable[[float], None] | None = None,
+    modal_poll_interval: float = 2.0,
+) -> None:
+    """Wait without navigation and acknowledge any recurring rate-limit modal."""
+    remaining = max(0.0, float(seconds))
+    if remaining <= 0:
+        return
+    sleeper = sleep_fn or time.sleep
+    dismiss = getattr(session, "dismiss_rate_limit_modal", None)
+    if not callable(dismiss):
+        sleeper(remaining)
+        return
+    interval = max(0.1, float(modal_poll_interval))
+    while remaining > 0:
+        try:
+            dismiss()
+        except Exception:
+            pass
+        chunk = min(interval, remaining)
+        sleeper(chunk)
+        remaining -= chunk
+
+
 def run_with_retries(
     label: str,
     driver,
@@ -625,11 +666,12 @@ def run_with_retries(
     retry_policy=None,
     retry_tracker=None,
     retry_event_callback=None,
-    sleep_fn: Callable[[float], None] = time.sleep,
+    sleep_fn: Callable[[float], None] | None = None,
 ) -> tuple[bool, object]:
     selected = provider or get_browser_provider("selenium")
+    sleep_fn = sleep_fn or time.sleep
     if retry_policy is not None:
-        from parallel_runtime.resilience import RetryTracker
+        from parallel_runtime.resilience import FailureCategory, RetryTracker
 
         tracker = retry_tracker or RetryTracker(retry_policy, seed=label)
         session = as_browser_session(driver, provider=selected)
@@ -678,7 +720,12 @@ def run_with_retries(
             )
             if final:
                 return False, session
-            if is_temporary_chat_error(error):
+            if decision.category == FailureCategory.RATE_LIMIT:
+                batch_log(
+                    "Rate limit retry: keeping the current page open; "
+                    "no refresh or new-chat navigation."
+                )
+            elif is_temporary_chat_error(error):
                 session = recover_from_chat_error(
                     session,
                     model,
@@ -697,12 +744,20 @@ def run_with_retries(
                     previous_session=previous_session,
                 )
             if decision.delay_seconds > 0:
-                sleep_fn(decision.delay_seconds)
+                if decision.category == FailureCategory.RATE_LIMIT:
+                    _wait_retry_delay(
+                        session,
+                        decision.delay_seconds,
+                        sleep_fn=sleep_fn,
+                    )
+                else:
+                    sleep_fn(decision.delay_seconds)
         return False, session
 
     session = as_browser_session(driver, provider=selected)
     for attempt in range(1, max_attempts + 1):
         retry_wait = retry_delay
+        rate_limited_attempt = False
         try:
             if not driver_is_alive(session):
                 previous_session = session
@@ -751,7 +806,8 @@ def run_with_retries(
                     )
         except Exception as exc:
             final = attempt == max_attempts
-            if isinstance(exc, RateLimitError) and exc.retry_after:
+            rate_limited_attempt = isinstance(exc, RateLimitError)
+            if rate_limited_attempt and exc.retry_after:
                 retry_wait = max(retry_delay, exc.retry_after)
                 batch_log(f"Rate limit cooldown requested: {retry_wait}s")
             batch_log(f"ERROR on attempt {attempt}/{max_attempts} for {label}: {exc}")
@@ -765,7 +821,12 @@ def run_with_retries(
                 save_all=save_all_diagnostics,
             )
             if not final:
-                if is_temporary_chat_error(exc):
+                if isinstance(exc, RateLimitError):
+                    batch_log(
+                        "Rate limit retry: keeping the current page open; "
+                        "no refresh or new-chat navigation."
+                    )
+                elif is_temporary_chat_error(exc):
                     session = recover_from_chat_error(
                         session,
                         model,
@@ -784,5 +845,8 @@ def run_with_retries(
                         previous_session=previous_session,
                     )
         if attempt < max_attempts:
-            time.sleep(retry_wait)
+            if rate_limited_attempt:
+                _wait_retry_delay(session, retry_wait)
+            else:
+                time.sleep(retry_wait)
     return False, session

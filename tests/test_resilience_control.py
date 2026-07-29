@@ -19,6 +19,7 @@ from parallel_runtime.resilience import (
     RetryTracker,
     classify_failure,
 )
+from parallel_runtime.executors import _BrowserExecutorBase
 
 
 class _Clock:
@@ -33,6 +34,30 @@ class _Clock:
 
 
 class RetryPolicyTests(unittest.TestCase):
+    def test_parallel_workers_only_warm_up_the_primary_browser(self):
+        primary = _BrowserExecutorBase(
+            config={}, run_id="run", worker_id="worker-001", emit=lambda *a, **k: None
+        )
+        secondary = _BrowserExecutorBase(
+            config={}, run_id="run", worker_id="worker-002", emit=lambda *a, **k: None
+        )
+        recycled_primary = _BrowserExecutorBase(
+            config={},
+            run_id="run",
+            worker_id="worker-001-g002",
+            emit=lambda *a, **k: None,
+        )
+        explicitly_disabled = _BrowserExecutorBase(
+            config={"skip_warmup": True},
+            run_id="run",
+            worker_id="worker-001",
+            emit=lambda *a, **k: None,
+        )
+        self.assertFalse(primary.skip_warmup)
+        self.assertTrue(secondary.skip_warmup)
+        self.assertFalse(recycled_primary.skip_warmup)
+        self.assertTrue(explicitly_disabled.skip_warmup)
+
     def test_failure_classification_is_typed(self):
         self.assertEqual(classify_failure(AuthenticationRequiredError("login")), FailureCategory.AUTH)
         self.assertEqual(classify_failure(RateLimitError("slow", retry_after=7)), FailureCategory.RATE_LIMIT)
@@ -94,6 +119,35 @@ class GlobalControlTests(unittest.TestCase):
         self.assertEqual(snapshot.scale_downs, 1)
         self.assertEqual(snapshot.scale_ups, 1)
         self.assertEqual(snapshot.cooldown_requested_seconds, 12)
+
+    def test_repeated_rate_limit_for_same_job_extends_without_double_counting(self):
+        clock = _Clock()
+        control = GlobalRuntimeController(
+            requested_limit=4,
+            cooldown_seconds=10,
+            rate_limit_failures_before_abort=2,
+            rate_limit_window_seconds=300,
+            adaptive_enabled=True,
+            adaptive_scale_down_threshold=2,
+            adaptive_recovery_seconds=30,
+            clock=clock,
+        )
+        self.assertTrue(control.request_cooldown(incident_key="job-a"))
+        clock.advance(5)
+        self.assertFalse(
+            control.request_cooldown(retry_after=20, incident_key="job-a")
+        )
+        snapshot = control.snapshot()
+        self.assertEqual(snapshot.rate_limit_events, 1)
+        self.assertEqual(snapshot.active_limit, 4)
+        self.assertIsNone(snapshot.circuit_open_reason)
+        self.assertGreaterEqual(snapshot.cooldown_remaining, 20)
+
+        self.assertTrue(control.request_cooldown(incident_key="job-b"))
+        snapshot = control.snapshot()
+        self.assertEqual(snapshot.rate_limit_events, 2)
+        self.assertEqual(snapshot.active_limit, 3)
+        self.assertIn("rate-limit circuit", snapshot.circuit_open_reason or "")
 
     def test_auth_circuit_opens_at_global_threshold(self):
         clock = _Clock()

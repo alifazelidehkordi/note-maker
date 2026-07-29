@@ -282,6 +282,8 @@ class GlobalRuntimeController:
         self.cooldown_until = 0.0
         self.cooldown_requested_seconds = 0.0
         self.rate_events: deque[float] = deque()
+        self.adaptive_rate_events: deque[float] = deque()
+        self.rate_incidents: dict[str, float] = {}
         self.rate_limit_event_count = 0
         self.auth_failures = 0
         self.scale_downs = 0
@@ -294,22 +296,47 @@ class GlobalRuntimeController:
         cutoff = now - self.rate_limit_window_seconds
         while self.rate_events and self.rate_events[0] < cutoff:
             self.rate_events.popleft()
+        while self.adaptive_rate_events and self.adaptive_rate_events[0] < cutoff:
+            self.adaptive_rate_events.popleft()
+        self.rate_incidents = {
+            key: seen_at
+            for key, seen_at in self.rate_incidents.items()
+            if seen_at >= cutoff
+        }
 
-    def request_cooldown(self, *, retry_after: float | None = None) -> None:
+    def request_cooldown(
+        self,
+        *,
+        retry_after: float | None = None,
+        incident_key: str | None = None,
+    ) -> bool:
+        """Request/extend a cooldown and return whether this is a new incident.
+
+        A worker can report the same rate limit once per internal retry.  Those
+        reports should extend the account-wide cooldown, but must not inflate
+        adaptive-concurrency or circuit-breaker counters as separate incidents.
+        """
         now = self.clock()
+        self._prune(now)
         duration = self.cooldown_seconds
         if retry_after is not None:
             duration = max(duration, max(0.0, float(retry_after)))
         previous_until = max(self.cooldown_until, now)
         self.cooldown_until = max(self.cooldown_until, now + duration)
         self.cooldown_requested_seconds += max(0.0, self.cooldown_until - previous_until)
-        self.rate_events.append(now)
-        self.rate_limit_event_count += 1
+        normalized_key = str(incident_key).strip() if incident_key is not None else ""
+        is_new_incident = not normalized_key or normalized_key not in self.rate_incidents
+        if normalized_key:
+            self.rate_incidents[normalized_key] = now
         self.last_rate_limit_at = now
-        self._prune(now)
+        if not is_new_incident:
+            return False
+        self.rate_events.append(now)
+        self.adaptive_rate_events.append(now)
+        self.rate_limit_event_count += 1
         if (
             self.adaptive_enabled
-            and len(self.rate_events) >= self.adaptive_scale_down_threshold
+            and len(self.adaptive_rate_events) >= self.adaptive_scale_down_threshold
             and self.active_limit > 1
         ):
             self.active_limit -= 1
@@ -317,8 +344,8 @@ class GlobalRuntimeController:
             self.scale_downs += 1
             self.last_scale_at = now
             # A fresh threshold window is required for another scale-down.
-            self.rate_events.clear()
-            self.rate_events.append(now)
+            self.adaptive_rate_events.clear()
+            self.adaptive_rate_events.append(now)
         if (
             self.rate_limit_failures_before_abort > 0
             and len(self.rate_events) >= self.rate_limit_failures_before_abort
@@ -328,6 +355,7 @@ class GlobalRuntimeController:
                 f"{len(self.rate_events)} events within "
                 f"{self.rate_limit_window_seconds:g}s"
             )
+        return True
 
     def record_auth_failure(self) -> None:
         self.auth_failures += 1

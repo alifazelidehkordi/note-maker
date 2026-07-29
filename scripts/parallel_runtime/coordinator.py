@@ -7,7 +7,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from queue import Empty
-from typing import Iterable
+from typing import Callable, Iterable
 
 from artifact_validation import validate_artifact
 from manifest import ManifestCoordinator, ManifestStore
@@ -76,11 +76,13 @@ class ParallelCoordinator:
         *,
         manifest: ManifestCoordinator | None = None,
         mp_context=None,
+        event_logger: Callable[[str], None] | None = None,
     ) -> None:
         self.config = config
         self.jobs = tuple(jobs)
         self.manifest = manifest or ManifestCoordinator(config.manifest_path)
         self.context = mp_context or mp.get_context("spawn")
+        self.event_logger = event_logger
         # Retained for compatibility with callers that close the coordinator queue
         # directly. Worker generations use isolated queues so a force-killed worker
         # cannot poison the event channel used by its replacement.
@@ -111,6 +113,10 @@ class ParallelCoordinator:
         self._next_worker_start_at = 0.0
         self._circuit_applied = False
         self.result.stale_claims_recovered = len(self.claims.recover_stale())
+
+    def _log(self, message: str) -> None:
+        if self.event_logger is not None:
+            self.event_logger(message)
 
     @staticmethod
     def _close_queue(queue) -> None:
@@ -341,9 +347,26 @@ class ParallelCoordinator:
     def _apply_control_event(self, event: WorkerEvent) -> None:
         if event.kind == EventKind.GLOBAL_COOLDOWN_REQUESTED:
             retry_after = event.payload.get("retry_after")
-            self.control.request_cooldown(
-                retry_after=None if retry_after is None else float(retry_after)
+            before = self.control.snapshot()
+            incident_key = event.job_key or event.worker_id
+            is_new = self.control.request_cooldown(
+                retry_after=None if retry_after is None else float(retry_after),
+                incident_key=incident_key,
             )
+            after = self.control.snapshot()
+            disposition = "new incident" if is_new else "same job; cooldown extended"
+            self._log(
+                "Global rate-limit cooldown: "
+                f"{after.cooldown_remaining:.0f}s remaining, source={incident_key} "
+                f"({disposition}, distinct incidents={after.rate_limit_events})."
+            )
+            if after.active_limit < before.active_limit:
+                self._log(
+                    "Adaptive concurrency reduced active workers: "
+                    f"{before.active_limit} -> {after.active_limit}."
+                )
+            if after.circuit_open_reason and after.circuit_open_reason != before.circuit_open_reason:
+                self._log(f"Circuit breaker opened: {after.circuit_open_reason}.")
         elif event.kind == EventKind.AUTH_FAILURE:
             self.control.record_auth_failure()
 

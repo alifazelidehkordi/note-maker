@@ -108,6 +108,10 @@ class ManagedBrowserSession:
     def delete_cookie(self, name: str) -> None:
         self._session.delete_cookie(name)
 
+    def dismiss_rate_limit_modal(self) -> bool:
+        dismiss = getattr(self._session, "dismiss_rate_limit_modal", None)
+        return bool(dismiss()) if callable(dismiss) else False
+
 
 class SessionBootstrapper:
     def __init__(self, *, profile_manager: ProfileManager) -> None:

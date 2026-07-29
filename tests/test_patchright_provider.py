@@ -213,6 +213,28 @@ class PatchrightProviderTests(unittest.TestCase):
             session.delete_cookie("drop")
             self.assertEqual([item["name"] for item in session.get_cookies()], ["keep"])
 
+    def test_rate_limit_modal_uses_dom_click_and_verifies_dismissal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            dialog = mock.MagicMock()
+            button = mock.MagicMock()
+            dialog.get_by_role.return_value.first = button
+            button.is_visible.return_value = True
+            with (
+                mock.patch.object(
+                    session,
+                    "_rate_limit_visible",
+                    side_effect=[True, False],
+                ),
+                mock.patch.object(
+                    session,
+                    "_visible_rate_limit_dialog",
+                    return_value=dialog,
+                ),
+            ):
+                self.assertTrue(session._dismiss_rate_limit_modal())
+            button.evaluate.assert_called_once_with("(element) => element.click()")
+
     def test_download_uses_event_first_and_job_specific_staging(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -247,6 +269,29 @@ class PatchrightProviderTests(unittest.TestCase):
             ):
                 session.send_message("same prompt")
                 session.send_message("same prompt")
+            self.assertEqual(button.clicks, 1)
+
+    def test_send_acknowledges_visible_rate_limit_and_continues_without_cooldown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            editor = Editor()
+            button = SendButton(editor)
+            with (
+                mock.patch.object(session, "_find_editor", return_value=editor),
+                mock.patch.object(session, "_rate_limit_visible", return_value=True),
+                mock.patch.object(
+                    session, "_dismiss_rate_limit_modal", return_value=True
+                ) as dismiss,
+                mock.patch.object(
+                    session, "assistant_message_count", side_effect=[0, 1]
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._first_visible",
+                    return_value=button,
+                ),
+            ):
+                session.send_message("continue despite modal")
+            dismiss.assert_called_once()
             self.assertEqual(button.clicks, 1)
 
     def test_uncertain_send_blocks_a_second_click_for_same_prompt(self):

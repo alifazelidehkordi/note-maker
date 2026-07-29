@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -16,6 +17,8 @@ from browser_runtime import (  # noqa: E402
     ProfileManager,
     SessionBootstrapper,
 )
+from browser_runtime.errors import RateLimitError  # noqa: E402
+import batch_common  # noqa: E402
 
 
 class StubSession:
@@ -113,6 +116,34 @@ class FailingProvider(StubProvider):
 
 
 class SessionBootstrapTests(unittest.TestCase):
+    def test_batch_bootstrap_closes_session_when_warmup_is_rate_limited(self):
+        session = StubSession()
+        context = mock.MagicMock()
+        manager = mock.MagicMock()
+        bootstrapper = mock.MagicMock()
+        bootstrapper.open_session.return_value = session
+        with (
+            mock.patch.object(
+                batch_common,
+                "_prepare_profile_context",
+                return_value=(manager, context),
+            ),
+            mock.patch.object(batch_common, "SessionBootstrapper", return_value=bootstrapper),
+            mock.patch.object(
+                batch_common,
+                "warm_up",
+                side_effect=RateLimitError("limited", retry_after=10),
+            ),
+        ):
+            with self.assertRaises(RateLimitError):
+                batch_common.bootstrap_session(
+                    None,
+                    provider=StubProvider(),
+                    run_id="run",
+                    worker_id="worker-001",
+                )
+        self.assertTrue(session.closed)
+
     def test_bootstrap_injects_isolated_paths_validates_login_and_releases_lease(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

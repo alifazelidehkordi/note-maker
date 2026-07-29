@@ -372,6 +372,7 @@ def run_batch(
             config,
             (item.job for item in planned),
             manifest=store,
+            event_logger=batch_log,
         ).run()
         successes += len(result.succeeded) + len(result.externally_completed)
         failures = [label_by_key.get(key, key) for key in result.failed]

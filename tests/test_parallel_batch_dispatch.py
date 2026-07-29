@@ -20,10 +20,11 @@ from parallel_runtime.coordinator import CoordinatorResult
 class _InlineSuccessfulCoordinator:
     seen_configs = []
 
-    def __init__(self, config, jobs, *, manifest):
+    def __init__(self, config, jobs, *, manifest, event_logger=None):
         self.config = config
         self.jobs = list(jobs)
         self.manifest = manifest
+        self.event_logger = event_logger
         type(self).seen_configs.append(config)
 
     def run(self):

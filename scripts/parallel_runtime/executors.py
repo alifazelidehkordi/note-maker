@@ -27,6 +27,15 @@ class _BrowserExecutorBase:
         value = self.config.get("model")
         return None if value is None else str(value)
 
+    @property
+    def skip_warmup(self) -> bool:
+        # One authenticated warm-up is enough for a coordinated run. Sending
+        # one disposable "hello" per parallel browser creates an avoidable
+        # request burst and can trigger ChatGPT's account-wide rate limit.
+        return bool(self.config.get("skip_warmup", False)) or not self.worker_id.startswith(
+            "worker-001"
+        )
+
     def _ensure_session(self):
         import batch_common as common
 
@@ -36,7 +45,7 @@ class _BrowserExecutorBase:
             self.driver = common.bootstrap_session(
                 self.model,
                 provider=self.provider,
-                skip_warmup=bool(self.config.get("skip_warmup", False)),
+                skip_warmup=self.skip_warmup,
                 run_id=self.run_id,
                 worker_id=self.worker_id,
             )
@@ -188,7 +197,7 @@ class PdfJobExecutor(_BrowserExecutorBase):
             attempt,
             provider=self.provider,
             max_attempts=int(self.config.get("max_attempts", 3)),
-            skip_warmup=bool(self.config.get("skip_warmup", False)),
+            skip_warmup=self.skip_warmup,
             diagnostic_callback=capture_failure,
             save_all_diagnostics=bool(self.config.get("save_diagnostics", False)),
             attempt_callback=self._attempt_started,
@@ -264,7 +273,7 @@ class MarkdownJobExecutor(_BrowserExecutorBase):
             attempt,
             provider=self.provider,
             max_attempts=int(self.config.get("max_attempts", 3)),
-            skip_warmup=bool(self.config.get("skip_warmup", False)),
+            skip_warmup=self.skip_warmup,
             diagnostic_callback=capture_failure,
             save_all_diagnostics=bool(self.config.get("save_diagnostics", False)),
             attempt_callback=self._attempt_started,

@@ -15,6 +15,7 @@ import batch_pdf
 import diagnostics
 from artifact_validation import ArtifactValidationError
 from browser_runtime import BrowserCrashedError, BrowserResponseTimeout, RateLimitError
+from parallel_runtime.resilience import RetryBudgetPolicy
 from tests.fakes.fake_browser_provider import (
     FakeBrowserPlan,
     FakeBrowserProvider,
@@ -151,6 +152,61 @@ class FakeBrowserProviderTests(unittest.TestCase):
         self.assertTrue(succeeded)
         self.assertIs(returned, session)
         sleep.assert_called_once_with(17)
+
+    def test_rate_limit_retry_does_not_refresh_or_reset_chat(self):
+        session = FakeBrowserSession()
+        attempts = iter([RateLimitError("slow down", retry_after=17), True])
+        policy = RetryBudgetPolicy(
+            content_attempts=1,
+            network_retries=0,
+            browser_retries=0,
+            download_retries=0,
+            rate_limit_retries=1,
+            jitter_ratio=0,
+        )
+
+        def process_once(_session):
+            result = next(attempts)
+            if isinstance(result, BaseException):
+                raise result
+            return result
+
+        with (
+            mock.patch.object(batch_common, "reset_chat") as reset_chat,
+            mock.patch.object(batch_common.time, "sleep") as sleep,
+        ):
+            succeeded, returned = batch_common.run_with_retries(
+                "rate-limited-job",
+                session,
+                None,
+                process_once,
+                retry_policy=policy,
+            )
+
+        self.assertTrue(succeeded)
+        self.assertIs(returned, session)
+        reset_chat.assert_not_called()
+        sleep.assert_called_once_with(17)
+
+    def test_rate_limit_waiter_repeatedly_dismisses_without_navigation(self):
+        class WatchableSession:
+            def __init__(self):
+                self.dismissals = 0
+
+            def dismiss_rate_limit_modal(self):
+                self.dismissals += 1
+                return True
+
+        session = WatchableSession()
+        sleeps = []
+        batch_common._wait_retry_delay(
+            session,
+            5,
+            sleep_fn=sleeps.append,
+            modal_poll_interval=2,
+        )
+        self.assertEqual(session.dismissals, 3)
+        self.assertEqual(sleeps, [2, 2, 1])
 
     def test_fake_provider_records_launch_configuration(self):
         provider = FakeBrowserProvider()

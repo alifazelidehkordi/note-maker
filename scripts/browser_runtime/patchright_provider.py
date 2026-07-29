@@ -419,13 +419,30 @@ class PatchrightBrowserSession:
     def _cloudflare_visible(self) -> bool:
         return _contains_any(_body_text(self._page), CLOUDFLARE_PHRASES)
 
+    def _visible_rate_limit_dialog(self):
+        selectors = (
+            RATE_LIMIT_MODAL_SELECTOR,
+            "[role='dialog']",
+            "[data-testid*='rate-limit' i]",
+            "[data-radix-portal] [role='dialog']",
+        )
+        for selector in selectors:
+            try:
+                dialogs = self._page.locator(selector)
+                for index in range(int(dialogs.count()) - 1, -1, -1):
+                    dialog = dialogs.nth(index)
+                    if not _locator_visible(dialog):
+                        continue
+                    text = str(dialog.inner_text(timeout=1000) or "")
+                    if _contains_any(text, RATE_LIMIT_PHRASES):
+                        return dialog
+            except Exception:
+                continue
+        return None
+
     def _rate_limit_visible(self) -> bool:
-        try:
-            modal = self._page.locator(RATE_LIMIT_MODAL_SELECTOR).first
-            if _locator_visible(modal):
-                return True
-        except Exception:
-            pass
+        if self._visible_rate_limit_dialog() is not None:
+            return True
         return _contains_any(_body_text(self._page), RATE_LIMIT_PHRASES)
 
     def _login_buttons_visible(self) -> bool:
@@ -692,10 +709,7 @@ class PatchrightBrowserSession:
         try:
             if self._rate_limit_visible():
                 self._dismiss_rate_limit_modal()
-                raise RateLimitError(
-                    "Rate limit is visible before send.",
-                    retry_after=RATE_LIMIT_WAIT_SECONDS,
-                )
+                _log("Rate-limit modal acknowledged; continuing send without cooldown.")
             editor = self._find_editor(timeout=self._options.action_timeout)
             current = self._editor_text(editor)
             if current != normalized:
@@ -746,10 +760,7 @@ class PatchrightBrowserSession:
                         editor.click()
                         self._page.keyboard.press("Enter")
                 if self._rate_limit_visible():
-                    raise RateLimitError(
-                        "Rate limit appeared while sending.",
-                        retry_after=RATE_LIMIT_WAIT_SECONDS,
-                    )
+                    self._dismiss_rate_limit_modal()
                 time.sleep(0.4)
             raise BrowserSendError(
                 "Send acknowledgement was not observed; duplicate send was prevented."
@@ -766,21 +777,103 @@ class PatchrightBrowserSession:
 
     def _dismiss_rate_limit_modal(self) -> bool:
         if not self._rate_limit_visible():
-            return False
+            return True
+
+        dialog = self._visible_rate_limit_dialog()
+        scope = dialog if dialog is not None else self._page
+        label_pattern = re.compile(
+            r"^\s*(got\s*it|ok(?:ay)?|باشه|متوجه شدم)\s*[.!]?\s*$",
+            re.I,
+        )
+        candidates = []
         try:
-            button = self._page.get_by_role("button", name=re.compile(r"Got it|OK|باشه", re.I)).first
-            if _locator_visible(button):
-                # Keep this modal handling deliberately narrow: activate the
-                # acknowledgement button itself and do not click elsewhere in
-                # the dialog/page. A DOM click is more reliable in the current
-                # ChatGPT UI than Patchright's pointer-style click.
-                try:
-                    button.evaluate("(element) => element.click()")
-                except Exception:
-                    button.click()
+            candidates.append(scope.get_by_role("button", name=label_pattern).first)
         except Exception:
             pass
-        return True
+        for selector in (
+            "button:has-text('Got it')",
+            "button:has-text('OK')",
+            "[role='button']:has-text('Got it')",
+            "[role='button']:has-text('باشه')",
+        ):
+            try:
+                candidates.append(scope.locator(selector).first)
+            except Exception:
+                continue
+
+        clicked = False
+        for button in candidates:
+            if not _locator_visible(button):
+                continue
+            # The current modal can sit behind an overlay that defeats a
+            # pointer-style click. A DOM click is the most reliable first path.
+            try:
+                button.evaluate("(element) => element.click()")
+                clicked = True
+                break
+            except Exception:
+                try:
+                    button.click(force=True, timeout=2000)
+                    clicked = True
+                    break
+                except Exception:
+                    try:
+                        button.click(timeout=2000)
+                        clicked = True
+                        break
+                    except Exception:
+                        continue
+
+        if not clicked:
+            # Final DOM fallback avoids depending on changing test ids, portal
+            # wrappers, or accessible-name computation in the live UI.
+            try:
+                clicked = bool(
+                    self._page.evaluate(
+                        """() => {
+                            const accepted = new Set([
+                                'got it', 'ok', 'okay', 'باشه', 'متوجه شدم'
+                            ]);
+                            const controls = document.querySelectorAll(
+                                "button, [role='button']"
+                            );
+                            for (const control of controls) {
+                                const text = (
+                                    control.innerText ||
+                                    control.textContent ||
+                                    control.getAttribute('aria-label') ||
+                                    ''
+                                ).trim().toLowerCase().replace(/[.!]+$/, '');
+                                if (accepted.has(text)) {
+                                    control.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }"""
+                    )
+                )
+            except Exception:
+                clicked = False
+
+        if not clicked:
+            _log("Rate-limit modal is visible, but its acknowledgement button was not found.")
+            return False
+
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if not self._rate_limit_visible():
+                _log("Rate-limit modal dismissed successfully.")
+                return True
+            time.sleep(0.2)
+        _log("Rate-limit acknowledgement was clicked, but the modal remained visible.")
+        return False
+
+    def dismiss_rate_limit_modal(self) -> bool:
+        """Dismiss the live rate-limit acknowledgement without navigating."""
+        if not self._rate_limit_visible():
+            return False
+        return self._dismiss_rate_limit_modal()
 
     def wait_for_response(self, request: ResponseWaitRequest) -> None:
         self._set_state(SessionState.GENERATING)
@@ -790,8 +883,6 @@ class PatchrightBrowserSession:
         )
         deadline = time.monotonic() + request.timeout
         extended = False
-        rate_limit_seen_at: float | None = None
-
         while time.monotonic() < deadline:
             now = time.monotonic()
             rate_limited = self._rate_limit_visible()
@@ -807,16 +898,9 @@ class PatchrightBrowserSession:
             )
 
             if state is ResponseState.RATE_LIMITED:
-                rate_limit_seen_at = rate_limit_seen_at or now
                 self._dismiss_rate_limit_modal()
-                if now - rate_limit_seen_at >= min(15, RATE_LIMIT_WAIT_SECONDS):
-                    raise RateLimitError(
-                        "Rate limit remained active while waiting for response.",
-                        retry_after=RATE_LIMIT_WAIT_SECONDS,
-                    )
                 time.sleep(1)
                 continue
-            rate_limit_seen_at = None
 
             if state in {ResponseState.DOWNLOAD_READY, ResponseState.STABLE}:
                 self._last_send_completed = True
@@ -966,7 +1050,12 @@ class PatchrightBrowserSession:
                 # A click can navigate to a sandbox link without emitting a
                 # Playwright download event, or open ChatGPT's artifact preview
                 # in either the current tab or a newly-created tab.
-                _log(f"Patchright download event miss: {exc}")
+                detail = str(exc).splitlines()[0].strip()
+                suffix = f" ({detail})" if detail else ""
+                _log(
+                    "Patchright direct download event was not emitted; "
+                    f"checking artifact preview/fallback{suffix}."
+                )
             selectors = (
                 "button[aria-label*='Download' i]",
                 "button[title*='Download' i]",
