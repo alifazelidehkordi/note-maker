@@ -1,0 +1,38 @@
+# Copy to note-maker.toml. Relative paths are resolved from this file.
+
+[runtime]
+browser_provider = "selenium"
+parallel_runs = 1
+runtime_dir = ".runtime"
+global_rate_limit_cooldown = 180
+network_retries = 4
+browser_retries = 3
+download_retries = 2
+rate_limit_retries = 2
+
+[commands.pdf]
+input_dir = "inputs"
+output_dir = "outputs/opml"
+prompt = "prompts/prompt-mind-map.md"
+output_ext = "opml"
+resume = true
+
+[commands.markdown]
+markdown_file = "inputs/source.md"
+output_dir = "outputs/markdown"
+prompt = "prompts/prompt-mind-map.md"
+output_ext = "md"
+resume = true
+
+[profiles.conservative.runtime]
+browser_provider = "patchright"
+parallel_runs = 1
+adaptive_concurrency = false
+
+[profiles.fast.runtime]
+browser_provider = "patchright"
+parallel_runs = 4
+adaptive_concurrency = true
+
+[profiles.fast.commands.pdf]
+save_diagnostics = true
