@@ -1,0 +1,126 @@
+name: P0 Event Fairness Patch
+
+on:
+  push:
+    branches:
+      - agent/fix-chatgpt-download-runtime
+    paths:
+      - .github/workflows/p0-event-fairness.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-chatgpt-download-runtime
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply round-robin event polling fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          coordinator = Path("scripts/parallel_runtime/coordinator.py")
+          text = coordinator.read_text(encoding="utf-8")
+          old_init = "        self.slots: dict[str, _WorkerSlot] = {}\n"
+          new_init = old_init + "        self._event_scan_offset = 0\n"
+          if old_init not in text:
+              raise SystemExit("coordinator slot initialization marker not found")
+          text = text.replace(old_init, new_init, 1)
+
+          old_method = '''    def _next_event(self) -> WorkerEvent | None:
+              deadline = time.monotonic() + self.config.poll_interval
+              while True:
+                  for slot in list(self.slots.values()):
+                      event_queue = slot.event_queue
+                      if event_queue is None:
+                          continue
+                      try:
+                          event = event_queue.get_nowait()
+                      except Empty:
+                          continue
+                      except (EOFError, OSError, ValueError):
+                          continue
+                      if isinstance(event, WorkerEvent):
+                          return event
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      return None
+                  time.sleep(min(0.001, remaining))
+          '''
+          new_method = '''    def _next_event(self) -> WorkerEvent | None:
+              deadline = time.monotonic() + self.config.poll_interval
+              while True:
+                  slots = list(self.slots.values())
+                  if slots:
+                      offset = self._event_scan_offset % len(slots)
+                      ordered_slots = slots[offset:] + slots[:offset]
+                      for scanned, slot in enumerate(ordered_slots):
+                          event_queue = slot.event_queue
+                          if event_queue is None:
+                              continue
+                          try:
+                              event = event_queue.get_nowait()
+                          except Empty:
+                              continue
+                          except (EOFError, OSError, ValueError):
+                              continue
+                          if isinstance(event, WorkerEvent):
+                              selected = (offset + scanned) % len(slots)
+                              self._event_scan_offset = (selected + 1) % len(slots)
+                              return event
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      return None
+                  time.sleep(min(0.001, remaining))
+          '''
+          if old_method not in text:
+              raise SystemExit("coordinator _next_event marker not found")
+          coordinator.write_text(text.replace(old_method, new_method, 1), encoding="utf-8")
+
+          tests = Path("tests/test_parallel_coordinator.py")
+          test_text = tests.read_text(encoding="utf-8")
+          marker = '''    def test_external_claim_timeout_does_not_overwrite_owner_manifest_state(self):
+          '''
+          regression = '''    def test_event_polling_rotates_across_busy_worker_queues(self):
+              class AlwaysQueue:
+                  def __init__(self, event):
+                      self.event = event
+
+                  def get_nowait(self):
+                      return self.event
+
+              coordinator = object.__new__(ParallelCoordinator)
+              coordinator.config = type("Config", (), {"poll_interval": 0.001})()
+              coordinator._event_scan_offset = 0
+              first = WorkerEvent(EventKind.HEARTBEAT, worker_id="worker-001")
+              second = WorkerEvent(EventKind.HEARTBEAT, worker_id="worker-002")
+              coordinator.slots = {
+                  "worker-001": type("Slot", (), {"event_queue": AlwaysQueue(first)})(),
+                  "worker-002": type("Slot", (), {"event_queue": AlwaysQueue(second)})(),
+              }
+
+              observed = [coordinator._next_event(), coordinator._next_event()]
+              self.assertEqual(
+                  [event.worker_id for event in observed if event is not None],
+                  ["worker-001", "worker-002"],
+              )
+
+          '''
+          if marker not in test_text:
+              raise SystemExit("parallel coordinator test insertion marker not found")
+          tests.write_text(test_text.replace(marker, regression + marker, 1), encoding="utf-8")
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/p0-event-fairness.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/parallel_runtime/coordinator.py tests/test_parallel_coordinator.py .github/workflows/p0-event-fairness.yml
+          git commit -m "Fairly poll worker event queues"
+          git push origin HEAD:agent/fix-chatgpt-download-runtime
