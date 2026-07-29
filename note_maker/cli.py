@@ -273,7 +273,7 @@ def _status(args: argparse.Namespace) -> int:
 
 def _validate(args: argparse.Namespace) -> int:
     activate_legacy_imports()
-    from artifact_validation import validate_artifact
+    from artifact_validation import validate_artifact  # type: ignore[import-not-found]
 
     results: list[dict[str, Any]] = []
     failed = False
@@ -384,9 +384,9 @@ def _run(args: argparse.Namespace) -> int:
     activate_legacy_imports()
     values = resolved.values
     if args.run_command == "pdf":
-        import batch_pdf
+        import batch_pdf  # type: ignore[import-not-found]
 
-        return batch_pdf.run_batch(
+        return batch_pdf.run_batch(  # type: ignore[no-any-return]
             input_dir=values["input_dir"],
             output_dir=values["output_dir"],
             prompt_path=values["prompt"],
@@ -408,9 +408,9 @@ def _run(args: argparse.Namespace) -> int:
             runtime_settings=resolved.runtime,
         )
 
-    import batch_markdown
+    import batch_markdown  # type: ignore[import-not-found]
 
-    return batch_markdown.run_batch(
+    return batch_markdown.run_batch(  # type: ignore[no-any-return]
         markdown_file=values["markdown_file"],
         output_dir=values["output_dir"],
         prompt_path=values["prompt"],
