@@ -30,7 +30,7 @@ dependencies = [
   "PyYAML>=6,<7",
   "patchright==1.61.2",
   "playwright-stealth==2.0.3",
-  "tomli>=2,<3; python_version < '3.11'",
+  "tomli>=2,<3",
 ]
 
 [project.optional-dependencies]
