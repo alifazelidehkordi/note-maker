@@ -1,0 +1,35 @@
+name: P1 Lock Generation
+
+on:
+  push:
+    branches:
+      - agent/p1-foundation
+    paths:
+      - .github/workflows/p1-lock-generation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p1-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate exact runtime and development locks
+        run: |
+          python -m pip install --upgrade pip pip-tools
+          python -m piptools compile pyproject.toml --resolver backtracking --strip-extras --output-file requirements.lock
+          python -m piptools compile pyproject.toml --extra dev --resolver backtracking --strip-extras --output-file requirements-dev.lock
+          printf '%s\n' '-r requirements.lock' > requirements.txt
+      - name: Commit generated locks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add requirements.lock requirements-dev.lock requirements.txt
+          git diff --cached --quiet || git commit -m "Lock Python dependencies"
+          git push origin HEAD:agent/p1-foundation
