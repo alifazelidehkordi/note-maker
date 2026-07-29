@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/p1-foundation
-      - name: Update README and changelog
+      - name: Update README and changelog on the latest branch head
         run: |
           python - <<'PY'
           from pathlib import Path
