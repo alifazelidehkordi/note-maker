@@ -28,7 +28,6 @@ from .errors import (
     UnsupportedBrowserCapability,
     UploadError,
 )
-from .factory import create_browser_provider, ensure_browser_session
 from .models import (
     BrowserHealth,
     BrowserHealthStatus,
@@ -40,6 +39,13 @@ from .models import (
     UploadRequest,
 )
 from .patchright_provider import PatchrightBrowserSession, PatchrightProvider
+from .runtime_hardening import install_runtime_hardening
+
+# Apply the P0 behavior fixes before factory/provider users or the legacy facade
+# snapshot the affected callables.
+install_runtime_hardening()
+
+from .factory import create_browser_provider, ensure_browser_session
 from .profile_manager import (
     AuthSessionEvidence,
     ProfileActivity,
