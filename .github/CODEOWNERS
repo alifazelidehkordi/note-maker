@@ -1,0 +1,10 @@
+# Default ownership
+* @alifazelidehkordi
+
+# Runtime and release-sensitive areas
+/scripts/browser_runtime/ @alifazelidehkordi
+/scripts/parallel_runtime/ @alifazelidehkordi
+/.github/workflows/ @alifazelidehkordi
+/pyproject.toml @alifazelidehkordi
+/requirements*.lock @alifazelidehkordi
+/SECURITY.md @alifazelidehkordi
