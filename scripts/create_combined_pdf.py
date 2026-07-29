@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Merge split note PDFs with an auto-generated clickable study index."""
+"""Build and verify one final A4 portrait study book from prepared Markdown notes."""
 from __future__ import annotations
 
 import argparse
+import json
 import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -11,23 +12,19 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.constants import PageLabelStyle
 from pypdf.generic import ArrayObject, NameObject
 
-from convert_md_to_pdf import HTML, find_rich_index_md, infer_title, is_topic_note, make_pdf
-from generate_study_index import collect_parts, generate_index, group_by_chapter, natural_key
-
-
-def extract_title(path: Path) -> str:
-    fallback = path.stem.replace("_", " ").replace("-", " ").title()
-    try:
-        return infer_title(path.read_text(encoding="utf-8", errors="ignore"), fallback)
-    except OSError:
-        return fallback
-
-
-def build_simple_index_markdown(titles: list[tuple[str, str]]) -> str:
-    lines = ["# فهرست مطالب / Table of Contents", "", "| # | عنوان |", "|---:|---|"]
-    for number, (stem, title) in enumerate(titles, 1):
-        lines.append(f"| {number} | [{title}](note://{stem}) |")
-    return "\n".join(lines) + "\n"
+from convert_md_to_pdf import HTML, PdfStyle, make_pdf
+from generate_study_index import SourceIndex, generate_index, parse_source_index
+from pdf_common import (
+    A4_HEIGHT_PT,
+    A4_WIDTH_PT,
+    CUSTOM_FONT_STACK,
+    FontConfig,
+    assert_portrait_a4,
+    extract_font_report,
+    footer_number_pages,
+    page_label_sequence,
+    unresolved_local_links,
+)
 
 
 def topic_aliases(md: Path, pdf: Path) -> set[str]:
@@ -36,12 +33,11 @@ def topic_aliases(md: Path, pdf: Path) -> set[str]:
 
 def aliases_from_uri(uri: str) -> set[str]:
     parsed = urlparse(uri)
-    scheme = parsed.scheme.casefold()
-    if scheme == "note":
+    if parsed.scheme.casefold() == "note":
         raw = (parsed.netloc + parsed.path).lstrip("/")
-    elif scheme == "file":
+    elif parsed.scheme.casefold() == "file":
         raw = parsed.path
-    elif scheme == "":
+    elif not parsed.scheme:
         raw = parsed.path or uri
     else:
         return set()
@@ -56,11 +52,11 @@ def aliases_from_uri(uri: str) -> set[str]:
     return result
 
 
-def rewrite_index_links(writer: PdfWriter, index_page_count: int, alias_to_page: dict[str, int]) -> tuple[int, int]:
-    converted = unresolved = 0
+def rewrite_index_links(writer: PdfWriter, index_page_count: int, alias_to_page: dict[str, int]) -> tuple[list[dict], list[dict]]:
+    converted: list[dict] = []
+    unresolved: list[dict] = []
     for page_number in range(index_page_count):
-        annotations = writer.pages[page_number].get("/Annots") or []
-        for ref in annotations:
+        for ref in writer.pages[page_number].get("/Annots") or []:
             annotation = ref.get_object()
             action = annotation.get("/A")
             if not action:
@@ -69,303 +65,265 @@ def rewrite_index_links(writer: PdfWriter, index_page_count: int, alias_to_page:
             if action.get("/S") != "/URI":
                 continue
             uri = str(action.get("/URI", ""))
+            scheme = urlparse(uri).scheme.casefold()
+            if scheme not in {"note", "file", ""}:
+                continue
             candidates = aliases_from_uri(uri)
-            target = next((alias_to_page[a] for a in candidates if a in alias_to_page), None)
+            target = next((alias_to_page[item] for item in candidates if item in alias_to_page), None)
             if target is None:
-                if urlparse(uri).scheme.casefold() in {"note", "file", ""}:
-                    unresolved += 1
+                unresolved.append({"index_page": page_number + 1, "uri": uri})
                 continue
             annotation.pop(NameObject("/A"), None)
             annotation[NameObject("/Dest")] = ArrayObject([writer.pages[target].indirect_reference, NameObject("/Fit")])
-            converted += 1
+            converted.append({"index_page": page_number + 1, "uri": uri, "target_page": target + 1})
     return converted, unresolved
 
 
-def _page_size(page) -> tuple[float, float]:
-    """Return a stable media-box size key in PDF points."""
-    return round(float(page.mediabox.width), 3), round(float(page.mediabox.height), 3)
+def _page_number_overlay_html(page_numbers: list[int], font_config: FontConfig) -> str:
+    pages = "\n".join(f'<div class="overlay-page"><div class="page-number">{number}</div></div>' for number in page_numbers)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+{font_config.css()}
+@page {{ size: A4 portrait; margin: 0; }}
+html, body {{ margin: 0; padding: 0; background: transparent; font-family: {CUSTOM_FONT_STACK}; }}
+.overlay-page {{ position: relative; width: {A4_WIDTH_PT}pt; height: {A4_HEIGHT_PT}pt; break-after: page; page-break-after: always; }}
+.overlay-page:last-child {{ break-after: auto; page-break-after: auto; }}
+.page-number {{ position: absolute; left: 238pt; bottom: 11pt; width: 120pt; height: 24pt; background: white; display: flex; align-items: center; justify-content: center; font-family: {CUSTOM_FONT_STACK}; font-size: 8.5pt; color: #64748b; line-height: 1; }}
+</style></head><body>{pages}</body></html>"""
 
 
-def _page_number_overlay_html(
-    page_numbers: list[int],
-    width: float,
-    height: float,
-    extra_css: str = "",
-) -> str:
-    """Build transparent overlay pages with a masked, centered footer number."""
-    pages = "\n".join(
-        f'<div class="continuous-number-page"><div class="continuous-page-number">{number}</div></div>'
-        for number in page_numbers
-    )
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <style>
-{extra_css}
-@page {{
-  size: {width}pt {height}pt;
-  margin: 0;
-}}
-html, body {{
-  margin: 0;
-  padding: 0;
-  background: transparent;
-}}
-body {{
-  font-family: Vazirmatn, "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma,
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}}
-.continuous-number-page {{
-  position: relative;
-  width: {width}pt;
-  height: {height}pt;
-  break-after: page;
-  page-break-after: always;
-}}
-.continuous-number-page:last-child {{
-  break-after: auto;
-  page-break-after: auto;
-}}
-.continuous-page-number {{
-  position: absolute;
-  left: {max((width - 108.0) / 2.0, 0.0)}pt;
-  bottom: 1pt;
-  width: {min(108.0, width)}pt;
-  height: 38pt;
-  box-sizing: border-box;
-  background: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 8.5pt;
-  font-weight: 400;
-  line-height: 1;
-  color: #64748b;
-}}
-  </style>
-</head>
-<body>
-{pages}
-</body>
-</html>
-"""
-
-
-def add_continuous_page_numbers(
-    writer: PdfWriter,
-    *,
-    start: int = 1,
-    css_file: Path | None = None,
-) -> int:
-    """Stamp continuous visible numbers and matching PDF page labels.
-
-    Existing component PDFs may each start at page 1. The white footer mask hides
-    those old counters before the final, book-wide number is placed on top.
-    Pages are grouped by media-box size so mixed-size books remain supported.
-    """
+def add_continuous_page_numbers(writer: PdfWriter, *, start: int = 1) -> int:
     if start < 1:
-        raise ValueError("Page numbering must start at 1 or greater")
+        raise ValueError("Page numbering must start at 1")
     if not writer.pages:
         return 0
     if HTML is None:
-        raise RuntimeError("WeasyPrint is required to add continuous page numbers")
-
-    extra_css = ""
-    base_url: str | None = None
-    if css_file:
-        css_path = Path(css_file).resolve()
-        if not css_path.is_file():
-            raise FileNotFoundError(f"CSS file not found: {css_path}")
-        extra_css = css_path.read_text(encoding="utf-8")
-        base_url = str(css_path.parent)
-
-    grouped: dict[tuple[float, float], list[tuple[int, int]]] = {}
-    for page_index, page in enumerate(writer.pages):
-        number = start + page_index
-        grouped.setdefault(_page_size(page), []).append((page_index, number))
-
+        raise RuntimeError("WeasyPrint is required for page-number overlays")
+    font_config = FontConfig.from_env(required=True)
+    assert font_config is not None
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_dir = Path(tmp)
-        for group_number, ((width, height), entries) in enumerate(grouped.items(), 1):
-            overlay_path = tmp_dir / f"page-numbers-{group_number}.pdf"
-            overlay_html = _page_number_overlay_html(
-                [number for _, number in entries], width, height, extra_css
-            )
-            HTML(string=overlay_html, base_url=base_url).write_pdf(overlay_path)
-            overlay_reader = PdfReader(overlay_path)
-            if len(overlay_reader.pages) != len(entries):
-                raise RuntimeError(
-                    "Page-number overlay count mismatch: "
-                    f"expected {len(entries)}, got {len(overlay_reader.pages)}"
-                )
-            for overlay_page, (page_index, _) in zip(overlay_reader.pages, entries):
-                writer.pages[page_index].merge_page(overlay_page, over=True)
-
-    writer.set_page_label(
-        0,
-        len(writer.pages) - 1,
-        style=PageLabelStyle.DECIMAL,
-        start=start,
-    )
+        overlay_path = Path(tmp) / "continuous-page-numbers.pdf"
+        HTML(string=_page_number_overlay_html(list(range(start, start + len(writer.pages))), font_config)).write_pdf(overlay_path)
+        assert_portrait_a4(overlay_path, label="page-number overlay")
+        overlay = PdfReader(overlay_path)
+        if len(overlay.pages) != len(writer.pages):
+            raise RuntimeError(f"Page-number overlay mismatch: expected {len(writer.pages)}, got {len(overlay.pages)}")
+        for page, overlay_page in zip(writer.pages, overlay.pages):
+            page.merge_page(overlay_page, over=True)
+    writer.set_page_label(0, len(writer.pages) - 1, style=PageLabelStyle.DECIMAL, start=start)
     return len(writer.pages)
 
 
-def add_outlines(writer: PdfWriter, notes: list[Path], starts: dict[str, int], index_pages: int) -> None:
+def add_outlines(writer: PdfWriter, source: SourceIndex, starts: dict[str, int]) -> int:
+    count = 1
     writer.add_outline_item("فهرست مطالعه / Study Index", 0, bold=True)
-    parent = writer.add_outline_item("بخش‌ها / Sections", index_pages, bold=True, is_open=True)
-    items = collect_parts(notes[0].parent) if notes else []
-    by_name = {item["display_path"].name: item for item in items}
-    selected = [by_name[p.name] for p in notes if p.name in by_name]
-    if not selected:
-        for note in notes:
-            writer.add_outline_item(extract_title(note), starts[note.stem.casefold()], parent=parent)
-        return
-    chapters = group_by_chapter(selected)
-    for number, chapter_items in chapters.items():
-        first_page = starts[chapter_items[0]["stem"].casefold()]
-        explicit = next((x["chapter_title_fa"] for x in chapter_items if x.get("chapter_title_fa")), None)
-        name = explicit or ("بخش‌های مطالعه / Study Sections" if len(chapters) == 1 else f"فصل {number} / Chapter {number}")
-        chapter_parent = writer.add_outline_item(str(name), first_page, parent=parent, bold=True, is_open=False)
-        for item in chapter_items:
-            writer.add_outline_item(str(item["title"]), starts[item["stem"].casefold()], parent=chapter_parent)
+    for group_order, group_title, sessions in source.groups:
+        first_page = starts[sessions[0].stem.casefold()]
+        parent = writer.add_outline_item(str(group_title), first_page, bold=True, is_open=False)
+        count += 1
+        for session in sessions:
+            writer.add_outline_item(str(session.title), starts[session.stem.casefold()], parent=parent)
+            count += 1
+    return count
 
 
-def resolve_index(notes_dir: Path, index_md: Path | None, title: str) -> tuple[Path, bool]:
-    if index_md:
-        explicit = Path(index_md).resolve()
-        if not explicit.is_file():
-            raise FileNotFoundError(f"Index Markdown not found: {explicit}")
-        return explicit, False
-    existing = find_rich_index_md(notes_dir)
-    if existing and existing.name.casefold() == "study_index-rewritten.md":
-        return existing.resolve(), False
-    generated = notes_dir.parent / "STUDY_INDEX.md"
-    generate_index(notes_dir, generated, clean_dir=notes_dir, title=title)
-    return generated.resolve(), True
+def _flatten_outline(reader: PdfReader) -> list[tuple[str, int]]:
+    result: list[tuple[str, int]] = []
+
+    def walk(items):
+        for item in items:
+            if isinstance(item, list):
+                walk(item)
+                continue
+            try:
+                page = reader.get_destination_page_number(item)
+            except Exception:
+                page = -1
+            result.append((str(getattr(item, "title", item)), page))
+
+    walk(reader.outline)
+    return result
 
 
-def pdf_rebuild_reason(note: Path, pdf: Path) -> str | None:
-    """Return why a topic PDF must be regenerated, or ``None`` when current."""
-    if not pdf.exists():
-        return "missing"
-    if note.stat().st_mtime_ns > pdf.stat().st_mtime_ns:
-        return "source-newer"
-    return None
+def _qa_final_pdf(output: Path, *, source: SourceIndex, index_pages: int, converted: list[dict], expected_bookmarks: int, page_number_start: int) -> dict:
+    reader = PdfReader(output)
+    geometry = assert_portrait_a4(reader, label="final PDF")
+    fonts = extract_font_report(reader)
+    if not fonts["fonts"]:
+        raise RuntimeError("No fonts were found in the final PDF")
+    if fonts["unembedded"]:
+        raise RuntimeError("Unembedded fonts detected: " + ", ".join(fonts["unembedded"]))
+    if fonts["forbidden"]:
+        raise RuntimeError("Forbidden default fonts detected: " + ", ".join(fonts["forbidden"]))
+    if fonts["unexpected"]:
+        raise RuntimeError("Unexpected fallback fonts detected: " + ", ".join(fonts["unexpected"]))
+    unresolved = unresolved_local_links(reader)
+    if unresolved:
+        raise RuntimeError(f"Unresolved note:// links remain: {unresolved}")
+    labels = page_label_sequence(reader)
+    expected_labels = [str(value) for value in range(page_number_start, page_number_start + len(reader.pages))]
+    if labels != expected_labels:
+        raise RuntimeError(f"PDF page labels are not continuous: expected {expected_labels[:3]}...{expected_labels[-3:]}, got {labels[:3]}...{labels[-3:]}")
+    footer_failures = footer_number_pages(reader, start=page_number_start)
+    if footer_failures:
+        raise RuntimeError("Visible footer page numbers missing on pages: " + ", ".join(map(str, footer_failures)))
+    outline = _flatten_outline(reader)
+    invalid_outline = [(title, page) for title, page in outline if page < 0 or page >= len(reader.pages)]
+    if invalid_outline:
+        raise RuntimeError(f"Invalid bookmark destinations: {invalid_outline}")
+    if len(outline) != expected_bookmarks:
+        raise RuntimeError(f"Bookmark count mismatch: expected {expected_bookmarks}, got {len(outline)}")
+    expected_titles = ["فهرست مطالعه / Study Index"]
+    for _, group_title, sessions in source.groups:
+        expected_titles.append(group_title)
+        expected_titles.extend(item.title for item in sessions)
+    actual_titles = [title for title, _ in outline]
+    if actual_titles != expected_titles:
+        raise RuntimeError("Bookmark hierarchy/order does not match the source INDEX")
+    if len(source.sessions) != len({item.stem.casefold() for item in source.sessions}):
+        raise RuntimeError("Session completeness check failed: duplicate session")
+    return {
+        "final_pdf": str(output),
+        "total_pages": len(reader.pages),
+        "study_index_pages": index_pages,
+        "sessions": len(source.sessions),
+        "groups": len(source.groups),
+        "converted_internal_links": len(converted),
+        "unresolved_links": 0,
+        "bookmarks": len(outline),
+        "page_number_range": f"{page_number_start}-{page_number_start + len(reader.pages) - 1}",
+        "embedded_fonts": fonts["embedded"],
+        "page_size": "A4 (approximately 595 x 842 pt)",
+        "page_orientation": "Portrait",
+        "portrait_pages": geometry["portrait_pages"],
+        "landscape_pages": geometry["landscape_pages"],
+        "rotated_pages": geometry["rotated_pages"],
+        "invalid_geometry_pages": [item["page"] for item in geometry["invalid_pages"]],
+        "quality_check": "PASSED",
+    }
 
 
-def pdf_needs_rebuild(note: Path, pdf: Path) -> bool:
-    """Return whether a topic PDF is absent or older than its Markdown source."""
-    return pdf_rebuild_reason(note, pdf) is not None
-
-
-def create_combined(
-    notes_dir: Path,
-    pdf_dir: Path | None = None,
-    output_path: Path | None = None,
-    index_md: Path | None = None,
-    *,
-    title: str = "Study Notes",
-    css_file: Path | None = None,
-    continuous_page_numbers: bool = True,
-    page_number_start: int = 1,
-) -> Path:
+def create_combined(notes_dir: Path, pdf_dir: Path | None = None, output_path: Path | None = None, index_md: Path | None = None, *, source_index: Path | None = None, title: str | None = None, css_file: Path | None = None, continuous_page_numbers: bool = True, page_number_start: int = 1) -> Path:
     notes_dir = Path(notes_dir).resolve()
+    if not notes_dir.is_dir():
+        raise FileNotFoundError(f"NOTES_DIR is missing or unreadable: {notes_dir}")
     pdf_dir = Path(pdf_dir).resolve() if pdf_dir else (notes_dir / "pdfs").resolve()
-    if not notes_dir.exists():
-        raise FileNotFoundError(notes_dir)
-    notes = sorted([p for p in notes_dir.glob("*.md") if is_topic_note(p)], key=natural_key)
-    if not notes:
-        raise ValueError(f"No topic notes found in {notes_dir}")
     pdf_dir.mkdir(parents=True, exist_ok=True)
-    pdfs = []
-    for note in notes:
-        pdf = pdf_dir / f"{note.stem}.pdf"
-        rebuild_reason = pdf_rebuild_reason(note, pdf)
-        if rebuild_reason:
-            detail = "missing" if rebuild_reason == "missing" else "source Markdown is newer"
-            print(f"PDF rebuild required for {note.name} ({detail}), generating...")
-            pdf = make_pdf(note, pdf, css_file=css_file)
-        pdfs.append(pdf)
+    source_index = Path(source_index).resolve() if source_index else (notes_dir / "INDEX.md").resolve()
+    if not source_index.is_file():
+        raise FileNotFoundError(f"Primary source INDEX was not found: {source_index}")
+    source = parse_source_index(source_index, notes_dir=notes_dir)
+    if not source.sessions:
+        raise RuntimeError("No sessions were extracted from the source INDEX")
+    book_title = title or source.title
 
-    index_source, generated = resolve_index(notes_dir, index_md, title)
-    print(f"Using {'generated' if generated else 'existing'} rich index: {index_source}")
     with tempfile.TemporaryDirectory() as tmp:
-        index_pdf = Path(tmp) / "00_STUDY_INDEX.pdf"
-        make_pdf(
-            index_source,
-            index_pdf,
-            title=f"{title} - Study Index",
-            css_file=css_file,
-        )
+        tmp_dir = Path(tmp)
+        if index_md:
+            index_source = Path(index_md).resolve()
+            if not index_source.is_file():
+                raise FileNotFoundError(f"Rich index Markdown not found: {index_source}")
+        else:
+            index_source, _ = generate_index(source_index, tmp_dir / "STUDY_INDEX-rewritten.md", notes_dir=notes_dir)
+
+        pdfs: list[Path] = []
+        component_style = PdfStyle(page_numbers=False)
+        for session in source.sessions:
+            note = session.note_path
+            if not note.is_file():
+                raise FileNotFoundError(f"Missing session Markdown: {note}")
+            pdf = pdf_dir / f"{note.stem}.pdf"
+            rebuild = not pdf.exists() or note.stat().st_mtime_ns > pdf.stat().st_mtime_ns
+            if rebuild:
+                print(f"Generating topic PDF: {note.name}")
+                make_pdf(note, pdf, style=component_style, css_file=css_file)
+            assert_portrait_a4(pdf, label=pdf.name)
+            pdfs.append(pdf)
+
+        index_pdf = tmp_dir / "00_STUDY_INDEX.pdf"
+        make_pdf(index_source, index_pdf, style=component_style, title=f"{book_title} - Study Index", css_file=css_file, auto_rtl=False)
         index_pages = len(PdfReader(index_pdf).pages)
+
         writer = PdfWriter()
-        writer.append(index_pdf, import_outline=True)
+        writer.append(index_pdf, import_outline=False)
         alias_to_page: dict[str, int] = {}
         starts: dict[str, int] = {}
-        for note, pdf in zip(notes, pdfs):
+        for session, pdf in zip(source.sessions, pdfs):
             start = len(writer.pages)
-            print(f"  Adding: {pdf.name} (starts at final page {start + 1})")
+            print(f"Adding session {session.order}: {pdf.name} (final page {start + 1})")
             writer.append(pdf, import_outline=False)
-            starts[note.stem.casefold()] = start
-            for alias in topic_aliases(note, pdf):
+            starts[session.stem.casefold()] = start
+            for alias in topic_aliases(session.note_path, pdf):
                 alias_to_page[alias] = start
+
         converted, unresolved = rewrite_index_links(writer, index_pages, alias_to_page)
-        add_outlines(writer, notes, starts, index_pages)
+        if unresolved:
+            detail = "; ".join(f"page={item['index_page']} uri={item['uri']}" for item in unresolved)
+            raise RuntimeError(f"Unresolved internal links: {detail}")
+        if not converted:
+            raise RuntimeError("No session links were converted to internal destinations")
+        expected_starts = set(starts.values())
+        wrong_targets = [item for item in converted if item["target_page"] - 1 not in expected_starts]
+        if wrong_targets:
+            raise RuntimeError(f"Internal links target invalid session pages: {wrong_targets}")
+        linked_starts = {item["target_page"] - 1 for item in converted}
+        missing_link_targets = sorted(expected_starts - linked_starts)
+        if missing_link_targets:
+            raise RuntimeError("At least one session title has no resolved internal link. Missing target pages: " + ", ".join(str(page + 1) for page in missing_link_targets))
+
         for stem, page in starts.items():
             writer.add_named_destination(f"topic-{stem}", page)
-        numbered_pages = 0
+        bookmark_count = add_outlines(writer, source, starts)
         if continuous_page_numbers:
-            numbered_pages = add_continuous_page_numbers(
-                writer, start=page_number_start, css_file=css_file
-            )
-        writer.add_metadata({"/Title": title, "/Subject": "Combined study notes with clickable internal index"})
+            add_continuous_page_numbers(writer, start=page_number_start)
+        writer.add_metadata({"/Title": book_title, "/Subject": "Bilingual study notes with internal links, bookmarks, and continuous numbering"})
         writer.page_mode = "/UseOutlines"
-        output = Path(output_path).resolve() if output_path else (pdf_dir.parent / "COMBINED_NOTES.pdf").resolve()
+
+        output = Path(output_path).resolve() if output_path else (notes_dir / "FINAL_STUDY_NOTES.pdf").resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("wb") as stream:
             writer.write(stream)
-        total_pages = len(writer.pages)
-    print(f"\nCombined PDF created: {output}")
-    print(f"   Total pages: {total_pages}")
-    print(f"   Index pages: {index_pages}")
-    print(f"   Topic notes: {len(pdfs)}")
-    print(f"   Internal index links converted: {converted}")
-    if continuous_page_numbers:
-        print(
-            f"   Continuous page numbers: {page_number_start}-"
-            f"{page_number_start + numbered_pages - 1}"
-        )
-    if unresolved:
-        print(f"   Warning: {unresolved} local index link annotation(s) could not be matched.")
+
+    report = _qa_final_pdf(output, source=source, index_pages=index_pages, converted=converted, expected_bookmarks=bookmark_count, page_number_start=page_number_start)
+    report_path = output.with_suffix(".qa.json")
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("\nFinal PDF:", report["final_pdf"])
+    print("Total pages:", report["total_pages"])
+    print("Study Index pages:", report["study_index_pages"])
+    print("Sessions:", report["sessions"])
+    print("Groups:", report["groups"])
+    print("Converted internal links:", report["converted_internal_links"])
+    print("Unresolved links: 0")
+    print("Bookmarks:", report["bookmarks"])
+    print("Page number range:", report["page_number_range"])
+    print("Embedded font:", ", ".join(report["embedded_fonts"]))
+    print("Page size: A4")
+    print("Page orientation: Portrait")
+    print("Portrait pages:", report["portrait_pages"])
+    print("Landscape pages: 0")
+    print("Rotated pages: 0")
+    print("Quality check: PASSED")
+    print("QA report:", report_path)
     return output
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Combine topic notes with an internal clickable study index")
+    parser = argparse.ArgumentParser(description="Create and verify the final combined study PDF")
     parser.add_argument("--notes-dir", required=True)
     parser.add_argument("--pdf-dir")
     parser.add_argument("--output")
-    parser.add_argument("--index-md")
-    parser.add_argument("--title", default="Study Notes")
-    parser.add_argument("--css", help="Extra CSS used for the index and page-number font")
-    parser.add_argument(
-        "--no-continuous-page-numbers",
-        action="store_true",
-        help="Keep component PDF page numbering instead of stamping one continuous sequence",
-    )
-    parser.add_argument(
-        "--page-number-start",
-        type=int,
-        default=1,
-        help="First visible/page-label number in the combined PDF (default: 1)",
-    )
+    parser.add_argument("--index-md", help="Already-generated rich bilingual index Markdown")
+    parser.add_argument("--source-index", help="Primary input INDEX.md; defaults to NOTES_DIR/INDEX.md")
+    parser.add_argument("--title")
+    parser.add_argument("--css")
+    parser.add_argument("--no-continuous-page-numbers", action="store_true")
+    parser.add_argument("--page-number-start", type=int, default=1)
     args = parser.parse_args()
     create_combined(
         Path(args.notes_dir),
         Path(args.pdf_dir) if args.pdf_dir else None,
         Path(args.output) if args.output else None,
         Path(args.index_md) if args.index_md else None,
+        source_index=Path(args.source_index) if args.source_index else None,
         title=args.title,
         css_file=Path(args.css) if args.css else None,
         continuous_page_numbers=not args.no_continuous_page_numbers,
