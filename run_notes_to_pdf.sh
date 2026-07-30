@@ -36,8 +36,17 @@ done
 
 mkdir -p "$PDF_DIR" "$(dirname "$COMBINED_OUTPUT")" "$(dirname "$QA_REPORT")"
 
-COMMON_ARGS=()
-[[ -n "$INDEX_MD" ]] && COMMON_ARGS+=(--index-md "$INDEX_MD")
+# Keep the prepared Index authoritative. Some prepared packages use a flat
+# "Recommended sequence" and store chapter names in the existing Major division
+# field. Normalize only that structure/markup into a temporary parser-compatible
+# Index; no content is generated or fetched.
+NORMALIZED_INDEX="$(mktemp "${TMPDIR:-/tmp}/note-maker-index.XXXXXX.md")"
+trap 'rm -f "$NORMALIZED_INDEX"' EXIT
+NORMALIZE_ARGS=(--notes-dir "$NOTES_DIR" --output "$NORMALIZED_INDEX")
+[[ -n "$INDEX_MD" ]] && NORMALIZE_ARGS+=(--index-md "$INDEX_MD")
+"$PYTHON" scripts/normalize_prepared_index.py "${NORMALIZE_ARGS[@]}" >/dev/null
+
+COMMON_ARGS=(--index-md "$NORMALIZED_INDEX")
 [[ -n "$CSS_FILE" ]] && COMMON_ARGS+=(--css "$CSS_FILE")
 [[ -n "$BOOK_TITLE" ]] && COMMON_ARGS+=(--title "$BOOK_TITLE")
 
