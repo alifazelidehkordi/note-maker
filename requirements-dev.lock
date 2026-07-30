@@ -82,6 +82,8 @@ markdown-it-py==4.2.0
     # via rich
 mdurl==0.1.2
     # via markdown-it-py
+mistune==3.3.3
+    # via note-maker (pyproject.toml)
 more-itertools==11.1.0
     # via
     #   jaraco-classes
@@ -114,7 +116,9 @@ patchright==1.61.2
 pathspec==1.1.1
     # via mypy
 pillow==12.3.0
-    # via weasyprint
+    # via
+    #   note-maker (pyproject.toml)
+    #   weasyprint
 pip-api==0.0.34
     # via pip-audit
 pip-audit==2.10.1
