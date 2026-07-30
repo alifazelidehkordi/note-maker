@@ -1,0 +1,21 @@
+Final PDF: outputs/notes/FINAL_STUDY_NOTES_RESTYLED.pdf
+Total pages: 144
+Study Index pages: 3
+Sessions: 43
+Groups: 17
+Converted internal links: 43
+Internal link annotations: 91
+Unresolved links: 0
+Bookmarks: 61
+Page number range: 1-144
+Embedded fonts: BGKFQU+StudyLatin-Oblique, HXLKDP+StudyArabic-Bold, NOMFBL+StudyLatin, NSWNVT+StudyArabic, ONNDJD+StudyLatin-Semi-Bold-Oblique, PUWLTX+StudyArabic-Bold, QDZHMU+StudyArabic-Bold, RNUORZ+StudyArabic-Bold, RXVDUM+StudyArabic, VCZOWE+StudyArabic-Bold, VGCWZU+StudyLatin-Semi-Bold, VQHPAO+StudyArabic, VRZBZG+StudyArabic
+Page size: A4 (595.28 x 841.89 pt)
+Page orientation: Portrait
+Portrait pages: 144
+Landscape pages: 0
+Rotated pages: 0
+Orientation/rotation error pages: none
+Visible footer numbers verified: 144/144
+Rendered margin scan: 144/144
+Edge-overflow pages: 0
+Quality check: PASSED
