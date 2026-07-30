@@ -1,701 +1,340 @@
 #!/usr/bin/env python3
-"""
-Convert clean Markdown study notes to high-quality PDFs with WeasyPrint.
-
-Optimized for medical/study notes, Persian/English mixed text, printing, and
-Obsidian-like exports. The visual style is controlled through CLI settings
-instead of editing the Python source every time.
-"""
-
+"""Convert prepared Markdown notes to embedded-font A4 portrait PDFs."""
 from __future__ import annotations
 
 import argparse
 import html
 import re
-import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-try:
-    import markdown
-except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
-    markdown = None
+import mistune
+from bs4 import BeautifulSoup
+from weasyprint import HTML
 
-_WEASYPRINT_IMPORT_ERROR: Exception | None = None
-try:
-    from weasyprint import HTML
-except (ModuleNotFoundError, OSError) as exc:  # pragma: no cover - environment dependent
-    HTML = None
-    _WEASYPRINT_IMPORT_ERROR = exc
-
-
-@dataclass(frozen=True)
-class BatchResult:
-    """Outcome of a batch conversion, including partial failures."""
-
-    created: list[Path]
-    failed: list[tuple[Path, str]]
-
-    @property
-    def succeeded(self) -> bool:
-        return not self.failed
+from pdf_pipeline_common import (
+    FontConfig,
+    font_config,
+    font_stack,
+    is_session_markdown,
+    natural_key,
+    parse_frontmatter,
+    validate_component_pdf,
+)
 
 
 @dataclass(frozen=True)
 class PdfStyle:
-    page_size: str = "A4"
-    margin: str = "1.45cm 1.55cm"
-    font_size: str = "10.4pt"
-    line_height: str = "1.48"
-    font_family: str = (
-        'Vazirmatn, "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, '
-        'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    )
-    theme: str = "medical-blue"
-    preset: str = "study"
-    rtl: bool = False
-    page_numbers: bool = True
+    margin_top: str = "17mm"
+    margin_right: str = "15mm"
+    margin_bottom: str = "18mm"
+    margin_left: str = "15mm"
+    font_size: str = "9.45pt"
+    line_height: str = "1.43"
+    page_numbers: bool = False
+    is_index: bool = False
 
 
-THEMES: dict[str, dict[str, str]] = {
-    "medical-blue": {
-        "text": "#172033",
-        "muted": "#64748b",
-        "heading": "#0f3a66",
-        "accent": "#2563eb",
-        "accent_soft": "#dbeafe",
-        "accent_border": "#60a5fa",
-        "surface": "#f8fafc",
-        "surface_strong": "#eff6ff",
-        "border": "#dbe4ee",
-        "code_bg": "#eef2f7",
-        "danger": "#b91c1c",
-    },
-    "ink": {
-        "text": "#111827",
-        "muted": "#6b7280",
-        "heading": "#111827",
-        "accent": "#374151",
-        "accent_soft": "#f3f4f6",
-        "accent_border": "#9ca3af",
-        "surface": "#fafafa",
-        "surface_strong": "#f4f4f5",
-        "border": "#d4d4d8",
-        "code_bg": "#f4f4f5",
-        "danger": "#991b1b",
-    },
-    "emerald": {
-        "text": "#17231d",
-        "muted": "#64746c",
-        "heading": "#064e3b",
-        "accent": "#059669",
-        "accent_soft": "#d1fae5",
-        "accent_border": "#6ee7b7",
-        "surface": "#f8faf9",
-        "surface_strong": "#ecfdf5",
-        "border": "#d1e7dd",
-        "code_bg": "#eef7f2",
-        "danger": "#b91c1c",
-    },
-}
+def _markdown_renderer():
+    plugins = ["table", "footnotes", "strikethrough", "task_lists", "url"]
+    available = []
+    for plugin in plugins:
+        try:
+            mistune.create_markdown(plugins=[plugin])
+            available.append(plugin)
+        except Exception:
+            pass
+    return mistune.create_markdown(escape=False, plugins=available)
 
 
-PRESETS: dict[str, dict[str, str]] = {
-    # Balanced: readable but not wasteful.
-    "study": {"font_size": "10.4pt", "line_height": "1.48", "margin": "1.45cm 1.55cm"},
-    # Fits more notes per page while staying legible.
-    "compact": {"font_size": "9.6pt", "line_height": "1.34", "margin": "1.15cm 1.25cm"},
-    # Better for long review sessions and tablet reading.
-    "comfortable": {"font_size": "11pt", "line_height": "1.6", "margin": "1.7cm 1.8cm"},
-    # More conservative ink/print layout.
-    "print": {"font_size": "10pt", "line_height": "1.42", "margin": "1.35cm 1.45cm"},
-}
+MARKDOWN = _markdown_renderer()
 
 
-FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL | re.MULTILINE)
-METADATA_LINE_RE = re.compile(
-    r"(?m)^\s*(?:"
-    r"\*\*منبع اصلی:\*\*.*|"
-    r"منبع اصلی:.*|"
-    r"book_pages:.*|"
-    r"chapter:.*|"
-    r"part:.*|"
-    r"pdf_pages:.*|"
-    r"source:.*"
-    r")$"
-)
+def strip_frontmatter(text: str) -> str:
+    return re.sub(r"\A---\s*\n.*?\n---\s*(?:\n|\Z)", "", text, count=1, flags=re.S)
 
 
-KEY_SECTION_RE = re.compile(
-    r"(<h2[^>]*>\s*(?:Key Points|نکات کلیدی|خلاصه(?:\s+کلیدی)?)\s*</h2>)(.*?)(?=<h2|$)",
-    re.IGNORECASE | re.DOTALL,
-)
+def infer_title(markdown_text: str, fallback: str) -> str:
+    match = re.search(r"^#\s+(.+?)\s*$", markdown_text, re.M)
+    return re.sub(r"[*_`]+", "", match.group(1)).strip() if match else fallback
 
 
-WARNING_SECTION_RE = re.compile(
-    r"(<h2[^>]*>\s*(?:Warnings?|هشدارها?|Pitfalls?|اشتباهات رایج)\s*</h2>)(.*?)(?=<h2|$)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-RTL_SCRIPT_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
-TOPIC_NOTE_RE = re.compile(r"^\d{1,3}(?:_\d{1,3})?_", re.IGNORECASE)
-RICH_INDEX_NAMES = ("STUDY_INDEX-rewritten.md", "STUDY_INDEX.md")
-META_NOTE_NAMES = {"study_index.md", "study_index-rewritten.md", "study_index_verification.md", "combined_notes.md", "readme.md"}
-
-MARKDOWN_EXTENSIONS = [
-    "extra",
-    "sane_lists",
-    "smarty",
-    "tables",
-    "fenced_code",
-    "footnotes",
-    "toc",
-]
-MARKDOWN_EXTENSION_CONFIGS: dict[str, dict[str, Any]] = {
-    "toc": {"permalink": False},
-}
-
-
-def apply_preset(style: PdfStyle) -> PdfStyle:
-    """Return a PdfStyle with preset defaults applied before explicit CLI values."""
-    values = PRESETS.get(style.preset, PRESETS["study"]).copy()
-    defaults = PdfStyle()
-    return PdfStyle(
-        page_size=style.page_size,
-        margin=style.margin if style.margin != defaults.margin else values["margin"],
-        font_size=style.font_size if style.font_size != defaults.font_size else values["font_size"],
-        line_height=(
-            style.line_height
-            if style.line_height != defaults.line_height
-            else values["line_height"]
-        ),
-        font_family=style.font_family,
-        theme=style.theme,
-        preset=style.preset,
-        rtl=style.rtl,
-        page_numbers=style.page_numbers,
-    )
+def decorate_html(fragment: str) -> str:
+    soup = BeautifulSoup(fragment, "html.parser")
+    for heading in soup.find_all(["h2", "h3"]):
+        text = heading.get_text(" ", strip=True).casefold()
+        if heading.name == "h2" and text in {"key points", "نکات کلیدی", "summary", "خلاصه", "خلاصه کلیدی"}:
+            wrapper = soup.new_tag("section")
+            wrapper["class"] = "key-points"
+            heading.wrap(wrapper)
+            node = wrapper.next_sibling
+            while node and getattr(node, "name", None) not in {"h1", "h2"}:
+                next_node = node.next_sibling
+                wrapper.append(node.extract())
+                node = next_node
+        elif heading.name == "h2" and any(token in text for token in ("warning", "هشدار", "pitfall", "اشتباه رایج")):
+            wrapper = soup.new_tag("section")
+            wrapper["class"] = "warning-box"
+            heading.wrap(wrapper)
+            node = wrapper.next_sibling
+            while node and getattr(node, "name", None) not in {"h1", "h2"}:
+                next_node = node.next_sibling
+                wrapper.append(node.extract())
+                node = next_node
+    for table in soup.find_all("table"):
+        wrapper = soup.new_tag("div")
+        wrapper["class"] = "table-scroll"
+        table.wrap(wrapper)
+    return str(soup)
 
 
-def build_css(style: PdfStyle, extra_css: str | None = None, css_file: Path | None = None) -> str:
-    """Build the final CSS used by WeasyPrint."""
-    palette = THEMES.get(style.theme, THEMES["medical-blue"])
-    direction = "rtl" if style.rtl else "ltr"
-    text_align = "right" if style.rtl else "left"
-    border_side = "right" if style.rtl else "left"
-    padding_side = "padding-right" if style.rtl else "padding-left"
-    code_direction = "ltr"
-    page_counter = "content: counter(page);" if style.page_numbers else "content: '';"
+def build_css(fonts: FontConfig, style: PdfStyle) -> str:
+    regular = font_stack(fonts.regular_families)
+    bold = font_stack(fonts.bold_families)
+    footer = "content: counter(page);" if style.page_numbers else "content: '';"
+    index_css = """
+.study-index { direction:rtl; text-align:right; }
+.index-topline { display:flex; justify-content:flex-end; gap:2mm; align-items:baseline; color:#194f7d; font-family:BOLD_STACK; font-size:10pt; border-bottom:1.4px solid #2f7fbe; padding-bottom:1.7mm; margin-bottom:2.7mm; }
+.index-topline span[dir="ltr"] { font-size:9.2pt; }
+.index-hero { color:#fff; background:linear-gradient(135deg,#0d3b67 0%,#1f68a4 100%); border-radius:9px; padding:9mm 10mm 8mm; margin:0 0 6mm; direction:rtl; text-align:right; }
+.hero-kicker { font-family:BOLD_STACK; font-size:7.2pt; letter-spacing:1.1px; opacity:.8; margin-bottom:2mm; }
+.hero-title { font-family:BOLD_STACK; font-size:20.5pt; line-height:1.18; text-align:left; margin:0 0 2.2mm; unicode-bidi:plaintext; }
+.hero-subtitle { font-size:8.8pt; opacity:.93; margin-bottom:6mm; }
+.hero-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:2.5mm; direction:ltr; }
+.hero-stats > div { border:1px solid rgba(255,255,255,.27); border-radius:6px; padding:3mm 3.3mm; min-height:16mm; display:flex; flex-direction:column; justify-content:center; }
+.hero-stats strong { font-family:BOLD_STACK; font-size:13.7pt; line-height:1; color:#fff; }
+.hero-stats span { direction:rtl; text-align:left; font-size:6.7pt; color:#e5f2ff; margin-top:1.4mm; }
+.index-guide { background:#f6f9fc; border-right:3.5px solid #2f7fbe; padding:3mm 4mm; margin:0 0 5mm; border-radius:3px; }
+.index-guide h2 { border:0; padding:0; margin:0 0 1mm; font-size:10.5pt; }
+.index-guide p { margin:0; font-size:8pt; line-height:1.45; }
+.study-index h2 { font-size:11.1pt; margin:4mm 0 2mm; border-right:4px solid #2f7fbe; border-left:0; padding-right:2.3mm; padding-left:0; }
+.study-index h2 span { font-size:9.1pt; color:#47657e; }
+.group-table table { font-size:7.1pt; line-height:1.2; table-layout:fixed; }
+.group-table th, .group-table td { padding:1.25mm 1.05mm; }
+.group-table th:nth-child(1), .group-table td:nth-child(1) { width:5%; text-align:center; }
+.group-table th:nth-child(2), .group-table td:nth-child(2) { width:30%; direction:ltr; text-align:left; }
+.group-table th:nth-child(3), .group-table td:nth-child(3) { width:13%; text-align:center; }
+.group-table th:nth-child(4), .group-table td:nth-child(4) { width:17%; text-align:center; }
+.group-table th:nth-child(5), .group-table td:nth-child(5) { width:21%; text-align:center; }
+.group-table th:nth-child(6), .group-table td:nth-child(6) { width:14%; text-align:center; }
+.session-table table { font-size:6.7pt; line-height:1.22; table-layout:fixed; }
+.session-table th, .session-table td { box-sizing:border-box; padding:1.35mm 1.05mm; overflow-wrap:anywhere; word-break:normal; }
+.session-table th:nth-child(1), .session-table td:nth-child(1) { width:5%; text-align:center; }
+.session-table th:nth-child(2), .session-table td:nth-child(2) { width:24%; direction:ltr; text-align:left; }
+.session-table th:nth-child(3), .session-table td:nth-child(3) { width:11%; text-align:center; }
+.session-table th:nth-child(4), .session-table td:nth-child(4) { width:11%; text-align:center; }
+.session-table th:nth-child(5), .session-table td:nth-child(5) { width:9%; text-align:center; direction:ltr; }
+.session-table th:nth-child(6), .session-table td:nth-child(6) { width:40%; direction:ltr; text-align:left; }
+.index-footer-note { font-size:7pt; color:#728096; margin-top:3mm; }
+""".replace("BOLD_STACK", bold) if style.is_index else ""
 
-    css = f"""
+    return f"""
+{fonts.css}
 @page {{
-  size: {style.page_size};
-  margin: {style.margin};
-  @bottom-center {{
-    {page_counter}
-    font-size: 8.5pt;
-    color: {palette['muted']};
-  }}
+  size: A4 portrait;
+  margin: {style.margin_top} {style.margin_right} {style.margin_bottom} {style.margin_left};
+  @top-left {{ content: element(running-book-title); vertical-align:bottom; padding-bottom:1.4mm; }}
+  @top-right {{ content: element(running-section-title); vertical-align:bottom; padding-bottom:1.4mm; }}
+  @bottom-center {{ {footer} font-family: {regular}; font-size:8pt; color:#64748b; }}
 }}
-
-html {{
-  font-variant-ligatures: common-ligatures;
-}}
-
+html, body {{ margin:0; padding:0; }}
 body {{
-  direction: {direction};
-  text-align: {text_align};
-  font-family: {style.font_family};
-  font-size: {style.font_size};
-  line-height: {style.line_height};
-  color: {palette['text']};
-  max-width: 100%;
-  counter-reset: figures tables;
+  font-family:{regular}; font-size:{style.font_size}; line-height:{style.line_height};
+  color:#172033; direction:ltr; text-align:left; overflow-wrap:anywhere;
 }}
-
-body, p, li, blockquote, td, th, h1, h2, h3, h4 {{
-  unicode-bidi: plaintext;
-}}
-
-h1, h2, h3, h4 {{
-  color: {palette['heading']};
-  line-height: 1.25;
-  page-break-after: avoid;
-  break-after: avoid;
-  orphans: 3;
-  widows: 3;
-}}
-
-h1 {{
-  font-size: 18pt;
-  margin: 0 0 14pt 0;
-  padding-bottom: 7pt;
-  border-bottom: 2.5px solid {palette['accent']};
-}}
-
-h2 {{
-  font-size: 14pt;
-  margin: 17pt 0 7pt 0;
-  border-{border_side}: 5px solid {palette['accent_border']};
-  {padding_side}: 9pt;
-}}
-
-h3 {{
-  font-size: 12.1pt;
-  font-weight: 700;
-  margin: 11pt 0 4pt 0;
-}}
-
-h4 {{
-  font-size: 10.9pt;
-  font-weight: 700;
-  margin: 9pt 0 3pt 0;
-}}
-
-p {{
-  margin: 3.5pt 0;
-}}
-
-strong, b {{
-  color: {palette['heading']};
-  font-weight: 700;
-}}
-
-em {{
-  color: {palette['text']};
-}}
-
-ul, ol {{
-  margin-top: 5pt;
-  margin-bottom: 8pt;
-  padding-inline-start: 18pt;
-}}
-
-li {{
-  margin: 3.3pt 0;
-}}
-
-li > p {{
-  margin: 2pt 0;
-}}
-
-blockquote {{
-  margin: 10pt 0;
-  padding: 7pt 10pt;
-  background: {palette['surface']};
-  border-{border_side}: 4px solid {palette['border']};
-  color: {palette['text']};
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-hr {{
-  border: none;
-  border-top: 1px solid {palette['border']};
-  margin: 11pt 0;
-}}
-
-a {{
-  color: {palette['accent']};
-  text-decoration: none;
-}}
-
-code {{
-  direction: {code_direction};
-  unicode-bidi: isolate;
-  background: {palette['code_bg']};
-  padding: 1.6pt 4pt;
-  border-radius: 3pt;
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 8.7pt;
-}}
-
-pre {{
-  direction: {code_direction};
-  unicode-bidi: isolate;
-  background: {palette['code_bg']};
-  padding: 7pt 9pt;
-  border-radius: 5pt;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-pre code {{
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-}}
-
-table {{
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10pt 0 12pt 0;
-  font-size: 9.5pt;
-  page-break-inside: auto;
-}}
-
-th, td {{
-  border: 1px solid {palette['border']};
-  padding: 5pt 6pt;
-  vertical-align: top;
-}}
-
-th {{
-  background: {palette['surface_strong']};
-  color: {palette['heading']};
-  font-weight: 700;
-}}
-
-tr {{
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-img, svg {{
-  max-width: 100%;
-  height: auto;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-sup, sub {{
-  line-height: 0;
-}}
-
-.key-points, .keypoints, .summary-box {{
-  background: {palette['accent_soft']};
-  border: 1.4px solid {palette['accent_border']};
-  border-radius: 7pt;
-  padding: 8.5pt 11pt;
-  margin: 13pt 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-.key-points h2, .keypoints h2, .summary-box h2 {{
-  margin-top: 0;
-  border: none;
-  padding: 0;
-  color: {palette['heading']};
-  font-size: 13.2pt;
-}}
-
-.warning-box {{
-  background: #fff7ed;
-  border: 1.4px solid #fb923c;
-  border-radius: 7pt;
-  padding: 8.5pt 11pt;
-  margin: 13pt 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-.warning-box h2 {{
-  margin-top: 0;
-  border: none;
-  padding: 0;
-  color: {palette['danger']};
-  font-size: 13.2pt;
-}}
-
-.footnote, .footnote-ref {{
-  font-size: 8.5pt;
-}}
-
-/* Force page breaks between major sections in combined documents. */
-.page-break, div[style*="page-break-before"] {{
-  page-break-before: always;
-  break-before: page;
-  display: block;
-  height: 0;
-  margin: 0;
-  padding: 0;
-}}
-
-/* Use this class when each major note should start on a fresh page. */
-.note-heading {{
-  page-break-before: always;
-  break-before: page;
-}}
+body, p, li, td, th, blockquote, h1, h2, h3, h4, a, span {{ unicode-bidi:plaintext; }}
+h1, h2, h3, h4, strong, b, th {{ font-family:{bold}; }}
+h1, h2, h3, h4 {{ color:#0f3a66; line-height:1.24; break-after:avoid; page-break-after:avoid; orphans:3; widows:3; }}
+h1 {{ font-size:16.8pt; border-bottom:2px solid #2f7fbe; padding-bottom:2mm; margin:0 0 3.8mm; }}
+h2 {{ font-size:11.8pt; border-left:4px solid #60a5fa; padding-left:2.4mm; margin:4.7mm 0 2mm; }}
+[dir="rtl"] h2 {{ border-left:none; border-right:4px solid #60a5fa; padding-left:0; padding-right:2.4mm; }}
+h3 {{ font-size:10.1pt; color:#355d80; margin:3.5mm 0 1.3mm; }}
+h4 {{ font-size:9.7pt; margin:2.8mm 0 1mm; }}
+p {{ margin:1.15mm 0; }}
+ul, ol {{ margin:1.2mm 0 2.1mm; padding-inline-start:5.8mm; }}
+li {{ margin:.8mm 0; }}
+a {{ color:#1d63a4; text-decoration:none; }}
+blockquote {{ margin:3mm 0; padding:2.7mm 3.2mm; background:#f8fafc; border-left:4px solid #cbd5e1; break-inside:avoid; }}
+[dir="rtl"] blockquote {{ border-left:none; border-right:4px solid #cbd5e1; }}
+code, pre {{ font-family:{regular}; direction:ltr; unicode-bidi:isolate; }}
+code {{ background:#eef2f7; padding:.4mm 1mm; border-radius:3px; font-size:8.2pt; }}
+pre {{ white-space:pre-wrap; overflow-wrap:anywhere; background:#eef2f7; padding:2.6mm 3mm; border-radius:6px; break-inside:avoid; font-size:8pt; }}
+.table-scroll {{ width:100%; max-width:100%; overflow:hidden; margin:2.7mm 0; }}
+table {{ width:100%; max-width:100%; border-collapse:collapse; table-layout:fixed; font-size:8.15pt; line-height:1.28; }}
+thead {{ display:table-header-group; }}
+tfoot {{ display:table-footer-group; }}
+tr {{ break-inside:avoid; page-break-inside:avoid; }}
+th, td {{ border:1px solid #d9e3ec; padding:1.55mm 1.8mm; vertical-align:top; overflow-wrap:anywhere; word-break:normal; }}
+th {{ background:#eaf3fb; color:#194f7d; }}
+img, svg {{ max-width:100%; max-height:230mm; height:auto; object-fit:contain; break-inside:avoid; }}
+figure {{ margin:3mm auto; break-inside:avoid; }}
+figcaption {{ font-size:8pt; color:#64748b; text-align:center; }}
+.key-points, .warning-box {{ break-inside:avoid; border-radius:7px; padding:3.1mm 4mm; margin:4mm 0; }}
+.key-points {{ background:#eaf4ff; border:1.2px solid #73afe0; }}
+.warning-box {{ background:#fff7ed; border:1.2px solid #fdba74; }}
+.key-points h2, .warning-box h2 {{ margin-top:0; }}
+hr {{ border:0; border-top:1px solid #dbe4ee; margin:4mm 0; }}
+.running-book-title {{ position:running(running-book-title); font-family:{bold}; font-size:6.6pt; letter-spacing:.8px; color:#8491a1; text-transform:uppercase; white-space:nowrap; }}
+.running-section-title {{ position:running(running-section-title); font-family:{regular}; font-size:6.5pt; color:#8491a1; white-space:nowrap; max-width:92mm; text-overflow:ellipsis; overflow:hidden; }}
+.session-group {{ font-family:{bold}; font-size:8pt; color:#5d7187; margin:0 0 2.2mm; }}
+.session-ribbon {{ display:grid; grid-template-columns:1fr 1.2fr 1fr; gap:0; margin:0 0 3.2mm; background:#f4f8fc; border:1px solid #e4ebf2; font-size:7.15pt; color:#5c7186; }}
+.session-ribbon > span {{ padding:1.65mm 2.2mm; }}
+.session-ribbon > span:nth-child(1) {{ text-align:left; }}
+.session-ribbon > span:nth-child(2) {{ text-align:center; border-left:1px solid #e4ebf2; border-right:1px solid #e4ebf2; }}
+.session-ribbon > span:nth-child(3) {{ text-align:right; }}
+.session-document p, .session-document li {{ font-size:9.2pt; }}
+{index_css}
 """
-
-    if css_file and css_file.exists():
-        css += "\n" + css_file.read_text(encoding="utf-8")
-    if extra_css:
-        css += "\n" + extra_css
-    return css
-
-
-def clean_markdown(md_text: str) -> str:
-    """Remove note-maker metadata that should not appear in the PDF."""
-    if md_text.lstrip().startswith("---"):
-        md_text = FRONTMATTER_RE.sub("", md_text, count=1).lstrip()
-
-    md_text = METADATA_LINE_RE.sub("", md_text)
-    return md_text.strip()
-
-
-def is_topic_note(path: Path) -> bool:
-    """Accept study-note Markdown files while excluding generated/meta files."""
-    if path.suffix.lower() != ".md":
-        return False
-    name = path.name.casefold()
-    if name in META_NOTE_NAMES or name.startswith(("study_index", "combined_notes", ".")):
-        return False
-    return bool(TOPIC_NOTE_RE.match(path.name)) or path.is_file()
-
-
-def find_rich_index_md(notes_dir: Path) -> Path | None:
-    """Locate a rich STUDY_INDEX next to or inside the notes folder."""
-    notes_dir = Path(notes_dir)
-    for name in RICH_INDEX_NAMES:
-        for candidate in (notes_dir / name, notes_dir.parent / name):
-            if candidate.is_file():
-                return candidate
-    return None
-
-
-def contains_rtl_script(text: str) -> bool:
-    """Return True when Persian/Arabic script is present."""
-    return bool(RTL_SCRIPT_RE.search(text))
-
-
-def resolve_style(style: PdfStyle, md_text: str, *, auto_rtl: bool) -> PdfStyle:
-    """Apply preset defaults and optional RTL auto-detection."""
-    style = apply_preset(style)
-    if auto_rtl and not style.rtl and contains_rtl_script(md_text):
-        return replace(style, rtl=True)
-    return style
-
-
-def require_dependencies(*, require_pdf_renderer: bool = True) -> None:
-    """Fail with a helpful message if the requested dependencies are missing."""
-    missing: list[str] = []
-    if markdown is None:
-        missing.append("markdown")
-    if require_pdf_renderer and HTML is None:
-        missing.append("weasyprint native runtime")
-    if missing:
-        detail = ""
-        if require_pdf_renderer and _WEASYPRINT_IMPORT_ERROR is not None:
-            detail = f"\nRenderer import error: {_WEASYPRINT_IMPORT_ERROR}"
-        print(
-            "Missing required dependency: " + ", ".join(missing) + detail,
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-
-
-def md_to_html(md_text: str, *, cleaned: bool = False) -> str:
-    """Convert Markdown to clean HTML and wrap useful study sections."""
-    require_dependencies(require_pdf_renderer=False)
-    if not cleaned:
-        md_text = clean_markdown(md_text)
-
-    converter = markdown.Markdown(
-        extensions=MARKDOWN_EXTENSIONS,
-        extension_configs=MARKDOWN_EXTENSION_CONFIGS,
-        output_format="html5",
-    )
-    try:
-        html_body = converter.convert(md_text)
-    finally:
-        converter.reset()
-
-    html_body = KEY_SECTION_RE.sub(r'<div class="key-points">\1\2</div>', html_body)
-    html_body = WARNING_SECTION_RE.sub(r'<div class="warning-box">\1\2</div>', html_body)
-    return html_body
-
-
-def infer_title(md_text: str, fallback: str, *, cleaned: bool = False) -> str:
-    """Extract the first H1 as the document title."""
-    text = md_text if cleaned else clean_markdown(md_text)
-    title_match = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
-    return title_match.group(1).strip() if title_match else fallback
 
 
 def make_pdf(
-    md_path: Path,
-    output_pdf: Path | None = None,
+    markdown_path: Path,
+    output_path: Path,
     *,
-    style: PdfStyle | None = None,
     title: str | None = None,
-    extra_css: str | None = None,
-    css_file: Path | None = None,
-    prebuilt_css: str | None = None,
-    auto_rtl: bool = True,
+    fonts: FontConfig | None = None,
+    style: PdfStyle | None = None,
+    extra_css: str = "",
+    session_meta: dict | None = None,
+    running_book_title: str | None = None,
 ) -> Path:
-    """Convert one Markdown note to a styled PDF."""
-    require_dependencies()
-    md_text = md_path.read_text(encoding="utf-8")
-    cleaned = clean_markdown(md_text)
-    style = resolve_style(style or PdfStyle(), cleaned, auto_rtl=auto_rtl)
-    body_html = md_to_html(cleaned, cleaned=True)
-    document_title = title or infer_title(cleaned, md_path.stem, cleaned=True)
-    css = prebuilt_css if prebuilt_css is not None else build_css(
-        style, extra_css=extra_css, css_file=css_file
+    markdown_path = Path(markdown_path).resolve()
+    output_path = Path(output_path).resolve()
+    if not markdown_path.is_file():
+        raise FileNotFoundError(markdown_path)
+    fonts = fonts or font_config()
+    style = style or PdfStyle()
+    source = strip_frontmatter(markdown_path.read_text(encoding="utf-8", errors="strict"))
+    fragment = decorate_html(MARKDOWN(source))
+    doc_title = title or infer_title(source, markdown_path.stem)
+    css = build_css(fonts, style) + "\n" + extra_css
+    running = (
+        f'<div class="running-book-title">{html.escape(running_book_title or doc_title)}</div>'
+        f'<div class="running-section-title">{html.escape(doc_title if not style.is_index else "Study Index / فهرست مطالعه")}</div>'
     )
-    dir_attr = "rtl" if style.rtl else "auto"
-    lang_attr = "fa" if style.rtl else "en"
+    lead = ""
+    if session_meta:
+        group = html.escape(str(session_meta.get("group", "Study Sessions")))
+        number = int(session_meta.get("number", 0) or 0)
+        source_pages = html.escape(str(session_meta.get("source_pages", "—")))
+        duration = html.escape(str(session_meta.get("duration", "—")))
+        lead = (
+            f'<div class="session-group">{group}</div>'
+            '<div class="session-ribbon">'
+            f'<span>Session {number:02d}</span>'
+            f'<span>Source pages {source_pages}</span>'
+            f'<span>{duration}</span>'
+            '</div>'
+        )
+    body_class = "study-index-document" if style.is_index else "session-document"
+    document = (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        f'<title>{html.escape(doc_title)}</title><style>{css}</style></head>'
+        f'<body class="{body_class}">{running}{lead}{fragment}</body></html>'
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    HTML(string=document, base_url=str(markdown_path.parent)).write_pdf(output_path)
+    validate_component_pdf(output_path)
+    return output_path
 
-    full_html = f"""<!DOCTYPE html>
-<html lang="{lang_attr}" dir="{dir_attr}">
-<head>
-  <meta charset="utf-8">
-  <title>{html.escape(document_title)}</title>
-  <style>{css}</style>
-</head>
-<body>
-{body_html}
-</body>
-</html>"""
 
-    if output_pdf is None:
-        output_pdf = md_path.with_suffix(".pdf")
+def _batch_session_meta(note: Path, fallback_number: int) -> dict:
+    meta = parse_frontmatter(note)
+    name_match = re.match(r"^(\d{1,4})(?:_(\d{1,4}))?_", note.name)
+    filename_number = int(name_match.group(2) or name_match.group(1)) if name_match else fallback_number
 
-    output_pdf.parent.mkdir(parents=True, exist_ok=True)
-    HTML(string=full_html, base_url=str(md_path.parent)).write_pdf(output_pdf)
-    return output_pdf
+    def first(*keys: str, default: str = "—") -> str:
+        for key in keys:
+            value = meta.get(key)
+            if value not in (None, ""):
+                return str(value).strip()
+        return default
+
+    try:
+        number = int(first("session", "part", "section", default=str(filename_number)))
+    except ValueError:
+        number = filename_number
+    group = first("chapter_title_fa", "chapter_title", "group_title", "group", "chapter", default="Study Sessions")
+    source_pages = first("pdf_pages", "source_pages", "pages", "page_range")
+    duration = first("estimated_time", "duration", "time")
+    return {
+        "number": number,
+        "group": group,
+        "source_pages": source_pages,
+        "duration": duration,
+    }
 
 
-def batch_convert(
+def convert_batch(
     input_dir: Path,
     output_dir: Path,
     *,
-    pattern: str = "*.md",
-    style: PdfStyle | None = None,
-    css_file: Path | None = None,
-    auto_rtl: bool = True,
-) -> BatchResult:
-    """Convert all matching Markdown files and report every partial failure."""
-    require_dependencies()
-    input_dir = Path(input_dir)
-    output_dir = Path(output_dir)
+    fonts: FontConfig,
+    force: bool = True,
+    running_book_title: str | None = None,
+    extra_css: str = "",
+) -> list[Path]:
+    input_dir = Path(input_dir).resolve()
+    output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    base_style = apply_preset(style or PdfStyle())
-    extra_css = css_file.read_text(encoding="utf-8") if css_file and css_file.exists() else None
-    # Shared CSS is safe only when direction is fixed for every file.
-    shared_css: str | None = None
-    if not auto_rtl or base_style.rtl:
-        shared_css = build_css(base_style, extra_css=extra_css)
-
-    created: list[Path] = []
-    failed: list[tuple[Path, str]] = []
-    for md in sorted(input_dir.glob(pattern)):
-        if not md.is_file() or not is_topic_note(md):
-            continue
-        pdf = output_dir / (md.stem + ".pdf")
-        try:
-            out = make_pdf(
-                md,
+    notes = sorted((p for p in input_dir.glob("*.md") if is_session_markdown(p)), key=natural_key)
+    if not notes:
+        raise ValueError(f"No session Markdown files found in {input_dir}")
+    book_title = running_book_title or input_dir.name.replace("_", " ").replace("-", " ").title()
+    outputs: list[Path] = []
+    for fallback_number, note in enumerate(notes, 1):
+        pdf = output_dir / f"{note.stem}.pdf"
+        if force or not pdf.exists() or note.stat().st_mtime_ns > pdf.stat().st_mtime_ns:
+            print(f"Rendering A4 portrait: {note.name}")
+            make_pdf(
+                note,
                 pdf,
-                style=base_style,
-                extra_css=None if shared_css else extra_css,
-                prebuilt_css=shared_css,
-                auto_rtl=auto_rtl,
+                fonts=fonts,
+                style=PdfStyle(page_numbers=False),
+                extra_css=extra_css,
+                session_meta=_batch_session_meta(note, fallback_number),
+                running_book_title=book_title,
             )
-            print(f"[ok] {md.name} -> {pdf.name}")
-            created.append(out)
-        except Exception as exc:  # noqa: BLE001 - user-facing batch converter
-            message = str(exc)
-            print(f"[error] Failed {md.name}: {message}")
-            failed.append((md, message))
-    return BatchResult(created=created, failed=failed)
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Markdown notes -> styled study PDFs with WeasyPrint"
-    )
-    parser.add_argument("input", help="Single .md file or directory")
-    parser.add_argument("--output", help="Output PDF path for single mode, or output directory for batch mode")
-    parser.add_argument("--batch", action="store_true", help="Process a whole directory")
-    parser.add_argument("--pattern", default="*.md", help="Glob pattern for batch mode, default: *.md")
-    parser.add_argument("--css", help="Path to an extra CSS file appended after the built-in style")
-
-    parser.add_argument(
-        "--preset",
-        choices=sorted(PRESETS),
-        default="study",
-        help="Layout density preset: study, compact, comfortable, or print",
-    )
-    parser.add_argument(
-        "--theme",
-        choices=sorted(THEMES),
-        default="medical-blue",
-        help="Color theme",
-    )
-    parser.add_argument("--page-size", default="A4", help="CSS page size, e.g. A4, Letter")
-    parser.add_argument("--margin", default=None, help="CSS page margin, e.g. '1.4cm 1.6cm'")
-    parser.add_argument("--font-size", default=None, help="Base font size, e.g. 10.5pt")
-    parser.add_argument("--line-height", default=None, help="Base line height, e.g. 1.5")
-    parser.add_argument("--font-family", default=None, help="CSS font-family override")
-    parser.add_argument("--rtl", action="store_true", help="Force RTL direction for Persian/Arabic notes")
-    parser.add_argument(
-        "--no-auto-rtl",
-        action="store_true",
-        help="Disable automatic RTL detection from note content",
-    )
-    parser.add_argument("--no-page-numbers", action="store_true", help="Hide footer page numbers")
-    parser.add_argument("--title", help="Override PDF document title")
-    return parser.parse_args()
-
-
-def style_from_args(args: argparse.Namespace) -> PdfStyle:
-    preset_values = PRESETS[args.preset]
-    return apply_preset(
-        PdfStyle(
-            page_size=args.page_size,
-            margin=args.margin or preset_values["margin"],
-            font_size=args.font_size or preset_values["font_size"],
-            line_height=args.line_height or preset_values["line_height"],
-            font_family=args.font_family or PdfStyle.font_family,
-            theme=args.theme,
-            preset=args.preset,
-            rtl=args.rtl,
-            page_numbers=not args.no_page_numbers,
-        )
-    )
+        else:
+            validate_component_pdf(pdf)
+        outputs.append(pdf)
+    return outputs
 
 
 def main() -> int:
-    args = parse_args()
-    inp = Path(args.input)
-    css_file = Path(args.css) if args.css else None
-    style = style_from_args(args)
-    auto_rtl = not args.no_auto_rtl
-
-    if args.batch or inp.is_dir():
-        out_dir = Path(args.output) if args.output else inp / "pdfs"
-        result = batch_convert(
-            inp,
-            out_dir,
-            pattern=args.pattern,
-            style=style,
-            css_file=css_file,
-            auto_rtl=auto_rtl,
+    parser = argparse.ArgumentParser(description="Convert Markdown notes to embedded-font A4 portrait PDF")
+    parser.add_argument("input", nargs="?")
+    parser.add_argument("--batch", action="store_true")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--title")
+    parser.add_argument("--index", action="store_true", help="Use compact Study Index table styling")
+    parser.add_argument("--page-numbers", action="store_true")
+    parser.add_argument("--no-force", action="store_true")
+    parser.add_argument("--css")
+    parser.add_argument("--running-title", help="Running book title for batch session PDFs")
+    args = parser.parse_args()
+    if not args.input:
+        parser.error("input path is required")
+    fonts = font_config()
+    extra_css = Path(args.css).read_text(encoding="utf-8") if args.css else ""
+    if args.batch:
+        convert_batch(
+            Path(args.input),
+            Path(args.output),
+            fonts=fonts,
+            force=not args.no_force,
+            running_book_title=args.running_title,
+            extra_css=extra_css,
         )
-        print(
-            f"Batch complete: {len(result.created)} created, "
-            f"{len(result.failed)} failed."
-        )
-        if result.failed:
-            return 2
     else:
-        out = Path(args.output) if args.output else inp.with_suffix(".pdf")
-        result = make_pdf(
-            inp,
-            out,
-            style=style,
+        make_pdf(
+            Path(args.input),
+            Path(args.output),
             title=args.title,
-            css_file=css_file,
-            auto_rtl=auto_rtl,
+            fonts=fonts,
+            style=PdfStyle(page_numbers=args.page_numbers, is_index=args.index),
+            extra_css=extra_css,
         )
-        print(f"Created PDF: {result}")
-
     return 0
 
 
