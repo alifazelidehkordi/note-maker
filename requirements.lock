@@ -28,6 +28,8 @@ idna==3.18
     # via trio
 markdown==3.10.2
     # via note-maker (pyproject.toml)
+mistune==3.3.3
+    # via note-maker (pyproject.toml)
 mouseinfo==0.1.3
     # via pyautogui
 outcome==1.3.0.post0
@@ -37,7 +39,9 @@ outcome==1.3.0.post0
 patchright==1.61.2
     # via note-maker (pyproject.toml)
 pillow==12.3.0
-    # via weasyprint
+    # via
+    #   note-maker (pyproject.toml)
+    #   weasyprint
 playwright==1.61.0
     # via playwright-stealth
 playwright-stealth==2.0.3
