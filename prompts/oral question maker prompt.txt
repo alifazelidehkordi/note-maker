@@ -1,0 +1,232 @@
+I am a medical student at the University of Naples Federico II in Italy, preparing for a university oral examination. I have divided my lecture notes into sections of approximately 15 pages, and I will provide you with one section at a time.
+
+Your task is to create a realistic, high-quality medical oral examination based on the material I provide.
+
+## Main objective
+
+Simulate the way a professor would examine a medical student during a real Italian university oral exam.
+
+The examination should not consist of isolated, random questions. Instead, it should develop naturally:
+
+1. The examiner introduces a broad and important topic.
+2. The student begins explaining it in an organized way.
+3. The examiner interrupts or follows up with progressively more specific questions.
+4. The discussion moves toward mechanisms, reasoning, clinical relevance, comparisons, complications, diagnosis, management, or related concepts when these are present in the notes.
+
+The questions should feel like parts of one realistic oral discussion rather than a written quiz.
+
+## Question-quality requirements
+
+Only ask questions that are genuinely useful for preparing for a medical oral exam.
+
+Prioritize:
+
+* Core concepts and high-yield topics
+* Concepts that a medical student is expected to explain clearly
+* Pathophysiological mechanisms
+* Logical cause-and-effect relationships
+* Clinical reasoning
+* Important classifications and distinctions
+* Diagnostic reasoning
+* Clinical presentation
+* Relevant complications
+* Treatment principles and management logic
+* Connections between related topics
+* Common points on which an examiner may challenge the student
+
+Avoid:
+
+* Superficial or overly easy questions
+* Meaningless questions asked only to increase the number of questions
+* Extremely minor details with little educational or examination value
+* Obscure trivia
+* Questions based on isolated numbers or lists unless they are genuinely important
+* Repetitive questions testing the same concept in slightly different words
+* Excessively detailed questions that would not realistically be asked in an oral medical examination
+* Multiple-choice, true-or-false, or flashcard-style questions
+
+Before including a question, ask yourself:
+
+“Would a medical professor realistically ask this question during an oral examination, and would answering it help the student demonstrate meaningful medical understanding?”
+
+If the answer is no, do not include it.
+
+## Realistic oral-exam structure
+
+Divide the examination into a limited number of high-quality oral examination scenarios.
+
+For a section of approximately 15 pages, usually create around 4–6 scenarios. Adjust this number according to the density and importance of the material. Quality is more important than quantity.
+
+Each scenario should contain:
+
+### 1. Opening question
+
+Begin with one broad, high-yield question that allows the student to introduce and organize an important topic.
+
+Examples of the expected style:
+
+* “Tell me about…”
+* “Can you explain…?”
+* “How would you approach…?”
+* “What do you know about…?”
+* “Let us discuss…”
+
+Do not make the opening question excessively broad if the notes do not contain enough information to answer it properly.
+
+### 2. Examiner follow-up questions
+
+After the opening question, include approximately 3–5 connected follow-up questions.
+
+The follow-ups should develop naturally from the initial topic. They may:
+
+* Ask for clarification of an important statement
+* Explore the underlying mechanism
+* Test whether the student understands why something happens
+* Ask the student to distinguish between similar conditions or concepts
+* Connect basic science with clinical findings
+* Introduce a relevant clinical situation
+* Ask about diagnosis, complications, prognosis, or management
+* Challenge an incomplete or oversimplified explanation
+* Ask what would change under different clinical circumstances
+
+The difficulty should progress naturally from foundational understanding to deeper medical reasoning.
+
+Do not force every scenario to include all of these elements. Use only the types of follow-up questions that are appropriate for the material.
+
+## Source limitations
+
+Base the examination primarily on the provided notes.
+
+Do not invent topics that are unrelated to the uploaded material. Do not introduce obscure external information simply to make the examination more difficult.
+
+You may use standard medical knowledge only when it is necessary to:
+
+* Explain a concept already present in the notes
+* Make a follow-up question medically coherent
+* Connect clearly related concepts
+* Correct an obvious ambiguity in the notes
+
+If an answer contains information that is not directly stated in the notes, clearly mark it as:
+
+“Additional standard medical context”
+
+Do not let additional information dominate the answer.
+
+## Answer style
+
+Write model answers that sound like strong spoken answers in a real oral examination.
+
+The answers should be:
+
+* Medically accurate
+* Clear and well organized
+* Directly responsive to the question
+* Natural enough to say aloud
+* Detailed enough to demonstrate understanding
+* Concise enough to study and revise efficiently
+
+Do not write answers like textbook chapters or long essays.
+
+For opening questions, provide a structured answer that could usually be delivered in approximately 1–2 minutes.
+
+For follow-up questions, provide shorter and more direct answers, usually a few sentences or a short structured explanation.
+
+A good answer should generally:
+
+1. Begin with the direct answer or definition.
+2. Organize the main points logically.
+3. Explain the relevant mechanism or reasoning.
+4. Add clinical relevance when appropriate.
+5. Stop once the question has been answered adequately.
+
+Avoid unnecessary introductions, repetition, excessive detail, and artificial phrases.
+
+## Required output format
+
+Produce the output in the following separate sections.
+
+# PART 1 — ORAL EXAM QUESTIONS ONLY
+
+In this section, provide only the questions. Do not include answers, explanations, hints, or keywords.
+
+Organize the questions as follows:
+
+## Oral Examination Scenario 1
+
+**Opening question**
+
+[Question]
+
+**Examiner follow-up questions**
+
+1. [Connected follow-up question]
+2. [Connected follow-up question]
+3. [Connected follow-up question]
+4. [Connected follow-up question, if necessary]
+5. [Connected follow-up question, if necessary]
+
+Continue with the remaining scenarios.
+
+The questions in this section must appear in exactly the same order as in Part 2.
+
+---
+
+# PART 2 — QUESTIONS WITH MODEL ORAL ANSWERS
+
+Repeat every question from Part 1 in exactly the same order.
+
+Use the following structure:
+
+## Oral Examination Scenario 1
+
+### Opening question
+
+**Question:**
+[Question]
+
+**Model oral answer:**
+[Concise, organized and natural spoken answer]
+
+### Follow-up question 1
+
+**Question:**
+[Question]
+
+**Model oral answer:**
+[Direct and focused spoken answer]
+
+Continue until all questions have been answered.
+
+---
+
+# PART 3 — EXAMINER’S HIGH-YIELD CHECKPOINTS
+
+End with a short, practical section containing:
+
+* The concepts the examiner is most likely to expect
+* Important distinctions that must not be confused
+* Common mistakes or incomplete answers
+* Mechanisms that the student must be able to explain
+* Essential clinical connections
+* Any important point that could trigger a follow-up question
+
+Keep this section concise and non-repetitive.
+
+## Final quality check
+
+Before giving the final output, verify that:
+
+* The questions resemble a real medical oral examination.
+* The scenarios focus on important medical concepts rather than trivia.
+* The follow-up questions are logically connected.
+* The difficulty increases naturally.
+* There are no redundant or low-value questions.
+* The answers are medically accurate and suitable for speaking aloud.
+* The output is detailed enough to be useful but short enough to revise.
+* All major high-yield content in the provided section has been covered.
+* No minor detail has been prioritized over a major concept.
+
+Use English for both the questions and answers unless I explicitly request another language.
+
+i send the notes file to you 
+
