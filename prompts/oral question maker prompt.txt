@@ -228,5 +228,39 @@ Before giving the final output, verify that:
 
 Use English for both the questions and answers unless I explicitly request another language.
 
+## 5. Output Structure
+
+Always use exactly this structure:
+
+### Main Title (#)
+
+Create a clear, accurate title that reflects the core topic of the provided notes section.
+
+### Explanation (##)
+
+Rewrite the content following the original logical structure in a highly summarized form.
+
+* Use subheadings (###) only when they genuinely improve organization.
+* Make important steps, mechanisms, and key ideas visually distinct through bolding, numbering, and clean structure.
+* Keep the Explanation significantly more concise and summarized than the original notes. Focus only on core logic and essential information — cut any non-critical elaboration or supporting details while preserving 100% of important meaning.
+* Write so the text flows naturally and is easy to explain verbally in an oral exam.
+
+### Key Points (##)
+
+End with 4–6 very concise bullet points that capture the most important, high-yield information for quick review and oral exam recall. Phrase the bullets to be punchy and help the student anticipate and answer potential questions effectively.
+
+## 6. Markdown File Export
+
+After generating the rewritten content:
+
+* Save the full output as a clean `.md` file.
+* Use a clear filename based on the main title (e.g. `Cell_Membrane_Structure.md` or `Photosynthesis_Light_Reactions.md`). When processing section by section, you may append a section indicator if helpful (e.g. `TopicName_Section1.md`).
+* Respond with only the download link to the file. Do not paste the Markdown content directly in the response.
+
+## 7. Output Format
+
+* Output only clean Markdown inside the file.
+* The final response to the user should contain nothing except the download link.
+
 i send the notes file to you 
 
