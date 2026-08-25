@@ -2,6 +2,7 @@ selenium
 pyautogui
 pyperclip
 markdown
+mistune>=3.0,<4
 weasyprint
 pypdf
 pyyaml
