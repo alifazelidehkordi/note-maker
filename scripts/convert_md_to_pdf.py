@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
-"""
-Convert clean Markdown study notes to high-quality PDFs with WeasyPrint.
+"""Convert exactly one Markdown file into one validated A4 portrait PDF.
 
-Optimized for medical/study notes, Persian/English mixed text, printing, and
-Obsidian-like exports. The visual style is controlled through CLI settings
-instead of editing the Python source every time.
+The converter preserves Markdown content and only changes presentation. It builds
+an in-document clickable table of contents from Markdown headings, creates a
+hierarchical PDF outline, embeds the fonts supplied by FONT_FILE and
+FONT_BOLD_FILE, adds continuous page numbers/page labels, and runs strict PDF
+quality checks before publishing the requested output path.
 """
 
 from __future__ import annotations
 
 import argparse
 import html
+import os
 import re
 import sys
-from dataclasses import dataclass, replace
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Iterator
 
 try:
-    import markdown
+    import mistune
 except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
-    markdown = None
+    mistune = None
 
 _WEASYPRINT_IMPORT_ERROR: Exception | None = None
 try:
@@ -29,674 +32,968 @@ except (ModuleNotFoundError, OSError) as exc:  # pragma: no cover - environment 
     HTML = None
     _WEASYPRINT_IMPORT_ERROR = exc
 
+try:
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.constants import PageLabelStyle
+except ModuleNotFoundError:  # pragma: no cover - runtime dependency check
+    PdfReader = None
+    PdfWriter = None
+    PageLabelStyle = None
+
+
+A4_WIDTH_PT = 595.2755905511812
+A4_HEIGHT_PT = 841.8897637795277
+A4_TOLERANCE_PT = 1.0
+DEFAULT_OUTPUT = Path("outputs/notes/FINAL_STUDY_NOTES.pdf")
+FONT_FAMILY = "StudyNotesFont"
+FONT_FAMILY_BOLD = "StudyNotesFont-Bold"
+TOC_DEPTH = 3
+HEADING_TAG_RE = re.compile(r"<[^>]+>")
+BLOCK_DIR_RE = re.compile(
+    r"<(p|li|blockquote|td|th|h[1-6])(\s[^>]*)?>", re.IGNORECASE
+)
+RTL_CHAR_RE = re.compile(r"[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]")
+FORBIDDEN_BASE_FONT_RE = re.compile(r"(?:Helvetica|Times|Courier)", re.IGNORECASE)
+
 
 @dataclass(frozen=True)
-class BatchResult:
-    """Outcome of a batch conversion, including partial failures."""
-
-    created: list[Path]
-    failed: list[tuple[Path, str]]
-
-    @property
-    def succeeded(self) -> bool:
-        return not self.failed
+class Heading:
+    level: int
+    title: str
+    anchor: str
 
 
 @dataclass(frozen=True)
-class PdfStyle:
-    page_size: str = "A4"
-    margin: str = "1.45cm 1.55cm"
-    font_size: str = "10.4pt"
-    line_height: str = "1.48"
-    font_family: str = (
-        'Vazirmatn, "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, '
-        'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    )
-    theme: str = "medical-blue"
-    preset: str = "study"
-    rtl: bool = False
-    page_numbers: bool = True
-
-
-THEMES: dict[str, dict[str, str]] = {
-    "medical-blue": {
-        "text": "#172033",
-        "muted": "#64748b",
-        "heading": "#0f3a66",
-        "accent": "#2563eb",
-        "accent_soft": "#dbeafe",
-        "accent_border": "#60a5fa",
-        "surface": "#f8fafc",
-        "surface_strong": "#eff6ff",
-        "border": "#dbe4ee",
-        "code_bg": "#eef2f7",
-        "danger": "#b91c1c",
-    },
-    "ink": {
-        "text": "#111827",
-        "muted": "#6b7280",
-        "heading": "#111827",
-        "accent": "#374151",
-        "accent_soft": "#f3f4f6",
-        "accent_border": "#9ca3af",
-        "surface": "#fafafa",
-        "surface_strong": "#f4f4f5",
-        "border": "#d4d4d8",
-        "code_bg": "#f4f4f5",
-        "danger": "#991b1b",
-    },
-    "emerald": {
-        "text": "#17231d",
-        "muted": "#64746c",
-        "heading": "#064e3b",
-        "accent": "#059669",
-        "accent_soft": "#d1fae5",
-        "accent_border": "#6ee7b7",
-        "surface": "#f8faf9",
-        "surface_strong": "#ecfdf5",
-        "border": "#d1e7dd",
-        "code_bg": "#eef7f2",
-        "danger": "#b91c1c",
-    },
-}
-
-
-PRESETS: dict[str, dict[str, str]] = {
-    # Balanced: readable but not wasteful.
-    "study": {"font_size": "10.4pt", "line_height": "1.48", "margin": "1.45cm 1.55cm"},
-    # Fits more notes per page while staying legible.
-    "compact": {"font_size": "9.6pt", "line_height": "1.34", "margin": "1.15cm 1.25cm"},
-    # Better for long review sessions and tablet reading.
-    "comfortable": {"font_size": "11pt", "line_height": "1.6", "margin": "1.7cm 1.8cm"},
-    # More conservative ink/print layout.
-    "print": {"font_size": "10pt", "line_height": "1.42", "margin": "1.35cm 1.45cm"},
-}
-
-
-FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL | re.MULTILINE)
-METADATA_LINE_RE = re.compile(
-    r"(?m)^\s*(?:"
-    r"\*\*منبع اصلی:\*\*.*|"
-    r"منبع اصلی:.*|"
-    r"book_pages:.*|"
-    r"chapter:.*|"
-    r"part:.*|"
-    r"pdf_pages:.*|"
-    r"source:.*"
-    r")$"
-)
-
-
-KEY_SECTION_RE = re.compile(
-    r"(<h2[^>]*>\s*(?:Key Points|نکات کلیدی|خلاصه(?:\s+کلیدی)?)\s*</h2>)(.*?)(?=<h2|$)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-WARNING_SECTION_RE = re.compile(
-    r"(<h2[^>]*>\s*(?:Warnings?|هشدارها?|Pitfalls?|اشتباهات رایج)\s*</h2>)(.*?)(?=<h2|$)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-RTL_SCRIPT_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
-TOPIC_NOTE_RE = re.compile(r"^\d{1,3}(?:_\d{1,3})?_", re.IGNORECASE)
-RICH_INDEX_NAMES = ("STUDY_INDEX-rewritten.md", "STUDY_INDEX.md")
-META_NOTE_NAMES = {"study_index.md", "study_index-rewritten.md", "study_index_verification.md", "combined_notes.md", "readme.md"}
-
-MARKDOWN_EXTENSIONS = [
-    "extra",
-    "sane_lists",
-    "smarty",
-    "tables",
-    "fenced_code",
-    "footnotes",
-    "toc",
-]
-MARKDOWN_EXTENSION_CONFIGS: dict[str, dict[str, Any]] = {
-    "toc": {"permalink": False},
-}
-
-
-def apply_preset(style: PdfStyle) -> PdfStyle:
-    """Return a PdfStyle with preset defaults applied before explicit CLI values."""
-    values = PRESETS.get(style.preset, PRESETS["study"]).copy()
-    defaults = PdfStyle()
-    return PdfStyle(
-        page_size=style.page_size,
-        margin=style.margin if style.margin != defaults.margin else values["margin"],
-        font_size=style.font_size if style.font_size != defaults.font_size else values["font_size"],
-        line_height=(
-            style.line_height
-            if style.line_height != defaults.line_height
-            else values["line_height"]
-        ),
-        font_family=style.font_family,
-        theme=style.theme,
-        preset=style.preset,
-        rtl=style.rtl,
-        page_numbers=style.page_numbers,
-    )
-
-
-def build_css(style: PdfStyle, extra_css: str | None = None, css_file: Path | None = None) -> str:
-    """Build the final CSS used by WeasyPrint."""
-    palette = THEMES.get(style.theme, THEMES["medical-blue"])
-    direction = "rtl" if style.rtl else "ltr"
-    text_align = "right" if style.rtl else "left"
-    border_side = "right" if style.rtl else "left"
-    padding_side = "padding-right" if style.rtl else "padding-left"
-    code_direction = "ltr"
-    page_counter = "content: counter(page);" if style.page_numbers else "content: '';"
-
-    css = f"""
-@page {{
-  size: {style.page_size};
-  margin: {style.margin};
-  @bottom-center {{
-    {page_counter}
-    font-size: 8.5pt;
-    color: {palette['muted']};
-  }}
-}}
-
-html {{
-  font-variant-ligatures: common-ligatures;
-}}
-
-body {{
-  direction: {direction};
-  text-align: {text_align};
-  font-family: {style.font_family};
-  font-size: {style.font_size};
-  line-height: {style.line_height};
-  color: {palette['text']};
-  max-width: 100%;
-  counter-reset: figures tables;
-}}
-
-body, p, li, blockquote, td, th, h1, h2, h3, h4 {{
-  unicode-bidi: plaintext;
-}}
-
-h1, h2, h3, h4 {{
-  color: {palette['heading']};
-  line-height: 1.25;
-  page-break-after: avoid;
-  break-after: avoid;
-  orphans: 3;
-  widows: 3;
-}}
-
-h1 {{
-  font-size: 18pt;
-  margin: 0 0 14pt 0;
-  padding-bottom: 7pt;
-  border-bottom: 2.5px solid {palette['accent']};
-}}
-
-h2 {{
-  font-size: 14pt;
-  margin: 17pt 0 7pt 0;
-  border-{border_side}: 5px solid {palette['accent_border']};
-  {padding_side}: 9pt;
-}}
-
-h3 {{
-  font-size: 12.1pt;
-  font-weight: 700;
-  margin: 11pt 0 4pt 0;
-}}
-
-h4 {{
-  font-size: 10.9pt;
-  font-weight: 700;
-  margin: 9pt 0 3pt 0;
-}}
-
-p {{
-  margin: 3.5pt 0;
-}}
-
-strong, b {{
-  color: {palette['heading']};
-  font-weight: 700;
-}}
-
-em {{
-  color: {palette['text']};
-}}
-
-ul, ol {{
-  margin-top: 5pt;
-  margin-bottom: 8pt;
-  padding-inline-start: 18pt;
-}}
-
-li {{
-  margin: 3.3pt 0;
-}}
-
-li > p {{
-  margin: 2pt 0;
-}}
-
-blockquote {{
-  margin: 10pt 0;
-  padding: 7pt 10pt;
-  background: {palette['surface']};
-  border-{border_side}: 4px solid {palette['border']};
-  color: {palette['text']};
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-hr {{
-  border: none;
-  border-top: 1px solid {palette['border']};
-  margin: 11pt 0;
-}}
-
-a {{
-  color: {palette['accent']};
-  text-decoration: none;
-}}
-
-code {{
-  direction: {code_direction};
-  unicode-bidi: isolate;
-  background: {palette['code_bg']};
-  padding: 1.6pt 4pt;
-  border-radius: 3pt;
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 8.7pt;
-}}
-
-pre {{
-  direction: {code_direction};
-  unicode-bidi: isolate;
-  background: {palette['code_bg']};
-  padding: 7pt 9pt;
-  border-radius: 5pt;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-pre code {{
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-}}
-
-table {{
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10pt 0 12pt 0;
-  font-size: 9.5pt;
-  page-break-inside: auto;
-}}
-
-th, td {{
-  border: 1px solid {palette['border']};
-  padding: 5pt 6pt;
-  vertical-align: top;
-}}
-
-th {{
-  background: {palette['surface_strong']};
-  color: {palette['heading']};
-  font-weight: 700;
-}}
-
-tr {{
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-img, svg {{
-  max-width: 100%;
-  height: auto;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-sup, sub {{
-  line-height: 0;
-}}
-
-.key-points, .keypoints, .summary-box {{
-  background: {palette['accent_soft']};
-  border: 1.4px solid {palette['accent_border']};
-  border-radius: 7pt;
-  padding: 8.5pt 11pt;
-  margin: 13pt 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-.key-points h2, .keypoints h2, .summary-box h2 {{
-  margin-top: 0;
-  border: none;
-  padding: 0;
-  color: {palette['heading']};
-  font-size: 13.2pt;
-}}
-
-.warning-box {{
-  background: #fff7ed;
-  border: 1.4px solid #fb923c;
-  border-radius: 7pt;
-  padding: 8.5pt 11pt;
-  margin: 13pt 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}}
-
-.warning-box h2 {{
-  margin-top: 0;
-  border: none;
-  padding: 0;
-  color: {palette['danger']};
-  font-size: 13.2pt;
-}}
-
-.footnote, .footnote-ref {{
-  font-size: 8.5pt;
-}}
-
-/* Force page breaks between major sections in combined documents. */
-.page-break, div[style*="page-break-before"] {{
-  page-break-before: always;
-  break-before: page;
-  display: block;
-  height: 0;
-  margin: 0;
-  padding: 0;
-}}
-
-/* Use this class when each major note should start on a fresh page. */
-.note-heading {{
-  page-break-before: always;
-  break-before: page;
-}}
-"""
-
-    if css_file and css_file.exists():
-        css += "\n" + css_file.read_text(encoding="utf-8")
-    if extra_css:
-        css += "\n" + extra_css
-    return css
-
-
-def clean_markdown(md_text: str) -> str:
-    """Remove note-maker metadata that should not appear in the PDF."""
-    if md_text.lstrip().startswith("---"):
-        md_text = FRONTMATTER_RE.sub("", md_text, count=1).lstrip()
-
-    md_text = METADATA_LINE_RE.sub("", md_text)
-    return md_text.strip()
-
-
-def is_topic_note(path: Path) -> bool:
-    """Accept study-note Markdown files while excluding generated/meta files."""
-    if path.suffix.lower() != ".md":
-        return False
-    name = path.name.casefold()
-    if name in META_NOTE_NAMES or name.startswith(("study_index", "combined_notes", ".")):
-        return False
-    return bool(TOPIC_NOTE_RE.match(path.name)) or path.is_file()
-
-
-def find_rich_index_md(notes_dir: Path) -> Path | None:
-    """Locate a rich STUDY_INDEX next to or inside the notes folder."""
-    notes_dir = Path(notes_dir)
-    for name in RICH_INDEX_NAMES:
-        for candidate in (notes_dir / name, notes_dir.parent / name):
-            if candidate.is_file():
-                return candidate
-    return None
-
-
-def contains_rtl_script(text: str) -> bool:
-    """Return True when Persian/Arabic script is present."""
-    return bool(RTL_SCRIPT_RE.search(text))
-
-
-def resolve_style(style: PdfStyle, md_text: str, *, auto_rtl: bool) -> PdfStyle:
-    """Apply preset defaults and optional RTL auto-detection."""
-    style = apply_preset(style)
-    if auto_rtl and not style.rtl and contains_rtl_script(md_text):
-        return replace(style, rtl=True)
-    return style
-
-
-def require_dependencies(*, require_pdf_renderer: bool = True) -> None:
-    """Fail with a helpful message if the requested dependencies are missing."""
-    missing: list[str] = []
-    if markdown is None:
-        missing.append("markdown")
-    if require_pdf_renderer and HTML is None:
-        missing.append("weasyprint native runtime")
-    if missing:
-        detail = ""
-        if require_pdf_renderer and _WEASYPRINT_IMPORT_ERROR is not None:
-            detail = f"\nRenderer import error: {_WEASYPRINT_IMPORT_ERROR}"
-        print(
-            "Missing required dependency: " + ", ".join(missing) + detail,
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-
-
-def md_to_html(md_text: str, *, cleaned: bool = False) -> str:
-    """Convert Markdown to clean HTML and wrap useful study sections."""
-    require_dependencies(require_pdf_renderer=False)
-    if not cleaned:
-        md_text = clean_markdown(md_text)
-
-    converter = markdown.Markdown(
-        extensions=MARKDOWN_EXTENSIONS,
-        extension_configs=MARKDOWN_EXTENSION_CONFIGS,
-        output_format="html5",
-    )
-    try:
-        html_body = converter.convert(md_text)
-    finally:
-        converter.reset()
-
-    html_body = KEY_SECTION_RE.sub(r'<div class="key-points">\1\2</div>', html_body)
-    html_body = WARNING_SECTION_RE.sub(r'<div class="warning-box">\1\2</div>', html_body)
-    return html_body
-
-
-def infer_title(md_text: str, fallback: str, *, cleaned: bool = False) -> str:
-    """Extract the first H1 as the document title."""
-    text = md_text if cleaned else clean_markdown(md_text)
-    title_match = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
-    return title_match.group(1).strip() if title_match else fallback
-
-
-def make_pdf(
-    md_path: Path,
-    output_pdf: Path | None = None,
-    *,
-    style: PdfStyle | None = None,
-    title: str | None = None,
-    extra_css: str | None = None,
-    css_file: Path | None = None,
-    prebuilt_css: str | None = None,
-    auto_rtl: bool = True,
-) -> Path:
-    """Convert one Markdown note to a styled PDF."""
-    require_dependencies()
-    md_text = md_path.read_text(encoding="utf-8")
-    cleaned = clean_markdown(md_text)
-    style = resolve_style(style or PdfStyle(), cleaned, auto_rtl=auto_rtl)
-    body_html = md_to_html(cleaned, cleaned=True)
-    document_title = title or infer_title(cleaned, md_path.stem, cleaned=True)
-    css = prebuilt_css if prebuilt_css is not None else build_css(
-        style, extra_css=extra_css, css_file=css_file
-    )
-    dir_attr = "rtl" if style.rtl else "auto"
-    lang_attr = "fa" if style.rtl else "en"
-
-    full_html = f"""<!DOCTYPE html>
-<html lang="{lang_attr}" dir="{dir_attr}">
-<head>
-  <meta charset="utf-8">
-  <title>{html.escape(document_title)}</title>
-  <style>{css}</style>
-</head>
-<body>
-{body_html}
-</body>
-</html>"""
-
-    if output_pdf is None:
-        output_pdf = md_path.with_suffix(".pdf")
-
-    output_pdf.parent.mkdir(parents=True, exist_ok=True)
-    HTML(string=full_html, base_url=str(md_path.parent)).write_pdf(output_pdf)
-    return output_pdf
-
-
-def batch_convert(
-    input_dir: Path,
-    output_dir: Path,
-    *,
-    pattern: str = "*.md",
-    style: PdfStyle | None = None,
-    css_file: Path | None = None,
-    auto_rtl: bool = True,
-) -> BatchResult:
-    """Convert all matching Markdown files and report every partial failure."""
-    require_dependencies()
-    input_dir = Path(input_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    base_style = apply_preset(style or PdfStyle())
-    extra_css = css_file.read_text(encoding="utf-8") if css_file and css_file.exists() else None
-    # Shared CSS is safe only when direction is fixed for every file.
-    shared_css: str | None = None
-    if not auto_rtl or base_style.rtl:
-        shared_css = build_css(base_style, extra_css=extra_css)
-
-    created: list[Path] = []
-    failed: list[tuple[Path, str]] = []
-    for md in sorted(input_dir.glob(pattern)):
-        if not md.is_file() or not is_topic_note(md):
-            continue
-        pdf = output_dir / (md.stem + ".pdf")
-        try:
-            out = make_pdf(
-                md,
-                pdf,
-                style=base_style,
-                extra_css=None if shared_css else extra_css,
-                prebuilt_css=shared_css,
-                auto_rtl=auto_rtl,
-            )
-            print(f"[ok] {md.name} -> {pdf.name}")
-            created.append(out)
-        except Exception as exc:  # noqa: BLE001 - user-facing batch converter
-            message = str(exc)
-            print(f"[error] Failed {md.name}: {message}")
-            failed.append((md, message))
-    return BatchResult(created=created, failed=failed)
+class QualityReport:
+    total_pages: int
+    toc_pages: int
+    markdown_headings: int
+    toc_internal_links: int
+    unresolved_links: int
+    bookmarks: int
+    embedded_fonts: tuple[str, ...]
+    portrait_pages: int
+    landscape_pages: int
+    rotated_pages: int
+
+
+class ValidationError(RuntimeError):
+    """Raised when a required quality check fails."""
+
+
+class StudyRenderer(mistune.HTMLRenderer if mistune else object):
+    """Mistune renderer that assigns deterministic anchors to Markdown headings."""
+
+    def __init__(self) -> None:
+        if mistune is None:  # pragma: no cover
+            return
+        super().__init__(escape=False)
+        self.headings: list[Heading] = []
+
+    def heading(self, text: str, level: int, **attrs: Any) -> str:
+        anchor = f"md-heading-{len(self.headings) + 1:04d}"
+        title = html.unescape(HEADING_TAG_RE.sub("", text)).strip()
+        self.headings.append(Heading(level=level, title=title, anchor=anchor))
+        return f'<h{level} id="{anchor}" dir="auto">{text}</h{level}>\n'
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Markdown notes -> styled study PDFs with WeasyPrint"
-    )
-    parser.add_argument("input", help="Single .md file or directory")
-    parser.add_argument("--output", help="Output PDF path for single mode, or output directory for batch mode")
-    parser.add_argument("--batch", action="store_true", help="Process a whole directory")
-    parser.add_argument("--pattern", default="*.md", help="Glob pattern for batch mode, default: *.md")
-    parser.add_argument("--css", help="Path to an extra CSS file appended after the built-in style")
-
-    parser.add_argument(
-        "--preset",
-        choices=sorted(PRESETS),
-        default="study",
-        help="Layout density preset: study, compact, comfortable, or print",
+        description="Convert one Markdown file to one validated A4 portrait PDF."
     )
     parser.add_argument(
-        "--theme",
-        choices=sorted(THEMES),
-        default="medical-blue",
-        help="Color theme",
+        "input",
+        nargs="?",
+        help="Input Markdown path. Falls back to INPUT_MD when omitted.",
     )
-    parser.add_argument("--page-size", default="A4", help="CSS page size, e.g. A4, Letter")
-    parser.add_argument("--margin", default=None, help="CSS page margin, e.g. '1.4cm 1.6cm'")
-    parser.add_argument("--font-size", default=None, help="Base font size, e.g. 10.5pt")
-    parser.add_argument("--line-height", default=None, help="Base line height, e.g. 1.5")
-    parser.add_argument("--font-family", default=None, help="CSS font-family override")
-    parser.add_argument("--rtl", action="store_true", help="Force RTL direction for Persian/Arabic notes")
     parser.add_argument(
-        "--no-auto-rtl",
-        action="store_true",
-        help="Disable automatic RTL detection from note content",
+        "output",
+        nargs="?",
+        help=(
+            "Output PDF path. Falls back to COMBINED_OUTPUT, then "
+            "outputs/notes/FINAL_STUDY_NOTES.pdf."
+        ),
     )
-    parser.add_argument("--no-page-numbers", action="store_true", help="Hide footer page numbers")
-    parser.add_argument("--title", help="Override PDF document title")
     return parser.parse_args()
 
 
-def style_from_args(args: argparse.Namespace) -> PdfStyle:
-    preset_values = PRESETS[args.preset]
-    return apply_preset(
-        PdfStyle(
-            page_size=args.page_size,
-            margin=args.margin or preset_values["margin"],
-            font_size=args.font_size or preset_values["font_size"],
-            line_height=args.line_height or preset_values["line_height"],
-            font_family=args.font_family or PdfStyle.font_family,
-            theme=args.theme,
-            preset=args.preset,
-            rtl=args.rtl,
-            page_numbers=not args.no_page_numbers,
+def require_dependencies() -> None:
+    missing: list[str] = []
+    if mistune is None:
+        missing.append("mistune")
+    if HTML is None:
+        missing.append("weasyprint")
+    if PdfReader is None or PdfWriter is None or PageLabelStyle is None:
+        missing.append("pypdf")
+    if missing:
+        detail = ""
+        if HTML is None and _WEASYPRINT_IMPORT_ERROR is not None:
+            detail = f"; WeasyPrint import error: {_WEASYPRINT_IMPORT_ERROR}"
+        raise ValidationError(
+            "Missing required dependency/dependencies: " + ", ".join(missing) + detail
         )
+
+
+def require_readable_file(path: Path, label: str) -> Path:
+    resolved = path.expanduser().resolve()
+    if not resolved.is_file():
+        raise ValidationError(f"{label} does not exist or is not a file: {resolved}")
+    if not os.access(resolved, os.R_OK):
+        raise ValidationError(f"{label} is not readable: {resolved}")
+    try:
+        with resolved.open("rb") as handle:
+            handle.read(16)
+    except OSError as exc:
+        raise ValidationError(f"{label} cannot be read: {resolved}: {exc}") from exc
+    return resolved
+
+
+def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
+    input_value = args.input or os.environ.get("INPUT_MD")
+    if not input_value:
+        raise ValidationError("Input Markdown is required via CLI argument or INPUT_MD.")
+
+    output_value = args.output or os.environ.get("COMBINED_OUTPUT")
+    output_path = Path(output_value) if output_value else DEFAULT_OUTPUT
+
+    font_value = os.environ.get("FONT_FILE")
+    bold_value = os.environ.get("FONT_BOLD_FILE")
+    if not font_value:
+        raise ValidationError("FONT_FILE is required and must point to a readable font file.")
+    if not bold_value:
+        raise ValidationError(
+            "FONT_BOLD_FILE is required because headings and bold text use a bold font."
+        )
+
+    input_path = require_readable_file(Path(input_value), "Input Markdown")
+    font_path = require_readable_file(Path(font_value), "FONT_FILE")
+    bold_path = require_readable_file(Path(bold_value), "FONT_BOLD_FILE")
+    if input_path.suffix.lower() not in {".md", ".markdown"}:
+        raise ValidationError(f"Input must be a Markdown file: {input_path}")
+
+    output_path = output_path.expanduser().resolve()
+    if output_path.suffix.lower() != ".pdf":
+        raise ValidationError(f"Output path must end in .pdf: {output_path}")
+    return input_path, output_path, font_path, bold_path
+
+
+def render_markdown(md_text: str) -> tuple[str, list[Heading]]:
+    renderer = StudyRenderer()
+    markdown = mistune.create_markdown(
+        renderer=renderer,
+        plugins=["table", "footnotes", "strikethrough", "url"],
+    )
+    body = markdown(md_text)
+
+    # Resolve direction per block at rendering time without changing Markdown.
+    def add_dir(match: re.Match[str]) -> str:
+        tag = match.group(1)
+        attrs = match.group(2) or ""
+        if re.search(r"\bdir\s*=", attrs, re.IGNORECASE):
+            return match.group(0)
+        return f'<{tag}{attrs} dir="auto">'
+
+    body = BLOCK_DIR_RE.sub(add_dir, body)
+    return body, renderer.headings
+
+
+def is_rtl_heavy(text: str) -> bool:
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return False
+    rtl_count = sum(1 for ch in letters if RTL_CHAR_RE.match(ch))
+    return rtl_count / len(letters) >= 0.35
+
+
+def document_title(headings: list[Heading], input_path: Path) -> str:
+    if headings and headings[0].title:
+        return headings[0].title
+    return input_path.stem
+
+
+def toc_title(md_text: str) -> str:
+    return "فهرست مطالب" if is_rtl_heavy(md_text) else "Table of Contents"
+
+
+def build_toc(headings: list[Heading], title: str) -> tuple[str, list[Heading]]:
+    included = [heading for heading in headings if heading.level <= TOC_DEPTH]
+    entries = []
+    for heading in included:
+        safe_title = html.escape(heading.title)
+        entries.append(
+            f'<div class="toc-entry toc-level-{heading.level}">'
+            f'<a href="#{heading.anchor}" dir="auto">{safe_title}</a>'
+            "</div>"
+        )
+    return (
+        '<nav class="toc" aria-label="Table of Contents">'
+        f'<h1 class="toc-title" dir="auto">{html.escape(title)}</h1>'
+        + "".join(entries)
+        + "</nav>",
+        included,
     )
 
 
+def build_css(font_path: Path, bold_path: Path) -> str:
+    regular_uri = font_path.as_uri()
+    bold_uri = bold_path.as_uri()
+    return f"""
+@font-face {{
+  font-family: '{FONT_FAMILY}';
+  src: url('{regular_uri}');
+  font-weight: 400;
+  font-style: normal;
+}}
+@font-face {{
+  font-family: '{FONT_FAMILY}';
+  src: url('{bold_uri}');
+  font-weight: 700;
+  font-style: normal;
+}}
+
+@page {{
+  size: A4 portrait;
+  margin: 16mm 16mm 18mm 16mm;
+  @bottom-center {{
+    content: counter(page);
+    font-family: '{FONT_FAMILY}';
+    font-size: 8.5pt;
+    color: #64748b;
+  }}
+}}
+
+html, body {{
+  margin: 0;
+  padding: 0;
+  max-width: 100%;
+}}
+
+body {{
+  font-family: '{FONT_FAMILY}';
+  font-size: 10.25pt;
+  line-height: 1.5;
+  color: #172033;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}}
+
+body, p, li, blockquote, td, th, h1, h2, h3, h4, h5, h6 {{
+  unicode-bidi: plaintext;
+}}
+
+.document-bookmark-root {{
+  bookmark-level: 1;
+  bookmark-label: content(text);
+  height: 0;
+  max-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+}}
+
+.toc {{
+  break-after: page;
+  page-break-after: always;
+  bookmark-level: none;
+}}
+
+.toc-title {{
+  bookmark-level: none;
+  font-family: '{FONT_FAMILY}';
+  font-weight: 700;
+  font-size: 19pt;
+  line-height: 1.25;
+  color: #0f3a66;
+  margin: 0 0 14pt;
+  padding-bottom: 7pt;
+  border-bottom: 2pt solid #2563eb;
+}}
+
+.toc-entry {{
+  font-family: '{FONT_FAMILY}';
+  margin: 2.5pt 0;
+  line-height: 1.35;
+  break-inside: avoid;
+}}
+
+.toc-entry a {{
+  font-family: '{FONT_FAMILY}';
+  color: #172033;
+  text-decoration: none;
+}}
+
+.toc-entry a::after {{
+  content: leader('.') target-counter(attr(href), page);
+  font-family: '{FONT_FAMILY}';
+  color: #64748b;
+}}
+
+.toc-level-1 {{
+  font-weight: 700;
+  margin-top: 6pt;
+}}
+.toc-level-2 {{ padding-inline-start: 12pt; }}
+.toc-level-3 {{ padding-inline-start: 24pt; font-size: 9.5pt; color: #475569; }}
+
+h1, h2, h3, h4, h5, h6 {{
+  font-family: '{FONT_FAMILY}';
+  font-weight: 700;
+  color: #0f3a66;
+  line-height: 1.25;
+  break-after: avoid-page;
+  page-break-after: avoid;
+  orphans: 3;
+  widows: 3;
+}}
+h1 {{
+  bookmark-level: 2;
+  font-size: 18pt;
+  margin: 16pt 0 9pt;
+  padding-bottom: 5pt;
+  border-bottom: 1.6pt solid #2563eb;
+}}
+h2 {{
+  bookmark-level: 3;
+  font-size: 14pt;
+  margin: 15pt 0 6pt;
+  padding-inline-start: 8pt;
+  border-inline-start: 3pt solid #60a5fa;
+}}
+h3 {{ bookmark-level: 4; font-size: 12pt; margin: 11pt 0 4pt; }}
+h4 {{ bookmark-level: 5; font-size: 10.8pt; margin: 9pt 0 3pt; }}
+h5 {{ bookmark-level: 6; font-size: 10.4pt; margin: 8pt 0 3pt; }}
+h6 {{ bookmark-level: 7; font-size: 10.1pt; margin: 8pt 0 3pt; }}
+
+p {{ margin: 3.5pt 0 6pt; }}
+strong, b {{ font-family: '{FONT_FAMILY}'; font-weight: 700; color: #0f3a66; }}
+em, i {{ font-family: '{FONT_FAMILY}'; font-style: italic; }}
+
+ul, ol {{
+  margin: 4pt 0 8pt;
+  padding-inline-start: 20pt;
+}}
+li {{ margin: 2.5pt 0; }}
+li > p {{ margin: 1.5pt 0; }}
+
+blockquote {{
+  margin: 9pt 0;
+  padding: 7pt 10pt;
+  background: #f8fafc;
+  border-inline-start: 3pt solid #cbd5e1;
+  break-inside: avoid-page;
+}}
+
+hr {{
+  border: 0;
+  border-top: 0.8pt solid #dbe4ee;
+  margin: 10pt 0;
+}}
+
+a {{
+  font-family: '{FONT_FAMILY}';
+  color: #1d4ed8;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}}
+
+mark {{
+  font-family: '{FONT_FAMILY}';
+  background: #fff1a8;
+  color: inherit;
+  padding: 0 1pt;
+}}
+
+code, pre, pre code {{
+  font-family: '{FONT_FAMILY}';
+}}
+code {{
+  background: #eef2f7;
+  padding: 1pt 3pt;
+  border-radius: 2pt;
+  font-size: 8.9pt;
+  unicode-bidi: isolate;
+}}
+pre {{
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  background: #eef2f7;
+  border: 0.7pt solid #dbe4ee;
+  border-radius: 4pt;
+  padding: 7pt 8pt;
+  margin: 8pt 0 10pt;
+  font-size: 8.35pt;
+  line-height: 1.38;
+  max-width: 100%;
+}}
+pre code {{ background: transparent; padding: 0; border-radius: 0; }}
+
+table {{
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 8pt 0 11pt;
+  font-size: 8.65pt;
+  line-height: 1.35;
+  break-inside: auto;
+}}
+thead {{ display: table-header-group; }}
+tr {{ break-inside: avoid; page-break-inside: avoid; }}
+th, td {{
+  font-family: '{FONT_FAMILY}';
+  border: 0.65pt solid #dbe4ee;
+  padding: 4pt 5pt;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}}
+th {{
+  font-family: '{FONT_FAMILY}';
+  font-weight: 700;
+  color: #0f3a66;
+  background: #eff6ff;
+}}
+
+img, svg {{
+  display: block;
+  max-width: 100%;
+  max-height: 245mm;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  margin: 7pt auto;
+  break-inside: avoid;
+}}
+
+sup, sub {{ line-height: 0; }}
+.footnotes {{ font-size: 8.7pt; }}
+"""
+
+
+def build_html_document(
+    md_text: str,
+    body_html: str,
+    headings: list[Heading],
+    input_path: Path,
+    css: str,
+) -> tuple[str, list[Heading]]:
+    title = document_title(headings, input_path)
+    toc_html, toc_headings = build_toc(headings, toc_title(md_text))
+    root = (
+        f'<div class="document-bookmark-root" dir="auto">{html.escape(title)}</div>'
+    )
+    lang = "fa" if is_rtl_heavy(md_text) else "en"
+    full_html = f"""<!doctype html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<title>{html.escape(title)}</title>
+<style>{css}</style>
+</head>
+<body>
+{root}
+{toc_html}
+{body_html}
+</body>
+</html>
+"""
+    return full_html, toc_headings
+
+
+def heading_page_map(document: Any, headings: list[Heading]) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for page_index, page in enumerate(document.pages):
+        for anchor in page.anchors:
+            if anchor.startswith("md-heading-"):
+                mapping[anchor] = page_index + 1
+    missing = [heading.anchor for heading in headings if heading.anchor not in mapping]
+    if missing:
+        raise ValidationError(f"Heading destinations missing after layout: {missing}")
+    return mapping
+
+
+def validate_weasy_layout(document: Any, headings: list[Heading]) -> None:
+    """Use WeasyPrint's laid-out box tree to catch obvious horizontal overflow."""
+    heading_anchors = {heading.anchor for heading in headings}
+    for page_number, page in enumerate(document.pages, start=1):
+        page_box = page._page_box  # WeasyPrint layout tree; used only for QC.
+        left = float(page_box.margin_left)
+        right = left + float(page_box.width)
+        top = float(page_box.margin_top)
+        bottom = top + float(page_box.height)
+
+        for box in page_box.descendants():
+            tag = getattr(box, "element_tag", None)
+            if not tag or tag in {"html", "body"}:
+                continue
+            try:
+                x = float(box.border_box_x())
+                y = float(box.border_box_y())
+                width = float(box.border_width())
+                height = float(box.border_height())
+            except (AttributeError, TypeError):
+                continue
+
+            # Inline descendants can intentionally begin/end at exact boundaries;
+            # 2 CSS px tolerance avoids false positives from rounding.
+            if x < left - 2.0 or x + width > right + 2.0:
+                raise ValidationError(
+                    "Layout overflow detected: "
+                    f"page={page_number}, tag={tag}, x={x:.2f}, width={width:.2f}, "
+                    f"content_left={left:.2f}, content_right={right:.2f}"
+                )
+            if y + height > bottom + 2.0 and tag not in {"img", "svg"}:
+                raise ValidationError(
+                    "Vertical content overflow detected: "
+                    f"page={page_number}, tag={tag}, y={y:.2f}, height={height:.2f}, "
+                    f"content_bottom={bottom:.2f}"
+                )
+
+        # An anchor extremely close to the content bottom is a strong orphan signal.
+        for anchor, (_x, y, _w, _h) in page.anchors.items():
+            if anchor in heading_anchors and y > bottom - 34.0:
+                raise ValidationError(
+                    f"Orphan heading detected near page bottom: page={page_number}, "
+                    f"anchor={anchor}, y={y:.2f}"
+                )
+
+
+def validate_weasy_links(
+    document: Any,
+    toc_headings: list[Heading],
+    heading_pages: dict[str, int],
+) -> int:
+    """Ensure every generated TOC target exists after final pagination."""
+    if not toc_headings:
+        return 0
+    first_body_page = min(heading_pages.values())
+    toc_pages = document.pages[: first_body_page - 1]
+    linked_targets: set[str] = set()
+    for page in toc_pages:
+        for link in page.links:
+            if link[0] == "internal":
+                linked_targets.add(str(link[1]))
+    missing = [h.anchor for h in toc_headings if h.anchor not in linked_targets]
+    if missing:
+        raise ValidationError(f"TOC entries without clickable internal links: {missing}")
+    return len(toc_headings)
+
+
+def flatten_weasy_bookmarks(
+    tree: Iterable[tuple[str, tuple[int, float, float], list[Any], str]],
+    depth: int = 1,
+) -> Iterator[tuple[int, str, int]]:
+    for label, target, children, _state in tree:
+        yield depth, label, int(target[0]) + 1
+        yield from flatten_weasy_bookmarks(children, depth + 1)
+
+
+def validate_weasy_bookmarks(
+    document: Any,
+    headings: list[Heading],
+    title: str,
+    heading_pages: dict[str, int],
+) -> None:
+    actual = list(flatten_weasy_bookmarks(document.make_bookmark_tree()))
+    expected = [(1, title, 1)] + [
+        (heading.level + 1, heading.title, heading_pages[heading.anchor])
+        for heading in headings
+    ]
+    if actual != expected:
+        raise ValidationError(
+            "Bookmark tree generated by layout does not match Markdown hierarchy. "
+            f"expected={expected!r}, actual={actual!r}"
+        )
+
+
+def add_decimal_page_labels(source_pdf: Path, labeled_pdf: Path) -> None:
+    reader = PdfReader(str(source_pdf))
+    if not reader.pages:
+        raise ValidationError("Generated PDF has zero pages.")
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    writer.set_page_label(
+        0,
+        len(reader.pages) - 1,
+        style=PageLabelStyle.DECIMAL,
+        start=1,
+    )
+    with labeled_pdf.open("wb") as handle:
+        writer.write(handle)
+
+
+def _font_embedded(font: Any) -> bool:
+    obj = font.get_object()
+    if obj.get("/Subtype") == "/Type0":
+        descendants = obj.get("/DescendantFonts") or []
+        if not descendants:
+            return False
+        return all(_font_embedded(descendant) for descendant in descendants)
+    descriptor = obj.get("/FontDescriptor")
+    if descriptor is None:
+        return False
+    descriptor = descriptor.get_object()
+    return any(key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3"))
+
+
+def collect_fonts(reader: Any) -> dict[str, bool]:
+    fonts: dict[str, bool] = {}
+    for page in reader.pages:
+        resources = page.get("/Resources")
+        if resources is None:
+            continue
+        resources = resources.get_object()
+        font_dict = resources.get("/Font")
+        if font_dict is None:
+            continue
+        font_dict = font_dict.get_object()
+        for font_ref in font_dict.values():
+            font = font_ref.get_object()
+            base = str(font.get("/BaseFont", "<unknown>")).lstrip("/")
+            fonts[base] = fonts.get(base, True) and _font_embedded(font_ref)
+    return fonts
+
+
+def page_number_from_destination(reader: Any, destination: Any) -> int | None:
+    if isinstance(destination, str):
+        named = reader.named_destinations.get(destination)
+        if named is None:
+            return None
+        page_index = reader.get_destination_page_number(named)
+        return None if page_index is None else page_index + 1
+
+    if hasattr(destination, "get_object"):
+        try:
+            destination = destination.get_object()
+        except Exception:  # pragma: no cover - malformed PDF object
+            return None
+
+    if isinstance(destination, (list, tuple)) and destination:
+        first = destination[0]
+        try:
+            target_obj = first.get_object() if hasattr(first, "get_object") else first
+            for page_index, page in enumerate(reader.pages):
+                if page.indirect_reference == first or page.get_object() == target_obj:
+                    return page_index + 1
+        except Exception:  # pragma: no cover - malformed destination
+            return None
+    return None
+
+
+def validate_internal_links(
+    reader: Any,
+    toc_headings: list[Heading],
+    heading_pages: dict[str, int],
+    toc_pages: int,
+) -> tuple[int, int]:
+    named = reader.named_destinations
+    for heading in toc_headings:
+        destination = named.get(heading.anchor)
+        if destination is None:
+            raise ValidationError(f"Missing named destination for TOC heading: {heading.anchor}")
+        page_index = reader.get_destination_page_number(destination)
+        actual_page = None if page_index is None else page_index + 1
+        expected_page = heading_pages[heading.anchor]
+        if actual_page != expected_page:
+            raise ValidationError(
+                f"TOC destination page mismatch for {heading.anchor}: "
+                f"expected={expected_page}, actual={actual_page}"
+            )
+
+    unresolved = 0
+    toc_targets_found: set[str] = set()
+    for page_number, page in enumerate(reader.pages, start=1):
+        for annot_ref in page.get("/Annots", []) or []:
+            annot = annot_ref.get_object()
+            if annot.get("/Subtype") != "/Link":
+                continue
+            destination = annot.get("/Dest")
+            action = annot.get("/A")
+            if destination is None and action is not None:
+                action = action.get_object()
+                if action.get("/S") == "/GoTo":
+                    destination = action.get("/D")
+            if destination is None:
+                continue  # External /URI links are not internal destinations.
+
+            if isinstance(destination, str) and page_number <= toc_pages:
+                toc_targets_found.add(destination)
+            if page_number_from_destination(reader, destination) is None:
+                unresolved += 1
+
+    missing_toc_links = [
+        heading.anchor for heading in toc_headings if heading.anchor not in toc_targets_found
+    ]
+    if missing_toc_links:
+        raise ValidationError(
+            f"Final PDF is missing TOC link annotations for: {missing_toc_links}"
+        )
+    if unresolved:
+        raise ValidationError(f"Unresolved internal PDF links: {unresolved}")
+    return len(toc_headings), unresolved
+
+
+def flatten_pypdf_outline(items: Iterable[Any], depth: int = 1) -> Iterator[tuple[int, Any]]:
+    for item in items:
+        if isinstance(item, list):
+            yield from flatten_pypdf_outline(item, depth + 1)
+        else:
+            yield depth, item
+
+
+def validate_pdf_bookmarks(
+    reader: Any,
+    headings: list[Heading],
+    title: str,
+    heading_pages: dict[str, int],
+) -> int:
+    actual: list[tuple[int, str, int]] = []
+    for depth, item in flatten_pypdf_outline(reader.outline):
+        page_index = reader.get_destination_page_number(item)
+        actual.append((depth, str(item.get("/Title", "")), page_index + 1))
+    expected = [(1, title, 1)] + [
+        (heading.level + 1, heading.title, heading_pages[heading.anchor])
+        for heading in headings
+    ]
+    if actual != expected:
+        raise ValidationError(
+            "Final PDF bookmarks do not match Markdown hierarchy/order. "
+            f"expected={expected!r}, actual={actual!r}"
+        )
+    return len(actual)
+
+
+def footer_text_items(page: Any) -> list[tuple[str, float]]:
+    items: list[tuple[str, float]] = []
+
+    def visitor(text: str, cm: list[float], tm: list[float], *_args: Any) -> None:
+        value = text.strip()
+        if not value:
+            return
+        # pypdf text matrices combined with WeasyPrint's PDF CTM.
+        y = float(cm[5] + tm[4] * cm[1] + tm[5] * cm[3])
+        items.append((value, y))
+
+    page.extract_text(visitor_text=visitor)
+    return items
+
+
+def validate_page_numbers(reader: Any) -> None:
+    expected_labels = [str(i) for i in range(1, len(reader.pages) + 1)]
+    if list(reader.page_labels) != expected_labels:
+        raise ValidationError(
+            f"PDF Page Labels are not continuous 1..N: {reader.page_labels!r}"
+        )
+
+    for page_number, page in enumerate(reader.pages, start=1):
+        footer_candidates = [
+            text for text, y in footer_text_items(page) if y <= 32.0 and text.strip()
+        ]
+        expected = str(page_number)
+        if expected not in footer_candidates:
+            raise ValidationError(
+                "Footer page number mismatch: "
+                f"page={page_number}, expected={expected!r}, "
+                f"footer_candidates={footer_candidates!r}"
+            )
+
+
+def validate_headings_in_pdf(
+    reader: Any, headings: list[Heading], heading_pages: dict[str, int]
+) -> None:
+    def normalized(value: str) -> str:
+        return re.sub(r"\s+", " ", value).strip()
+
+    page_text = [normalized(page.extract_text() or "") for page in reader.pages]
+    last_page = 0
+    for heading in headings:
+        title = normalized(heading.title)
+        expected_page = heading_pages[heading.anchor]
+        if expected_page < last_page:
+            raise ValidationError(
+                f"Markdown heading order changed in PDF: {title!r}, page={expected_page}"
+            )
+        last_page = expected_page
+        # pypdf can return visually ordered glyph text for RTL runs. For RTL
+        # headings, exact Unicode/title validation is already enforced through
+        # bookmarks and named destinations; avoid a false negative here.
+        if title and not RTL_CHAR_RE.search(title) and title not in page_text[expected_page - 1]:
+            raise ValidationError(
+                f"Markdown heading missing from expected PDF page: "
+                f"heading={title!r}, page={expected_page}"
+            )
+
+
+def validate_final_pdf(
+    pdf_path: Path,
+    document: Any,
+    headings: list[Heading],
+    toc_headings: list[Heading],
+    title: str,
+    heading_pages: dict[str, int],
+    toc_pages: int,
+) -> QualityReport:
+    reader = PdfReader(str(pdf_path))
+    portrait = 0
+    landscape = 0
+    rotated = 0
+
+    for page_number, page in enumerate(reader.pages, start=1):
+        width = float(page.mediabox.width)
+        height = float(page.mediabox.height)
+        rotation = int(page.get("/Rotate", 0) or 0) % 360
+        if width >= height:
+            landscape += 1
+            raise ValidationError(
+                f"Landscape page detected: page={page_number}, width={width}, height={height}"
+            )
+        portrait += 1
+        if rotation in (90, 270):
+            rotated += 1
+            raise ValidationError(
+                f"Rotated page detected: page={page_number}, rotation={rotation}"
+            )
+        if (
+            abs(width - A4_WIDTH_PT) > A4_TOLERANCE_PT
+            or abs(height - A4_HEIGHT_PT) > A4_TOLERANCE_PT
+        ):
+            raise ValidationError(
+                "Non-A4 page detected: "
+                f"page={page_number}, width={width:.3f}, height={height:.3f}"
+            )
+
+    fonts = collect_fonts(reader)
+    if not fonts:
+        raise ValidationError("No PDF fonts were detected.")
+    not_embedded = sorted(name for name, embedded in fonts.items() if not embedded)
+    if not_embedded:
+        raise ValidationError(f"Fonts are not embedded: {not_embedded}")
+    unexpected = sorted(
+        name
+        for name in fonts
+        if FONT_FAMILY not in name and FONT_FAMILY_BOLD not in name
+    )
+    if unexpected:
+        raise ValidationError(f"Unexpected fallback fonts detected: {unexpected}")
+    forbidden = sorted(name for name in fonts if FORBIDDEN_BASE_FONT_RE.search(name))
+    if forbidden:
+        raise ValidationError(f"Forbidden default fonts detected: {forbidden}")
+    if not any(FONT_FAMILY_BOLD in name for name in fonts):
+        raise ValidationError("Custom bold font was not embedded/used in the PDF.")
+
+    toc_links, unresolved = validate_internal_links(
+        reader, toc_headings, heading_pages, toc_pages
+    )
+    bookmark_count = validate_pdf_bookmarks(
+        reader, headings, title, heading_pages
+    )
+    validate_page_numbers(reader)
+    validate_headings_in_pdf(reader, headings, heading_pages)
+    validate_weasy_layout(document, headings)
+
+    return QualityReport(
+        total_pages=len(reader.pages),
+        toc_pages=toc_pages,
+        markdown_headings=len(headings),
+        toc_internal_links=toc_links,
+        unresolved_links=unresolved,
+        bookmarks=bookmark_count,
+        embedded_fonts=tuple(sorted(fonts)),
+        portrait_pages=portrait,
+        landscape_pages=landscape,
+        rotated_pages=rotated,
+    )
+
+
+def convert(input_path: Path, output_path: Path, font_path: Path, bold_path: Path) -> QualityReport:
+    md_text = input_path.read_text(encoding="utf-8")
+    body_html, headings = render_markdown(md_text)
+    if not headings:
+        raise ValidationError("Markdown contains no headings; a dynamic TOC cannot be built.")
+
+    css = build_css(font_path, bold_path)
+    full_html, toc_headings = build_html_document(
+        md_text, body_html, headings, input_path, css
+    )
+    title = document_title(headings, input_path)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="note-maker-pdf-") as temp_dir:
+        temp_dir_path = Path(temp_dir)
+        raw_pdf = temp_dir_path / "rendered.pdf"
+        candidate_pdf = temp_dir_path / "candidate.pdf"
+
+        document = HTML(string=full_html, base_url=str(input_path.parent)).render()
+        heading_pages = heading_page_map(document, headings)
+        toc_pages = min(heading_pages.values()) - 1
+        if toc_pages < 1:
+            raise ValidationError(
+                f"TOC pagination is invalid: calculated TOC pages={toc_pages}"
+            )
+
+        validate_weasy_links(document, toc_headings, heading_pages)
+        validate_weasy_bookmarks(document, headings, title, heading_pages)
+        validate_weasy_layout(document, headings)
+
+        document.write_pdf(raw_pdf)
+        add_decimal_page_labels(raw_pdf, candidate_pdf)
+        report = validate_final_pdf(
+            candidate_pdf,
+            document,
+            headings,
+            toc_headings,
+            title,
+            heading_pages,
+            toc_pages,
+        )
+        os.replace(candidate_pdf, output_path)
+    return report
+
+
+def print_success(input_path: Path, output_path: Path, report: QualityReport) -> None:
+    print(f"Input Markdown: {input_path}")
+    print(f"Final PDF: {output_path}")
+    print(f"Total pages: {report.total_pages}")
+    print(f"Table of Contents pages: {report.toc_pages}")
+    print(f"Markdown headings: {report.markdown_headings}")
+    print(f"TOC internal links: {report.toc_internal_links}")
+    print(f"Unresolved links: {report.unresolved_links}")
+    print(f"Bookmarks: {report.bookmarks}")
+    print(f"Page number range: 1-{report.total_pages}")
+    print("Embedded fonts: " + ", ".join(report.embedded_fonts))
+    print("Page size: A4")
+    print("Page orientation: Portrait")
+    print(f"Portrait pages: {report.portrait_pages}")
+    print(f"Landscape pages: {report.landscape_pages}")
+    print(f"Rotated pages: {report.rotated_pages}")
+    print("Quality check: PASSED")
+
+
 def main() -> int:
-    args = parse_args()
-    inp = Path(args.input)
-    css_file = Path(args.css) if args.css else None
-    style = style_from_args(args)
-    auto_rtl = not args.no_auto_rtl
-
-    if args.batch or inp.is_dir():
-        out_dir = Path(args.output) if args.output else inp / "pdfs"
-        result = batch_convert(
-            inp,
-            out_dir,
-            pattern=args.pattern,
-            style=style,
-            css_file=css_file,
-            auto_rtl=auto_rtl,
-        )
-        print(
-            f"Batch complete: {len(result.created)} created, "
-            f"{len(result.failed)} failed."
-        )
-        if result.failed:
-            return 2
-    else:
-        out = Path(args.output) if args.output else inp.with_suffix(".pdf")
-        result = make_pdf(
-            inp,
-            out,
-            style=style,
-            title=args.title,
-            css_file=css_file,
-            auto_rtl=auto_rtl,
-        )
-        print(f"Created PDF: {result}")
-
-    return 0
+    try:
+        require_dependencies()
+        args = parse_args()
+        input_path, output_path, font_path, bold_path = resolve_paths(args)
+        report = convert(input_path, output_path, font_path, bold_path)
+        print_success(input_path, output_path, report)
+        return 0
+    except (ValidationError, UnicodeError, OSError, ValueError) as exc:
+        print("Quality check: FAILED", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001 - fail closed for PDF generation/QC
+        print("Quality check: FAILED", file=sys.stderr)
+        print(f"ERROR: unexpected failure: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
