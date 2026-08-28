@@ -110,6 +110,11 @@ def main() -> int:
 
 def __getattr__(name: str):
     """Expose implementation helpers without forcing strict imports eagerly."""
+    # Import machinery probes dunder attributes such as ``__path__`` even for
+    # ordinary modules. Never satisfy those probes by importing the optional
+    # strict renderer and its native WeasyPrint dependencies.
+    if name.startswith("__"):
+        raise AttributeError(name)
     if hasattr(_legacy, name):
         return getattr(_legacy, name)
     strict = _strict_module()
