@@ -140,14 +140,23 @@ class ClaimStore:
                 json.dumps(payload, ensure_ascii=False, sort_keys=True),
                 encoding="utf-8",
             )
-            current = self._read(claim.path)
-            if current is None or current.get("token") != claim.token:
-                return False
-            os.replace(temporary, claim.path)
-            return True
+            # Windows can temporarily deny replacing a claim while another
+            # coordinator is reading it. Retry only while this claim still owns
+            # the destination; never overwrite a newer owner's claim.
+            for attempt in range(8):
+                current = self._read(claim.path)
+                if current is None or current.get("token") != claim.token:
+                    return False
+                try:
+                    os.replace(temporary, claim.path)
+                    return True
+                except PermissionError:
+                    if attempt + 1 >= 8:
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
+            return False
         finally:
             temporary.unlink(missing_ok=True)
-
 
     def recover_stale(self) -> tuple[Path, ...]:
         """Remove stale claim files at coordinator startup and report recoveries."""

@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from artifact_validation import validate_artifact
 from parallel_runtime.models import ExecutionJob, estimate_file_weight, estimate_text_weight
+from process_liveness import pid_is_alive
 
 SCHEMA_VERSION = 2
 _ALLOWED_STATUSES = {
@@ -195,6 +196,18 @@ def migrate_payload(payload: dict) -> tuple[dict, bool]:
     return migrated, True
 
 
+def _lock_owner_is_dead(lock_path: Path) -> bool:
+    """Return true only when a local lock has an identifiable dead owner."""
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+        if payload.get("hostname") != socket.gethostname():
+            return False
+        pid = int(payload.get("pid") or 0)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return pid > 0 and not pid_is_alive(pid)
+
+
 @contextmanager
 def _short_write_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
     lock_path = path.parent / f".{path.name}.write.lock"
@@ -218,9 +231,17 @@ def _short_write_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
                 age = time.time() - lock_path.stat().st_mtime
             except FileNotFoundError:
                 continue
-            if age > 60:
-                lock_path.unlink(missing_ok=True)
-                continue
+            if age > 60 or _lock_owner_is_dead(lock_path):
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    continue
+                except PermissionError:
+                    # Another process may still have the lock open on Windows.
+                    # Treat that as contention rather than as a fatal error.
+                    pass
+                else:
+                    continue
             if time.monotonic() >= deadline:
                 raise ManifestError(f"Timed out waiting for manifest write lock: {lock_path}")
             time.sleep(0.02)

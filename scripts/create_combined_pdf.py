@@ -2,7 +2,7 @@
 """Backward-compatible entry point for combined-PDF generation.
 
 The reference-style strict pipeline and the pre-existing component-PDF pipeline
-have intentionally different contracts.  Keep both implementations isolated
+have intentionally different contracts. Keep both implementations isolated
 and dispatch based on whether the strict font contract is requested.
 """
 from __future__ import annotations
@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import create_combined_pdf_legacy as _legacy
-import create_combined_pdf_strict as _strict
 from convert_md_to_pdf import make_pdf
 
 
@@ -22,6 +21,17 @@ aliases_from_uri = _legacy.aliases_from_uri
 add_continuous_page_numbers = _legacy.add_continuous_page_numbers
 pdf_rebuild_reason = _legacy.pdf_rebuild_reason
 pdf_needs_rebuild = _legacy.pdf_needs_rebuild
+
+
+def _strict_module():
+    """Import the strict WeasyPrint pipeline only when it is actually needed.
+
+    Legacy callers must remain importable on platforms where WeasyPrint's
+    optional native libraries are unavailable (notably bare Windows runners).
+    """
+    import create_combined_pdf_strict as strict
+
+    return strict
 
 
 def create_combined(
@@ -46,9 +56,9 @@ def create_combined(
     """Build a combined PDF without breaking either supported API generation.
 
     Supplying ``font_file`` and ``font_bold_file`` opts into the strict,
-    reference-style one-pass builder.  Omitting both preserves the historical
+    reference-style one-pass builder. Omitting both preserves the historical
     component-PDF workflow used by the Phase 1 acceptance suite and existing
-    callers.  Supplying only one font is rejected instead of silently falling
+    callers. Supplying only one font is rejected instead of silently falling
     back to a weaker validation path.
     """
     if font_file is None and font_bold_file is None:
@@ -69,7 +79,7 @@ def create_combined(
     if font_file is None or font_bold_file is None:
         raise ValueError("font_file and font_bold_file must be provided together")
 
-    return _strict.create_combined(
+    return _strict_module().create_combined(
         notes_dir,
         pdf_dir,
         output_path,
@@ -89,20 +99,23 @@ def create_combined(
 def main() -> int:
     """Preserve both command-line interfaces.
 
-    The production final-book script passes the strict font flags.  Legacy CLI
+    The production final-book script passes the strict font flags. Legacy CLI
     invocations without those flags continue to use the component-PDF combiner.
     """
     strict_flags = {"--font-file", "--font-bold-file"}
     if any(flag in sys.argv[1:] for flag in strict_flags):
-        return _strict.main()
+        return _strict_module().main()
     return _legacy.main()
 
 
 def __getattr__(name: str):
-    """Expose non-conflicting implementation helpers for compatibility."""
-    if hasattr(_strict, name):
-        return getattr(_strict, name)
-    return getattr(_legacy, name)
+    """Expose implementation helpers without forcing strict imports eagerly."""
+    if hasattr(_legacy, name):
+        return getattr(_legacy, name)
+    strict = _strict_module()
+    if hasattr(strict, name):
+        return getattr(strict, name)
+    raise AttributeError(name)
 
 
 if __name__ == "__main__":
