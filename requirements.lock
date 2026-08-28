@@ -12,23 +12,23 @@ brotli==1.2.0
     # via fonttools
 certifi==2026.7.22
     # via selenium
-cffi==2.1.0
+cffi==2.1.1
     # via weasyprint
 cssselect2==0.9.0
     # via weasyprint
 fonttools==4.63.0
     # via weasyprint
-greenlet==3.5.4
+greenlet==3.5.5
     # via
     #   patchright
     #   playwright
 h11==0.16.0
     # via wsproto
-idna==3.18
+idna==3.19
     # via trio
-markdown==3.10.2
+markdown==3.10.3
     # via note-maker (pyproject.toml)
-mistune==3.3.3
+mistune==3.3.4
     # via note-maker (pyproject.toml)
 mouseinfo==0.1.3
     # via pyautogui
@@ -42,7 +42,7 @@ pillow==12.3.0
     # via
     #   note-maker (pyproject.toml)
     #   weasyprint
-playwright==1.61.0
+playwright==1.62.0
     # via playwright-stealth
 playwright-stealth==2.0.3
     # via note-maker (pyproject.toml)
@@ -60,13 +60,13 @@ pygetwindow==0.0.9
     # via pyautogui
 pymsgbox==2.0.1
     # via pyautogui
-pypdf==6.14.2
+pypdf==6.16.2
     # via note-maker (pyproject.toml)
 pyperclip==1.11.0
     # via
     #   mouseinfo
     #   note-maker (pyproject.toml)
-pyphen==0.17.2
+pyphen==0.18.1
     # via weasyprint
 pyrect==0.2.0
     # via pygetwindow
@@ -82,7 +82,7 @@ pytweening==1.2.0
     # via pyautogui
 pyyaml==6.0.3
     # via note-maker (pyproject.toml)
-selenium==4.46.0
+selenium==4.48.0
     # via note-maker (pyproject.toml)
 sniffio==1.3.1
     # via trio
@@ -96,7 +96,7 @@ tinyhtml5==2.1.0
     # via weasyprint
 tomli==2.4.1
     # via note-maker (pyproject.toml)
-trio==0.33.0
+trio==0.34.0
     # via
     #   selenium
     #   trio-websocket
@@ -110,7 +110,7 @@ urllib3==2.7.0
     # via selenium
 weasyprint==69.0
     # via note-maker (pyproject.toml)
-webencodings==0.5.1
+webencodings==0.6.1
     # via
     #   cssselect2
     #   tinycss2
