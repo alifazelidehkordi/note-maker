@@ -20,7 +20,9 @@ jobs:
           cache-dependency-path: requirements-dev.lock
       - name: Install pinned development environment
         run: |
-          python -m pip install --upgrade pip
+          # pip-tools 7.6.0 is incompatible with pip 26.2; keep the
+          # packaging toolchain deterministic until pip-tools supports it.
+          python -m pip install "pip==26.1.2"
           python -m pip install -r requirements-dev.lock
           python -m pip install --no-deps -e .
           python -m pip check
@@ -54,7 +56,11 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.lock
       - name: Install pinned audit tooling
-        run: python -m pip install -r requirements-dev.lock
+        run: |
+          # Match the pip version used for lock generation until pip-tools 7.6.0
+          # is compatible with pip 26.2+.
+          python -m pip install "pip==26.1.2"
+          python -m pip install -r requirements-dev.lock
       - name: Verify dependency locks are current
         run: |
           python -m piptools compile pyproject.toml --resolver backtracking --strip-extras --output-file /tmp/requirements.lock
