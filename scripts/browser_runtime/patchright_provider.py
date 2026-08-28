@@ -36,6 +36,7 @@ from .errors import (
     PageStateError,
     RateLimitError,
     TemporaryChatError,
+    UploadCapacityError,
     UnsupportedBrowserCapability,
 )
 from .models import (
@@ -78,6 +79,24 @@ DEFAULT_DOWNLOAD_DIR = ROOT / "downloads"
 LONG_GENERATION_STOP_SECONDS = int(os.environ.get("LONG_GENERATION_STOP_SECONDS", "900"))
 POST_STOP_GRACE_SECONDS = int(os.environ.get("POST_STOP_GRACE_SECONDS", "60"))
 RATE_LIMIT_WAIT_SECONDS = int(os.environ.get("RATE_LIMIT_WAIT_SECONDS", "180"))
+RESPONSE_PROGRESS_LOG_SECONDS = max(
+    5, int(os.environ.get("RESPONSE_PROGRESS_LOG_SECONDS", "30"))
+)
+UPLOAD_INPUT_PROBE_SECONDS = max(
+    1.0, float(os.environ.get("UPLOAD_INPUT_PROBE_SECONDS", "8"))
+)
+UPLOAD_COMPLETION_TIMEOUT_SECONDS = max(
+    30.0, float(os.environ.get("UPLOAD_COMPLETION_TIMEOUT_SECONDS", "90"))
+)
+UPLOAD_CAPACITY_RETRY_SECONDS = max(
+    15, int(os.environ.get("UPLOAD_CAPACITY_RETRY_SECONDS", "60"))
+)
+SEND_READY_TIMEOUT_SECONDS = max(
+    20.0, float(os.environ.get("SEND_READY_TIMEOUT_SECONDS", "90"))
+)
+SEND_ACK_TIMEOUT_SECONDS = max(
+    20.0, float(os.environ.get("SEND_ACK_TIMEOUT_SECONDS", "60"))
+)
 
 
 def _load_patchright():
@@ -135,6 +154,7 @@ def translate_patchright_error(operation: str, exc: BaseException) -> BrowserRun
         marker in lowered
         for marker in (
             "target page, context or browser has been closed",
+            "target crashed",
             "browser has been closed",
             "page crashed",
             "connection closed",
@@ -476,9 +496,10 @@ class PatchrightBrowserSession:
         return None
 
     def _rate_limit_visible(self) -> bool:
-        if self._visible_rate_limit_dialog() is not None:
-            return True
-        return _contains_any(_body_text(self._page), RATE_LIMIT_PHRASES)
+        # Only live modal/banner containers are actionable. Searching the
+        # entire page body also scans conversation history and uploaded text,
+        # where ordinary prose such as "rate limit" is not a service signal.
+        return self._visible_rate_limit_dialog() is not None
 
     def _login_buttons_visible(self) -> bool:
         try:
@@ -617,61 +638,154 @@ class PatchrightBrowserSession:
             raise BrowserUploadError(f"Upload source does not exist: {request.file_path}")
         self._set_state(SessionState.UPLOADING)
         try:
-            def compatible_file_input():
+            def compatible_file_inputs() -> tuple[list[Any], bool]:
                 inputs = self._page.locator(FILE_INPUT_SELECTOR)
                 try:
                     count = int(inputs.count())
                 except Exception:
-                    return None
+                    return [], False
                 suffix = request.file_path.suffix.lower()
-                fallback = None
+                exact: list[Any] = []
+                fallback: list[Any] = []
+                capacity_blocked = False
                 for index in range(count):
                     candidate = inputs.nth(index)
                     try:
                         accept = str(candidate.get_attribute("accept") or "").lower()
                     except Exception:
                         accept = ""
-                    if not accept or "*/*" in accept:
-                        fallback = fallback or candidate
-                        continue
                     tokens = {token.strip() for token in accept.split(",")}
-                    if suffix in tokens:
-                        return candidate
                     # ChatGPT now keeps a separate image-only file input in
                     # the composer. Never feed Markdown/PDF documents to it.
-                    if all("image/" in token or token in {".gif", ".png", ".jpg", ".jpeg", ".webp", ".mpo"} for token in tokens):
+                    if accept and all(
+                        "image/" in token
+                        or token in {".gif", ".png", ".jpg", ".jpeg", ".webp", ".mpo"}
+                        for token in tokens
+                    ):
                         continue
-                    fallback = fallback or candidate
-                return fallback
+                    is_exact = suffix in tokens
+                    is_fallback = not accept or "*/*" in accept or not is_exact
+                    try:
+                        upload_enabled = str(
+                            candidate.get_attribute("data-photo-upload-enabled") or ""
+                        ).strip().lower()
+                    except Exception:
+                        upload_enabled = ""
+                    try:
+                        disabled = bool(candidate.is_disabled())
+                    except Exception:
+                        disabled = False
+                    if disabled or upload_enabled == "false":
+                        capacity_blocked = True
+                        continue
+                    if is_exact:
+                        exact.append(candidate)
+                    elif is_fallback:
+                        fallback.append(candidate)
+                # React can leave detached/stale hidden inputs earlier in the
+                # DOM. The newest composer input is normally last.
+                return list(reversed(exact)) + list(reversed(fallback)), capacity_blocked
 
-            file_input = compatible_file_input()
-            if file_input is None:
+            file_inputs, capacity_blocked = compatible_file_inputs()
+            if not file_inputs and capacity_blocked:
+                raise UploadCapacityError(
+                    "ChatGPT disabled document uploads in this parallel browser session; "
+                    "the job will retry in a fresh chat after capacity is released.",
+                    retry_after=UPLOAD_CAPACITY_RETRY_SECONDS,
+                )
+            if not file_inputs:
                 attach = _first_visible(self._page, ATTACH_BUTTON_SELECTORS, timeout_ms=800)
                 if attach is None:
                     raise PageStateError("Attach button and file input are both unavailable.")
                 try:
-                    attach.evaluate("(element) => element.click()")
-                except Exception:
                     attach.click()
+                except Exception:
+                    attach.evaluate("(element) => element.click()")
                 deadline = time.monotonic() + 3
-                while file_input is None and time.monotonic() < deadline:
+                while not file_inputs and time.monotonic() < deadline:
                     time.sleep(0.25)
-                    file_input = compatible_file_input()
-            if file_input is None:
+                    file_inputs, capacity_blocked = compatible_file_inputs()
+                    if capacity_blocked:
+                        break
+            if not file_inputs and capacity_blocked:
+                raise UploadCapacityError(
+                    "ChatGPT disabled document uploads in this parallel browser session; "
+                    "the job will retry in a fresh chat after capacity is released.",
+                    retry_after=UPLOAD_CAPACITY_RETRY_SECONDS,
+                )
+            if not file_inputs:
                 raise PageStateError("A document-compatible file input is unavailable.")
-            file_input.set_input_files(str(request.file_path))
 
-            deadline = time.monotonic() + request.timeout
-            name_marker = request.file_path.name[:48]
+            # Attachment chips truncate long filenames. A stable stem prefix
+            # is specific enough on a fresh chat and avoids false timeouts.
+            name_marker = request.file_path.stem[:24]
             seen_name = False
+            saw_rate_limit = False
+            selected_input = None
+
+            # set_input_files() can succeed against a stale hidden React input
+            # without attaching anything to the active composer. Verify each
+            # candidate and move on quickly instead of waiting the full upload
+            # timeout on a blank chat.
+            overall_deadline = time.monotonic() + request.timeout
+            for index, file_input in enumerate(file_inputs, start=1):
+                file_input.set_input_files(str(request.file_path))
+                probe_deadline = min(
+                    overall_deadline,
+                    time.monotonic() + UPLOAD_INPUT_PROBE_SECONDS,
+                )
+                while time.monotonic() < probe_deadline:
+                    error_text = self._upload_error_text()
+                    if error_text:
+                        raise BrowserUploadError(f"ChatGPT reported upload failure: {error_text}")
+                    body = _body_text(self._page)
+                    if name_marker in body:
+                        seen_name = True
+                        selected_input = file_input
+                        break
+                    time.sleep(0.25)
+                if selected_input is not None:
+                    break
+                _log(
+                    "Patchright file input did not attach to the active composer; "
+                    f"trying the next candidate ({index}/{len(file_inputs)})."
+                )
+                try:
+                    file_input.set_input_files([])
+                except Exception:
+                    pass
+
+            if selected_input is None:
+                _available, capacity_blocked = compatible_file_inputs()
+                if capacity_blocked:
+                    raise UploadCapacityError(
+                        "ChatGPT disabled document uploads before the attachment reached "
+                        "the active composer; retrying after capacity is released.",
+                        retry_after=UPLOAD_CAPACITY_RETRY_SECONDS,
+                    )
+                raise BrowserUploadError(
+                    "No document file input attached the source to the active ChatGPT composer."
+                )
+
+            deadline = min(
+                overall_deadline,
+                time.monotonic() + UPLOAD_COMPLETION_TIMEOUT_SECONDS,
+            )
             stable_since: float | None = None
             while time.monotonic() < deadline:
+                if self._rate_limit_visible():
+                    saw_rate_limit = True
+                    dismissed = self._dismiss_rate_limit_modal()
+                    if not dismissed and self._rate_limit_visible():
+                        raise RateLimitError(
+                            "ChatGPT rate-limit dialog blocked the upload.",
+                            retry_after=RATE_LIMIT_WAIT_SECONDS,
+                        )
                 error_text = self._upload_error_text()
                 if error_text:
                     raise BrowserUploadError(f"ChatGPT reported upload failure: {error_text}")
                 body = _body_text(self._page)
-                if name_marker in body:
-                    seen_name = True
+                seen_name = seen_name or name_marker in body
                 pending = self._upload_pending()
                 if seen_name and not pending:
                     stable_since = stable_since or time.monotonic()
@@ -681,6 +795,11 @@ class PatchrightBrowserSession:
                 else:
                     stable_since = None
                 time.sleep(0.5)
+            if saw_rate_limit:
+                raise RateLimitError(
+                    "Upload did not complete after a rate-limit acknowledgement.",
+                    retry_after=RATE_LIMIT_WAIT_SECONDS,
+                )
             raise BrowserUploadError(f"Timed out waiting for upload: {request.file_path.name}")
         except Exception as exc:
             self._set_state(SessionState.FAILED)
@@ -724,7 +843,6 @@ class PatchrightBrowserSession:
         self._set_state(SessionState.SENDING)
         prompt_hash = self._prompt_hash(normalized)
         before_count = self.assistant_message_count()
-
         # Idempotency guard: if a previous call for the same prompt already
         # produced a new assistant message, a retry must not click Send again.
         if prompt_hash == self._last_send_hash and self._last_send_assistant_count is not None:
@@ -744,18 +862,67 @@ class PatchrightBrowserSession:
         try:
             if self._rate_limit_visible():
                 self._dismiss_rate_limit_modal()
-                _log("Rate-limit modal acknowledged; continuing send without cooldown.")
+                raise RateLimitError(
+                    "ChatGPT rate-limited the pending send; waiting before a fresh-chat retry.",
+                    retry_after=RATE_LIMIT_WAIT_SECONDS,
+                )
             editor = self._find_editor(timeout=self._options.action_timeout)
             current = self._editor_text(editor)
             if current != normalized:
                 self._fill_editor(editor, normalized)
+
+            # A visible attachment chip only proves that React added the file
+            # to the composer; ChatGPT may still be processing it. During that
+            # interval the submit button is visible but disabled. Pressing
+            # Enter here either does nothing or surfaces a delayed rate-limit
+            # modal, which used to be misclassified as a content/send failure.
+            button = None
+            last_visible_button = None
+            ready_started_at = time.monotonic()
+            ready_deadline = ready_started_at + SEND_READY_TIMEOUT_SECONDS
+            while time.monotonic() < ready_deadline:
+                if self._rate_limit_visible():
+                    self._dismiss_rate_limit_modal()
+                    raise RateLimitError(
+                        "ChatGPT rate-limited the pending send; waiting before a fresh-chat retry.",
+                        retry_after=RATE_LIMIT_WAIT_SECONDS,
+                    )
+                candidate = _first_visible(
+                    self._page,
+                    SEND_BUTTON_SELECTORS,
+                    timeout_ms=1000,
+                )
+                if candidate is None:
+                    # Older composer builds have no stable submit-button
+                    # selector; retain Enter as their bounded fallback.
+                    if time.monotonic() - ready_started_at >= 2:
+                        break
+                else:
+                    last_visible_button = candidate
+                    if _locator_enabled(candidate):
+                        button = candidate
+                        break
+                time.sleep(0.4)
+
+            if button is None and last_visible_button is not None:
+                if self._rate_limit_visible():
+                    self._dismiss_rate_limit_modal()
+                    raise RateLimitError(
+                        "ChatGPT rate-limited the pending send; waiting before a fresh-chat retry.",
+                        retry_after=RATE_LIMIT_WAIT_SECONDS,
+                    )
+                error = BrowserSendError(
+                    "ChatGPT kept the Send button disabled while the attachment was being prepared."
+                )
+                error.retry_after = 30
+                raise error
+
             self._last_send_hash = prompt_hash
             self._last_send_assistant_count = before_count
             self._last_send_completed = False
             self._last_send_started_at = time.monotonic()
 
-            button = _first_visible(self._page, SEND_BUTTON_SELECTORS, timeout_ms=1000)
-            if button is not None and _locator_enabled(button):
+            if button is not None:
                 # ChatGPT's current composer can leave Playwright/Patchright's
                 # pointer-style click unhandled even though the send button is
                 # visible and enabled. Selenium already uses a DOM click for
@@ -769,19 +936,20 @@ class PatchrightBrowserSession:
                 self._page.keyboard.press("Enter")
 
             acknowledgement_started_at = time.monotonic()
-            deadline = acknowledgement_started_at + 20
+            deadline = acknowledgement_started_at + SEND_ACK_TIMEOUT_SECONDS
             keyboard_fallback_used = False
             while time.monotonic() < deadline:
                 current_count = self.assistant_message_count()
                 composer_text = self._editor_text(editor)
-                if current_count > before_count or not composer_text:
+                generation_visible = self._generation_visible()
+                if current_count > before_count or not composer_text or generation_visible:
                     self._last_send_completed = True
                     self._set_state(SessionState.GENERATING)
                     return
                 if (
                     not keyboard_fallback_used
                     and time.monotonic() - acknowledgement_started_at >= 2
-                    and not self._generation_visible()
+                    and not generation_visible
                 ):
                     # The current ChatGPT UI occasionally ignores synthetic
                     # pointer/DOM clicks under Patchright while leaving the
@@ -796,7 +964,20 @@ class PatchrightBrowserSession:
                         self._page.keyboard.press("Enter")
                 if self._rate_limit_visible():
                     self._dismiss_rate_limit_modal()
+                    raise RateLimitError(
+                        "ChatGPT rate-limited the send; waiting before a fresh-chat retry.",
+                        retry_after=RATE_LIMIT_WAIT_SECONDS,
+                    )
                 time.sleep(0.4)
+            # The service can surface its modal just after the acknowledgement
+            # loop expires, so perform one final live-state check before
+            # emitting the less-specific duplicate-send error.
+            if self._rate_limit_visible():
+                self._dismiss_rate_limit_modal()
+                raise RateLimitError(
+                    "ChatGPT rate-limited the send; waiting before a fresh-chat retry.",
+                    retry_after=RATE_LIMIT_WAIT_SECONDS,
+                )
             raise BrowserSendError(
                 "Send acknowledgement was not observed; duplicate send was prevented."
             )
@@ -916,23 +1097,40 @@ class PatchrightBrowserSession:
             required_assistant_count=request.min_assistant_count,
             stable_seconds=5.0,
         )
-        deadline = time.monotonic() + request.timeout
+        started_at = time.monotonic()
+        deadline = started_at + request.timeout
+        next_progress_log = started_at + RESPONSE_PROGRESS_LOG_SECONDS
         extended = False
+        saw_rate_limit = False
         while time.monotonic() < deadline:
             now = time.monotonic()
             rate_limited = self._rate_limit_visible()
+            assistant_count = self.assistant_message_count()
+            generating = self._generation_visible()
+            has_download = self._download_candidate_exists()
             state = machine.observe(
                 ResponseObservation(
-                    assistant_count=self.assistant_message_count(),
-                    generating=self._generation_visible(),
+                    assistant_count=assistant_count,
+                    generating=generating,
                     body_text=_body_text(self._page),
-                    has_download=self._download_candidate_exists(),
+                    has_download=has_download,
                     rate_limited=rate_limited,
                     now=now,
                 )
             )
 
+            if now >= next_progress_log:
+                _log(
+                    "Waiting for ChatGPT response: "
+                    f"elapsed={int(now - started_at)}s "
+                    f"state={state.value} assistant_messages={assistant_count} "
+                    f"generating={str(generating).lower()} "
+                    f"download_ready={str(has_download).lower()}"
+                )
+                next_progress_log = now + RESPONSE_PROGRESS_LOG_SECONDS
+
             if state is ResponseState.RATE_LIMITED:
+                saw_rate_limit = True
                 self._dismiss_rate_limit_modal()
                 time.sleep(1)
                 continue
@@ -969,6 +1167,11 @@ class PatchrightBrowserSession:
                     )
             time.sleep(1)
 
+        if saw_rate_limit:
+            raise RateLimitError(
+                "Response remained blocked after a rate-limit acknowledgement.",
+                retry_after=RATE_LIMIT_WAIT_SECONDS,
+            )
         raise BrowserResponseTimeout("Timed out while waiting for ChatGPT response completion.")
 
     def snapshot_downloads(self):
@@ -1074,12 +1277,17 @@ class PatchrightBrowserSession:
             try:
                 with self._page.expect_download(timeout=per_candidate_timeout) as pending:
                     try:
-                        element.evaluate("(candidate) => candidate.click()")
-                    except Exception:
+                        # Artifact cards in the current ChatGPT UI can expose a
+                        # callable DOM click that returns successfully without
+                        # activating the React/preview interaction.  Prefer a
+                        # real pointer-style locator click; keep the DOM click
+                        # only as a fallback for older cards/overlays.
                         try:
                             element.click(force=True)
                         except TypeError:
                             element.click()
+                    except Exception:
+                        element.evaluate("(candidate) => candidate.click()")
                 return self._save_download_event(pending.value, request)
             except Exception as exc:
                 # A click can navigate to a sandbox link without emitting a
@@ -1134,9 +1342,12 @@ class PatchrightBrowserSession:
                                 timeout=max(1000, min(30_000, request.timeout * 1000))
                             ) as pending:
                                 try:
-                                    preview.evaluate("(element) => element.click()")
+                                    try:
+                                        preview.click(force=True)
+                                    except TypeError:
+                                        preview.click()
                                 except Exception:
-                                    preview.click()
+                                    preview.evaluate("(element) => element.click()")
                             return self._save_download_event(pending.value, request)
                         except Exception as exc:
                             _log(f"Patchright preview download miss: {exc}")

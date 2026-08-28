@@ -17,6 +17,7 @@ from browser_runtime.errors import (
     BrowserConfigurationError,
     DownloadNotFoundError,
     RateLimitError,
+    UploadCapacityError,
 )
 from parallel_runtime.resilience import (
     FailureCategory,
@@ -123,11 +124,32 @@ class RetryPolicyTests(unittest.TestCase):
         bootstrap.assert_called_once()
         self.assertEqual(executor.browser_restarts, 1)
 
+    def test_executor_resets_per_job_telemetry(self):
+        executor = _BrowserExecutorBase(
+            config={"browser_provider": "patchright"},
+            run_id="run",
+            worker_id="worker-001",
+            emit=lambda *a, **k: None,
+        )
+        executor.browser_restarts = 4
+        executor.rate_limit_count = 7
+        executor._begin_job()
+        self.assertEqual(executor.browser_restarts, 0)
+        self.assertEqual(executor.rate_limit_count, 0)
+
     def test_rate_limit_retry_after_overrides_backoff(self):
         tracker = RetryTracker(RetryBudgetPolicy(rate_limit_retries=1, jitter_ratio=0.0))
         decision = tracker.record(RateLimitError("wait", retry_after=17))
         self.assertTrue(decision.retry)
         self.assertEqual(decision.delay_seconds, 17)
+
+    def test_upload_capacity_backoff_does_not_open_global_rate_limit_control(self):
+        tracker = RetryTracker(RetryBudgetPolicy(content_attempts=3, jitter_ratio=0.0))
+        decision = tracker.record(UploadCapacityError("third upload disabled", retry_after=60))
+        self.assertEqual(decision.category, FailureCategory.CONTENT)
+        self.assertTrue(decision.retry)
+        self.assertEqual(decision.delay_seconds, 60)
+        self.assertEqual(decision.retry_after, 60)
 
     def test_rate_limit_incident_ids_are_unique_within_one_job(self):
         first = rate_limit_incident_id("worker-001", "job-a", 1)
@@ -138,6 +160,41 @@ class RetryPolicyTests(unittest.TestCase):
 
 
 class GlobalControlTests(unittest.TestCase):
+    def test_single_auth_failure_does_not_freeze_below_circuit_threshold(self):
+        clock = _Clock()
+        control = GlobalRuntimeController(
+            requested_limit=2,
+            cooldown_seconds=0,
+            auth_failures_before_abort=2,
+            rate_limit_failures_before_abort=0,
+            rate_limit_window_seconds=300,
+            adaptive_enabled=False,
+            adaptive_scale_down_threshold=2,
+            adaptive_recovery_seconds=30,
+            clock=clock,
+        )
+        control.record_auth_failure()
+        self.assertTrue(control.dispatch_allowed)
+        control.record_auth_failure()
+        self.assertFalse(control.dispatch_allowed)
+
+    def test_zero_global_cooldown_ignores_provider_retry_after(self):
+        clock = _Clock()
+        control = GlobalRuntimeController(
+            requested_limit=3,
+            cooldown_seconds=0,
+            auth_failures_before_abort=2,
+            rate_limit_failures_before_abort=0,
+            rate_limit_window_seconds=300,
+            adaptive_enabled=False,
+            adaptive_scale_down_threshold=2,
+            adaptive_recovery_seconds=30,
+            clock=clock,
+        )
+        control.request_cooldown(retry_after=180, incident_key="job-a")
+        self.assertTrue(control.dispatch_allowed)
+        self.assertEqual(control.snapshot().cooldown_remaining, 0)
+
     def test_cooldown_pauses_dispatch_and_adaptive_limit_recovers(self):
         clock = _Clock()
         control = GlobalRuntimeController(
@@ -220,9 +277,10 @@ class GlobalControlTests(unittest.TestCase):
         )
         control.record_auth_failure()
         self.assertIsNone(control.circuit_open_reason)
-        self.assertFalse(control.dispatch_allowed)
+        self.assertTrue(control.dispatch_allowed)
         control.record_auth_failure()
         self.assertIn("authentication circuit", control.circuit_open_reason or "")
+        self.assertFalse(control.dispatch_allowed)
 
     def test_rate_limit_circuit_counts_only_events_inside_window(self):
         clock = _Clock()

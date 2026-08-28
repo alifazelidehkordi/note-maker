@@ -41,6 +41,14 @@ class BrowserUploadError(BrowserRuntimeError):
     """An input artifact could not be uploaded completely."""
 
 
+class UploadCapacityError(BrowserUploadError):
+    """ChatGPT temporarily disabled attachments for this parallel session."""
+
+    def __init__(self, message: str, *, retry_after: int = 60) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class UploadError(BrowserUploadError):
     """Provider-neutral upload failure alias used by runtime policies."""
 
@@ -110,4 +118,3 @@ class ActiveProfileError(ProfileRuntimeError):
 
 class ProfileLeaseError(ProfileRuntimeError):
     """Exclusive ownership of a browser profile could not be acquired."""
-

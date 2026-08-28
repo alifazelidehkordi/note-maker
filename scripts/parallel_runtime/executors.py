@@ -118,6 +118,11 @@ class _BrowserExecutorBase:
             content_attempts=content_attempts,
         )
 
+    def _begin_job(self) -> None:
+        """Reset telemetry that is reported per manifest job, not per worker."""
+        self.browser_restarts = 0
+        self.rate_limit_count = 0
+
     def _retry_event(self, decision, error) -> None:
         self.emit(
             EventKind.RETRY_SCHEDULED,
@@ -175,6 +180,7 @@ class PdfJobExecutor(_BrowserExecutorBase):
         import batch_common as common
         import batch_pdf
 
+        self._begin_job()
         policy = self._retry_policy(int(self.config.get("max_attempts", 3)))
         self.last_retry_tracker = RetryTracker(policy, seed=f"{self.run_id}:{job.key}")
         driver = self._ensure_session_resilient(policy=policy, tracker=self.last_retry_tracker)
@@ -245,6 +251,7 @@ class MarkdownJobExecutor(_BrowserExecutorBase):
         import batch_common as common
         import batch_markdown
 
+        self._begin_job()
         policy = self._retry_policy(int(self.config.get("max_attempts", 3)))
         self.last_retry_tracker = RetryTracker(policy, seed=f"{self.run_id}:{job.key}")
         driver = self._ensure_session_resilient(policy=policy, tracker=self.last_retry_tracker)

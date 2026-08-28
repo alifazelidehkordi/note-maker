@@ -207,10 +207,9 @@ class RetryTracker:
         self.last_category = category
         count = self.counts[key]
         limit = self.policy.limit_for(category)
+        retry_after_value = getattr(error, "retry_after", None)
         retry_after = (
-            float(error.retry_after)
-            if isinstance(error, RateLimitError) and error.retry_after is not None
-            else None
+            float(retry_after_value) if retry_after_value is not None else None
         )
         if category in {FailureCategory.CONTENT, FailureCategory.UNKNOWN}:
             retry = count < limit
@@ -325,7 +324,9 @@ class GlobalRuntimeController:
         now = self.clock()
         self._prune(now)
         duration = self.cooldown_seconds
-        if retry_after is not None:
+        # An explicit zero disables coordinator cooldown even when a provider
+        # supplies Retry-After. This keeps the CLI flag authoritative.
+        if duration > 0 and retry_after is not None:
             duration = max(duration, max(0.0, float(retry_after)))
         previous_until = max(self.cooldown_until, now)
         self.cooldown_until = max(self.cooldown_until, now + duration)
@@ -392,7 +393,7 @@ class GlobalRuntimeController:
 
     @property
     def dispatch_allowed(self) -> bool:
-        return self.circuit_open_reason is None and not self.cooldown_active and self.auth_failures == 0
+        return self.circuit_open_reason is None and not self.cooldown_active
 
     def snapshot(self) -> GlobalControlSnapshot:
         now = self.clock()

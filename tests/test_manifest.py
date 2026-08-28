@@ -60,6 +60,24 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(entry["attempts"], 1)
             self.assertTrue(entry["output_hash"].startswith("sha256:"))
 
+    def test_forced_reruns_invalidate_existing_completed_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _source, _prompt, output, job = self.make_file_job(root)
+            output.write_text(VALID_MARKDOWN, encoding="utf-8")
+            store = manifest.ManifestStore(root / "manifest.json")
+            store.mark_completed(job, run_id="first")
+
+            overwrite = store.inspect(job, overwrite=True)
+            self.assertTrue(overwrite.should_run)
+            self.assertTrue(overwrite.invalidate)
+            self.assertEqual(overwrite.reason, "overwrite requested")
+
+            no_resume = store.inspect(job, resume=False)
+            self.assertTrue(no_resume.should_run)
+            self.assertTrue(no_resume.invalidate)
+            self.assertEqual(no_resume.reason, "resume disabled")
+
     def test_save_retries_a_transient_permission_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

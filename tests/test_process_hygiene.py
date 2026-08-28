@@ -52,6 +52,8 @@ class ProcessHygieneTests(unittest.TestCase):
             if parent.poll() is None:
                 parent.kill()
                 parent.wait(timeout=3)
+            if parent.stdout is not None:
+                parent.stdout.close()
 
     def test_stale_claim_recovery_does_not_remove_live_claim(self):
         with tempfile.TemporaryDirectory() as tmp:

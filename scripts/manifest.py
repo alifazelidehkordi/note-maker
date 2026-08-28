@@ -460,9 +460,19 @@ class ManifestStore:
         entry = self.items.get(job.key)
 
         if overwrite:
-            return ResumeDecision(DecisionAction.RUN, "overwrite requested", entry.get("status") if entry else None)
+            return ResumeDecision(
+                DecisionAction.RUN,
+                "overwrite requested",
+                entry.get("status") if entry else None,
+                invalidate=entry is not None,
+            )
         if not resume:
-            return ResumeDecision(DecisionAction.RUN, "resume disabled", entry.get("status") if entry else None)
+            return ResumeDecision(
+                DecisionAction.RUN,
+                "resume disabled",
+                entry.get("status") if entry else None,
+                invalidate=entry is not None,
+            )
 
         if entry is None:
             if retry_failed_only:

@@ -2,6 +2,20 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+if [[ "${NOTE_MAKER_INHIBIT_SLEEP:-1}" == 1 && "${NOTE_MAKER_INHIBITED:-0}" != 1 ]] \
+  && command -v systemd-inhibit >/dev/null 2>&1; then
+  if systemd-inhibit --list >/dev/null 2>&1; then
+    export NOTE_MAKER_INHIBITED=1
+    exec systemd-inhibit \
+      --what=sleep:idle \
+      --who="Note Maker" \
+      --why="Generating study artifacts" \
+      --mode=block \
+      "$0" "$@"
+  fi
+  echo "WARNING: systemd sleep inhibitor is unavailable; continuing without it." >&2
+fi
+
 echo "=== PDF/DOCX -> Clean Markdown Notes (via ChatGPT Note Maker) ==="
 VENV_DIR=".venv-linux"; PYTHON="${VENV_DIR}/bin/python"
 [[ -x "$PYTHON" ]] || ./setup.sh

@@ -720,29 +720,40 @@ def run_with_retries(
             )
             if final:
                 return False, session
-            if decision.category == FailureCategory.RATE_LIMIT:
+            try:
+                if decision.category == FailureCategory.RATE_LIMIT:
+                    batch_log(
+                        "Rate limit retry: keeping the current page open; "
+                        "no refresh or new-chat navigation."
+                    )
+                elif is_temporary_chat_error(error):
+                    session = recover_from_chat_error(
+                        session,
+                        model,
+                        provider=selected,
+                        skip_warmup=skip_warmup,
+                    )
+                elif driver_is_alive(session):
+                    reset_chat(session, model)
+                else:
+                    previous_session = session
+                    quit_driver(session)
+                    session = recreate_driver(
+                        model,
+                        provider=selected,
+                        skip_warmup=skip_warmup,
+                        previous_session=previous_session,
+                    )
+            except Exception as recovery_error:
+                # Recovery is part of the retry machinery. A navigation or
+                # browser failure here must not escape the loop and turn a
+                # retryable job into an immediate final failure.
                 batch_log(
-                    "Rate limit retry: keeping the current page open; "
-                    "no refresh or new-chat navigation."
+                    "Retry recovery failed; the next attempt will recreate "
+                    f"the browser session: {type(recovery_error).__name__}: {recovery_error}"
                 )
-            elif is_temporary_chat_error(error):
-                session = recover_from_chat_error(
-                    session,
-                    model,
-                    provider=selected,
-                    skip_warmup=skip_warmup,
-                )
-            elif driver_is_alive(session):
-                reset_chat(session, model)
-            else:
-                previous_session = session
                 quit_driver(session)
-                session = recreate_driver(
-                    model,
-                    provider=selected,
-                    skip_warmup=skip_warmup,
-                    previous_session=previous_session,
-                )
+                session = None
             if decision.delay_seconds > 0:
                 if decision.category == FailureCategory.RATE_LIMIT:
                     _wait_retry_delay(

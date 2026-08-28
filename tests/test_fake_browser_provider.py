@@ -14,7 +14,12 @@ import batch_common
 import batch_pdf
 import diagnostics
 from artifact_validation import ArtifactValidationError
-from browser_runtime import BrowserCrashedError, BrowserResponseTimeout, RateLimitError
+from browser_runtime import (
+    BrowserCrashedError,
+    BrowserResponseTimeout,
+    RateLimitError,
+    TemporaryChatError,
+)
 from parallel_runtime.resilience import RetryBudgetPolicy
 from tests.fakes.fake_browser_provider import (
     FakeBrowserPlan,
@@ -207,6 +212,46 @@ class FakeBrowserProviderTests(unittest.TestCase):
         )
         self.assertEqual(session.dismissals, 3)
         self.assertEqual(sleeps, [2, 2, 1])
+
+    def test_retry_recreates_session_when_chat_recovery_itself_fails(self):
+        original = FakeBrowserSession()
+        replacement = FakeBrowserSession()
+        attempts = iter([TemporaryChatError("temporary chat failed"), True])
+        policy = RetryBudgetPolicy(
+            content_attempts=2,
+            network_retries=0,
+            browser_retries=0,
+            download_retries=0,
+            rate_limit_retries=0,
+            jitter_ratio=0,
+        )
+
+        def process_once(_session):
+            result = next(attempts)
+            if isinstance(result, BaseException):
+                raise result
+            return result
+
+        with (
+            mock.patch.object(
+                batch_common,
+                "recover_from_chat_error",
+                side_effect=TemporaryChatError("fresh chat navigation timed out"),
+            ),
+            mock.patch.object(batch_common, "quit_driver"),
+            mock.patch.object(batch_common, "recreate_driver", return_value=replacement),
+        ):
+            succeeded, returned = batch_common.run_with_retries(
+                "recovery-failure-job",
+                original,
+                None,
+                process_once,
+                retry_policy=policy,
+                sleep_fn=lambda _seconds: None,
+            )
+
+        self.assertTrue(succeeded)
+        self.assertIs(returned, replacement)
 
     def test_fake_provider_records_launch_configuration(self):
         provider = FakeBrowserProvider()

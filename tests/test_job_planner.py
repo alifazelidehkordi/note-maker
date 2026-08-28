@@ -113,6 +113,43 @@ class JobPlannerTests(unittest.TestCase):
             self.assertEqual(plan.initial_successes, 1)
             self.assertEqual(plan.skipped[candidates[0].label], "completed output is valid")
 
+    def test_overwrite_invalidates_completed_job_before_coordinator_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = root / "inputs"
+            output_dir = root / "outputs"
+            input_dir.mkdir()
+            output_dir.mkdir()
+            source = input_dir / "one.pdf"
+            source.write_bytes(b"source")
+            prompt = root / "prompt.md"
+            prompt.write_text("Create notes", encoding="utf-8")
+            candidates = build_file_candidates(
+                [source],
+                input_dir=input_dir,
+                output_dir=output_dir,
+                prompt_path=prompt,
+                prompt_hash=manifest.hash_text("Create notes"),
+                output_ext="md",
+                mode="pdf-md",
+                model=None,
+                key_builder=lambda path, base, ext: f"{path.name}::{ext}",
+            )
+            store = manifest.ManifestStore(output_dir / "manifest.json")
+            candidates[0].job.output.write_text(VALID_MARKDOWN, encoding="utf-8")
+            store.mark_completed(candidates[0].job, run_id="first")
+
+            plan = plan_jobs(
+                candidates,
+                store.as_reader(),
+                run_id="overwrite",
+                options=PlanningOptions(overwrite=True),
+            )
+            self.assertEqual(len(plan.runnable), 1)
+            self.assertEqual(plan.runnable[0].reason, "overwrite requested")
+            store.apply_plan(plan)
+            self.assertEqual(store.get(candidates[0].job.key)["status"], "invalidated")
+
     def test_section_planner_materializes_stable_input_before_worker_start(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
