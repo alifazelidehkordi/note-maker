@@ -208,6 +208,18 @@ def _lock_owner_is_dead(lock_path: Path) -> bool:
     return pid > 0 and not pid_is_alive(pid)
 
 
+def _unlink_with_retry(path: Path, *, attempts: int = 5) -> None:
+    """Retry a transient Windows file lock while releasing a short-lived lock file."""
+    for attempt in range(attempts):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+
+
 @contextmanager
 def _short_write_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
     lock_path = path.parent / f".{path.name}.write.lock"
@@ -248,7 +260,7 @@ def _short_write_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
     try:
         yield
     finally:
-        lock_path.unlink(missing_ok=True)
+        _unlink_with_retry(lock_path)
 
 
 def _replace_with_retry(source: Path, destination: Path, *, attempts: int = 5) -> None:
