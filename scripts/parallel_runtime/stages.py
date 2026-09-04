@@ -46,6 +46,8 @@ class StageReporter:
         self.transition(stage, attempt=self.attempt)
 
     def transition(self, stage: StageKind, *, attempt: int | None) -> None:
+        if self._stage is stage and self._stage_attempt == attempt:
+            return
         self.complete_current()
         now_text = self._timestamp()
         now_monotonic = self._clock()
@@ -180,6 +182,9 @@ class StagedBrowserProvider:
         return StagedBrowserSession(session, self._reporter_getter)
 
     def open_session(self, options=None):
+        reporter = self._reporter_getter()
+        if reporter is not None:
+            reporter.browser_stage(StageKind.PREPARING_BROWSER)
         return self._wrap(self._provider.open_session(options))
 
     def wrap_handle(self, handle: object):
