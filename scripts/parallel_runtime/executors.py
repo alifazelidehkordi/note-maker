@@ -4,9 +4,10 @@ from pathlib import Path
 import time
 from typing import Callable
 
-from .event_bus import EventKind
+from .event_bus import EventKind, StageKind
 from .models import ExecutionJob, WorkerExecutionResult
 from .resilience import FailureCategory, RetryBudgetPolicy, RetryTracker
+from .stages import StageReporter, StagedBrowserProvider, observe_artifact_stages
 
 
 class _BrowserExecutorBase:
@@ -18,6 +19,7 @@ class _BrowserExecutorBase:
         self.driver = None
         self.provider = None
         self._terminal_startup_error: BaseException | None = None
+        self._stage_reporter: StageReporter | None = None
         self.failed = False
         self.browser_restarts = 0
         self.rate_limit_count = 0
@@ -37,13 +39,37 @@ class _BrowserExecutorBase:
             "worker-001"
         )
 
+    def _begin_job_stages(self, job: ExecutionJob) -> None:
+        self._stage_reporter = StageReporter(
+            emit=self.emit,
+            run_id=self.run_id,
+            worker_id=self.worker_id,
+            source_filename=job.source.name,
+        )
+        self._stage_reporter.browser_stage(StageKind.PREPARING_BROWSER)
+
+    def _end_job_stages(self) -> None:
+        reporter = self._stage_reporter
+        if reporter is not None:
+            reporter.complete_current()
+            reporter.set_attempt(None)
+        self._stage_reporter = None
+
+    def _ensure_staged_provider(self, common):
+        if isinstance(self.provider, StagedBrowserProvider):
+            return self.provider
+        provider = self.provider
+        if provider is None:
+            provider = common.get_browser_provider(str(self.config["browser_provider"]))
+        self.provider = StagedBrowserProvider(provider, lambda: self._stage_reporter)
+        return self.provider
+
     def _ensure_session(self):
         import batch_common as common
 
         if self._terminal_startup_error is not None:
             raise self._terminal_startup_error
-        if self.provider is None:
-            self.provider = common.get_browser_provider(str(self.config["browser_provider"]))
+        provider = self._ensure_staged_provider(common)
         if self.driver is not None and not common.driver_is_alive(self.driver):
             common.quit_driver(self.driver)
             self.driver = None
@@ -51,7 +77,7 @@ class _BrowserExecutorBase:
         if self.driver is None:
             self.driver = common.bootstrap_session(
                 self.model,
-                provider=self.provider,
+                provider=provider,
                 skip_warmup=self.skip_warmup,
                 run_id=self.run_id,
                 worker_id=self.worker_id,
@@ -59,6 +85,8 @@ class _BrowserExecutorBase:
         return self.driver
 
     def _attempt_started(self, _driver, attempt: int, attempt_limit: int) -> None:
+        if self._stage_reporter is not None:
+            self._stage_reporter.set_attempt(attempt)
         self.emit(
             EventKind.ATTEMPT_STARTED,
             attempt=attempt,
@@ -119,6 +147,8 @@ class _BrowserExecutorBase:
         )
 
     def _retry_event(self, decision, error) -> None:
+        if self._stage_reporter is not None:
+            self._stage_reporter.complete_current()
         self.emit(
             EventKind.RETRY_SCHEDULED,
             category=decision.category.value,
@@ -159,6 +189,7 @@ class _BrowserExecutorBase:
         )
 
     def close(self) -> None:
+        self._end_job_stages()
         if self.driver is None:
             return
         import batch_common as common
@@ -190,69 +221,91 @@ class PdfJobExecutor(_BrowserExecutorBase):
         import batch_common as common
         import batch_pdf
 
-        policy = self._retry_policy(int(self.config.get("max_attempts", 3)))
-        self.last_retry_tracker = RetryTracker(policy, seed=f"{self.run_id}:{job.key}")
-        driver = self._ensure_session_resilient(policy=policy, tracker=self.last_retry_tracker)
-        diagnostic_path: str | None = None
-        label = str(job.metadata.get("input_name") or job.title or job.source.name)
+        self._begin_job_stages(job)
+        try:
+            policy = self._retry_policy(int(self.config.get("max_attempts", 3)))
+            self.last_retry_tracker = RetryTracker(policy, seed=f"{self.run_id}:{job.key}")
+            driver = self._ensure_session_resilient(
+                policy=policy,
+                tracker=self.last_retry_tracker,
+            )
+            diagnostic_path: str | None = None
+            label = str(job.metadata.get("input_name") or job.title or job.source.name)
 
-        def attempt(driver_obj):
-            return batch_pdf.process_one(
-                driver_obj,
-                str(self.config["prompt"]),
-                job.source,
-                Path(str(self.config["output_dir"])),
+            def attempt(driver_obj):
+                reporter = self._stage_reporter
+                if reporter is None:
+                    return batch_pdf.process_one(
+                        driver_obj,
+                        str(self.config["prompt"]),
+                        job.source,
+                        Path(str(self.config["output_dir"])),
+                        self.model,
+                        download_timeout=int(self.config.get("download_timeout", 90)),
+                        save_diagnostics=bool(self.config.get("save_diagnostics", False)),
+                        output_ext=str(self.config.get("output_ext", "opml")),
+                    )
+                with observe_artifact_stages(common, reporter):
+                    return batch_pdf.process_one(
+                        driver_obj,
+                        str(self.config["prompt"]),
+                        job.source,
+                        Path(str(self.config["output_dir"])),
+                        self.model,
+                        download_timeout=int(self.config.get("download_timeout", 90)),
+                        save_diagnostics=bool(self.config.get("save_diagnostics", False)),
+                        output_ext=str(self.config.get("output_ext", "opml")),
+                    )
+
+            def capture_failure(driver_obj, attempt_number, attempt_limit, error, final):
+                nonlocal diagnostic_path
+                if not final and not bool(self.config.get("save_diagnostics", False)):
+                    return
+                result = common.capture_retry_failure(
+                    driver=driver_obj,
+                    output_dir=Path(str(self.config["output_dir"])),
+                    run_id=self.run_id,
+                    job_key=label,
+                    attempt=attempt_number,
+                    max_attempts=attempt_limit,
+                    expected_extensions=set(job.expected_extensions),
+                    source=job.source,
+                    prompt_hash=job.prompt_hash,
+                    error=error,
+                    final=final,
+                    save_page_source=bool(self.config.get("save_page_source", False)),
+                )
+                if final:
+                    diagnostic_path = str(result.directory)
+                    self.emit(EventKind.DIAGNOSTIC_SAVED, path=diagnostic_path)
+
+            previous = driver
+            ok, self.driver = common.run_with_retries(
+                label,
+                driver,
                 self.model,
-                download_timeout=int(self.config.get("download_timeout", 90)),
-                save_diagnostics=bool(self.config.get("save_diagnostics", False)),
-                output_ext=str(self.config.get("output_ext", "opml")),
+                attempt,
+                provider=self.provider,
+                max_attempts=int(self.config.get("max_attempts", 3)),
+                skip_warmup=self.skip_warmup,
+                diagnostic_callback=capture_failure,
+                save_all_diagnostics=bool(self.config.get("save_diagnostics", False)),
+                attempt_callback=self._attempt_started,
+                retry_policy=policy,
+                retry_tracker=self.last_retry_tracker,
+                retry_event_callback=self._retry_event,
             )
-
-        def capture_failure(driver_obj, attempt_number, attempt_limit, error, final):
-            nonlocal diagnostic_path
-            if not final and not bool(self.config.get("save_diagnostics", False)):
-                return
-            result = common.capture_retry_failure(
-                driver=driver_obj,
-                output_dir=Path(str(self.config["output_dir"])),
-                run_id=self.run_id,
-                job_key=label,
-                attempt=attempt_number,
-                max_attempts=attempt_limit,
-                expected_extensions=set(job.expected_extensions),
-                source=job.source,
-                prompt_hash=job.prompt_hash,
-                error=error,
-                final=final,
-                save_page_source=bool(self.config.get("save_page_source", False)),
-            )
-            if final:
-                diagnostic_path = str(result.directory)
-                self.emit(EventKind.DIAGNOSTIC_SAVED, path=diagnostic_path)
-
-        previous = driver
-        ok, self.driver = common.run_with_retries(
-            label,
-            driver,
-            self.model,
-            attempt,
-            provider=self.provider,
-            max_attempts=int(self.config.get("max_attempts", 3)),
-            skip_warmup=self.skip_warmup,
-            diagnostic_callback=capture_failure,
-            save_all_diagnostics=bool(self.config.get("save_diagnostics", False)),
-            attempt_callback=self._attempt_started,
-            retry_policy=policy,
-            retry_tracker=self.last_retry_tracker,
-            retry_event_callback=self._retry_event,
-        )
-        if self.driver is not previous:
-            self.browser_restarts += 1
-        self._discard_dead_session()
-        if self.driver is not None:
-            common.prune_driver_cookies(self.driver)
-        self.failed = self.failed or not ok
-        return self._result(ok, diagnostic_path=diagnostic_path)
+            if self.driver is not previous:
+                self.browser_restarts += 1
+            self._discard_dead_session()
+            if self.driver is not None:
+                common.prune_driver_cookies(self.driver)
+            self.failed = self.failed or not ok
+            if ok and self._stage_reporter is not None:
+                self._stage_reporter.mark_completed()
+            return self._result(ok, diagnostic_path=diagnostic_path)
+        finally:
+            self._end_job_stages()
 
 
 class MarkdownJobExecutor(_BrowserExecutorBase):
@@ -260,73 +313,96 @@ class MarkdownJobExecutor(_BrowserExecutorBase):
         import batch_common as common
         import batch_markdown
 
-        policy = self._retry_policy(int(self.config.get("max_attempts", 3)))
-        self.last_retry_tracker = RetryTracker(policy, seed=f"{self.run_id}:{job.key}")
-        driver = self._ensure_session_resilient(policy=policy, tracker=self.last_retry_tracker)
-        section_file = Path(str(job.metadata["section_file"]))
-        section = batch_markdown.MarkdownSection(
-            index=int(job.metadata["section_index"]),
-            title=str(job.metadata["section_title"]),
-            text=section_file.read_text(encoding="utf-8").strip(),
-        )
-        diagnostic_path: str | None = None
-        label = job.title or f"section {section.index:02d} {section.title}"
-
-        def attempt(driver_obj):
-            return batch_markdown.process_markdown_section(
-                driver=driver_obj,
-                prompt=str(self.config["prompt"]),
-                section=section,
-                section_file=section_file,
-                output_dir=Path(str(self.config["output_dir"])),
-                model=self.model,
-                download_timeout=int(self.config.get("download_timeout", 90)),
-                save_diagnostics=bool(self.config.get("save_diagnostics", False)),
-                output_ext=str(self.config.get("output_ext", "opml")),
+        self._begin_job_stages(job)
+        try:
+            policy = self._retry_policy(int(self.config.get("max_attempts", 3)))
+            self.last_retry_tracker = RetryTracker(policy, seed=f"{self.run_id}:{job.key}")
+            driver = self._ensure_session_resilient(
+                policy=policy,
+                tracker=self.last_retry_tracker,
             )
-
-        def capture_failure(driver_obj, attempt_number, attempt_limit, error, final):
-            nonlocal diagnostic_path
-            if not final and not bool(self.config.get("save_diagnostics", False)):
-                return
-            result = common.capture_retry_failure(
-                driver=driver_obj,
-                output_dir=Path(str(self.config["output_dir"])),
-                run_id=self.run_id,
-                job_key=label,
-                attempt=attempt_number,
-                max_attempts=attempt_limit,
-                expected_extensions=set(job.expected_extensions),
-                source=section_file,
-                prompt_hash=job.prompt_hash,
-                error=error,
-                final=final,
-                save_page_source=bool(self.config.get("save_page_source", False)),
+            section_file = Path(str(job.metadata["section_file"]))
+            section = batch_markdown.MarkdownSection(
+                index=int(job.metadata["section_index"]),
+                title=str(job.metadata["section_title"]),
+                text=section_file.read_text(encoding="utf-8").strip(),
             )
-            if final:
-                diagnostic_path = str(result.directory)
-                self.emit(EventKind.DIAGNOSTIC_SAVED, path=diagnostic_path)
+            diagnostic_path: str | None = None
+            label = job.title or f"section {section.index:02d} {section.title}"
 
-        previous = driver
-        ok, self.driver = common.run_with_retries(
-            str(label),
-            driver,
-            self.model,
-            attempt,
-            provider=self.provider,
-            max_attempts=int(self.config.get("max_attempts", 3)),
-            skip_warmup=self.skip_warmup,
-            diagnostic_callback=capture_failure,
-            save_all_diagnostics=bool(self.config.get("save_diagnostics", False)),
-            attempt_callback=self._attempt_started,
-            retry_policy=policy,
-            retry_tracker=self.last_retry_tracker,
-            retry_event_callback=self._retry_event,
-        )
-        if self.driver is not previous:
-            self.browser_restarts += 1
-        self._discard_dead_session()
-        if self.driver is not None:
-            common.prune_driver_cookies(self.driver)
-        self.failed = self.failed or not ok
-        return self._result(ok, diagnostic_path=diagnostic_path)
+            def attempt(driver_obj):
+                reporter = self._stage_reporter
+                if reporter is None:
+                    return batch_markdown.process_markdown_section(
+                        driver=driver_obj,
+                        prompt=str(self.config["prompt"]),
+                        section=section,
+                        section_file=section_file,
+                        output_dir=Path(str(self.config["output_dir"])),
+                        model=self.model,
+                        download_timeout=int(self.config.get("download_timeout", 90)),
+                        save_diagnostics=bool(self.config.get("save_diagnostics", False)),
+                        output_ext=str(self.config.get("output_ext", "opml")),
+                    )
+                with observe_artifact_stages(common, reporter):
+                    return batch_markdown.process_markdown_section(
+                        driver=driver_obj,
+                        prompt=str(self.config["prompt"]),
+                        section=section,
+                        section_file=section_file,
+                        output_dir=Path(str(self.config["output_dir"])),
+                        model=self.model,
+                        download_timeout=int(self.config.get("download_timeout", 90)),
+                        save_diagnostics=bool(self.config.get("save_diagnostics", False)),
+                        output_ext=str(self.config.get("output_ext", "opml")),
+                    )
+
+            def capture_failure(driver_obj, attempt_number, attempt_limit, error, final):
+                nonlocal diagnostic_path
+                if not final and not bool(self.config.get("save_diagnostics", False)):
+                    return
+                result = common.capture_retry_failure(
+                    driver=driver_obj,
+                    output_dir=Path(str(self.config["output_dir"])),
+                    run_id=self.run_id,
+                    job_key=label,
+                    attempt=attempt_number,
+                    max_attempts=attempt_limit,
+                    expected_extensions=set(job.expected_extensions),
+                    source=section_file,
+                    prompt_hash=job.prompt_hash,
+                    error=error,
+                    final=final,
+                    save_page_source=bool(self.config.get("save_page_source", False)),
+                )
+                if final:
+                    diagnostic_path = str(result.directory)
+                    self.emit(EventKind.DIAGNOSTIC_SAVED, path=diagnostic_path)
+
+            previous = driver
+            ok, self.driver = common.run_with_retries(
+                str(label),
+                driver,
+                self.model,
+                attempt,
+                provider=self.provider,
+                max_attempts=int(self.config.get("max_attempts", 3)),
+                skip_warmup=self.skip_warmup,
+                diagnostic_callback=capture_failure,
+                save_all_diagnostics=bool(self.config.get("save_diagnostics", False)),
+                attempt_callback=self._attempt_started,
+                retry_policy=policy,
+                retry_tracker=self.last_retry_tracker,
+                retry_event_callback=self._retry_event,
+            )
+            if self.driver is not previous:
+                self.browser_restarts += 1
+            self._discard_dead_session()
+            if self.driver is not None:
+                common.prune_driver_cookies(self.driver)
+            self.failed = self.failed or not ok
+            if ok and self._stage_reporter is not None:
+                self._stage_reporter.mark_completed()
+            return self._result(ok, diagnostic_path=diagnostic_path)
+        finally:
+            self._end_job_stages()
