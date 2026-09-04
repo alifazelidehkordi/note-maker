@@ -86,7 +86,7 @@ save_diagnostics = true
     def test_nonfinite_runtime_value_is_rejected(self):
         for value in (float("nan"), float("inf"), float("-inf")):
             with self.subTest(value=value), self.assertRaisesRegex(
-                ConfigError, "worker_timeout must be a finite number"
+                ConfigError, "worker_timeout must be finite"
             ):
                 resolve_config(
                     "pdf",
