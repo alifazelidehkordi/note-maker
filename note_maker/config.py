@@ -70,9 +70,7 @@ PATH_KEYS = {
     "chrome_profile_dir",
 }
 RUNTIME_KEYS = tuple(field.name for field in fields(runtime_flags.RuntimeSettings))
-ALL_COMMAND_KEYS = frozenset(
-    key for defaults in COMMAND_DEFAULTS.values() for key in defaults
-)
+ALL_COMMAND_KEYS = frozenset(key for defaults in COMMAND_DEFAULTS.values() for key in defaults)
 BOOLEAN_COMMAND_KEYS = frozenset(
     {
         "overwrite",
@@ -85,9 +83,7 @@ BOOLEAN_COMMAND_KEYS = frozenset(
         "adopt_existing",
     }
 )
-POSITIVE_INT_COMMAND_KEYS = frozenset(
-    {"max_attempts", "max_section_attempts", "download_timeout"}
-)
+POSITIVE_INT_COMMAND_KEYS = frozenset({"max_attempts", "max_section_attempts", "download_timeout"})
 SUPPORTED_OUTPUT_EXTENSIONS = frozenset({"opml", "md", "markdown"})
 
 _ENV_TYPES: dict[str, type] = {
@@ -269,7 +265,7 @@ def _validate_command_values(values: dict[str, Any]) -> None:
 
     limit = values.get("limit")
     if limit is not None:
-        _validate_integer(limit, name="limit", minimum=1)
+        _validate_integer(limit, name="limit", minimum=0)
 
     output_ext = values.get("output_ext")
     if output_ext is not None:
@@ -278,9 +274,7 @@ def _validate_command_values(values: dict[str, Any]) -> None:
         normalized_extension = output_ext.lstrip(".").lower()
         if normalized_extension not in SUPPORTED_OUTPUT_EXTENSIONS:
             supported = ", ".join(sorted(SUPPORTED_OUTPUT_EXTENSIONS))
-            raise ConfigError(
-                f"output_ext must be one of {supported}; received {output_ext!r}."
-            )
+            raise ConfigError(f"output_ext must be one of {supported}; received {output_ext!r}.")
         values["output_ext"] = normalized_extension
 
     model = values.get("model")
