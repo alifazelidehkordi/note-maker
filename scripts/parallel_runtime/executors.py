@@ -163,10 +163,25 @@ class _BrowserExecutorBase:
             return
         import batch_common as common
 
+        driver = self.driver
         try:
-            common.quit_driver(self.driver)
+            common.quit_driver(driver)
         finally:
-            common.cleanup_runtime_session(self.driver, success=not self.failed)
+            try:
+                outcome = driver.profile_manager.cleanup_worker(
+                    driver.profile_context,
+                    success=not self.failed,
+                )
+                common.batch_log(
+                    f"Worker runtime cleanup [{outcome.status.value}]: "
+                    f"{driver.profile_context.run_id}/{driver.profile_context.worker_id} — "
+                    f"{outcome.reason}"
+                )
+            except Exception as exc:
+                common.batch_log(
+                    f"Worker runtime cleanup [failed]: {self.run_id}/{self.worker_id} — "
+                    f"{type(exc).__name__}: {exc}"
+                )
             self.driver = None
 
 
