@@ -52,6 +52,39 @@ class RuntimeFlagsTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             batch_pdf.build_parser().parse_args(["--parallel-runs", "0"])
 
+    def test_nonfinite_runtime_float_flags_are_rejected_by_argparse(self):
+        parser = batch_pdf.build_parser()
+        for flag in (
+            "--worker-timeout",
+            "--worker-startup-stagger",
+            "--global-rate-limit-cooldown",
+        ):
+            for value in ("nan", "inf", "-inf"):
+                with self.subTest(flag=flag, value=value), self.assertRaises(SystemExit):
+                    parser.parse_args([flag, value])
+
+    def test_nonfinite_runtime_values_are_rejected_by_shared_validator(self):
+        fields = (
+            "worker_heartbeat_interval",
+            "worker_timeout",
+            "worker_ready_timeout",
+            "worker_startup_stagger",
+            "shutdown_grace_seconds",
+            "global_rate_limit_cooldown",
+            "rate_limit_window_seconds",
+            "adaptive_recovery_seconds",
+            "worker_memory_limit_mb",
+            "retry_backoff_base",
+            "retry_backoff_cap",
+            "retry_jitter_ratio",
+        )
+        for field in fields:
+            with self.subTest(field=field), self.assertRaisesRegex(
+                runtime_flags.RuntimeConfigurationError,
+                f"{field} must be finite",
+            ):
+                runtime_flags.validate_runtime_settings(**{field: float("nan")})
+
     def test_parallel_execution_is_enabled_with_a_safety_cap(self):
         settings = runtime_flags.validate_runtime_settings("selenium", 4)
         self.assertEqual(settings.parallel_runs, 4)
@@ -71,8 +104,6 @@ class RuntimeFlagsTests(unittest.TestCase):
             runtime_flags.validate_runtime_settings(
                 worker_heartbeat_interval=10, worker_timeout=10
             )
-
-
 
     def test_worker_ready_timeout_must_be_positive(self):
         with self.assertRaisesRegex(
@@ -186,7 +217,6 @@ class RuntimeFlagsTests(unittest.TestCase):
         self.assertIn("--worker-max-jobs", common)
         self.assertIn("--network-retries", common)
         self.assertIn("--retry-jitter-ratio", common)
-
 
     def test_level6_resilience_flags_are_validated(self):
         args = batch_pdf.build_parser().parse_args(
