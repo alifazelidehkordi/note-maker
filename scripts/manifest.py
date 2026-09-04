@@ -275,6 +275,18 @@ def _replace_with_retry(source: Path, destination: Path, *, attempts: int = 5) -
             time.sleep(0.05 * (attempt + 1))
 
 
+def _read_text_with_retry(path: Path, *, attempts: int = 5) -> str:
+    """Retry transient Windows file locks while reading a published manifest."""
+    for attempt in range(attempts):
+        try:
+            return path.read_text(encoding="utf-8")
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 class ManifestReaderView:
     """Read-only manifest surface safe to pass into planners or workers."""
 
@@ -324,7 +336,7 @@ class ManifestStore:
 
     def _read_disk(self) -> dict:
         try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            payload = json.loads(_read_text_with_retry(self.path))
         except (OSError, json.JSONDecodeError) as exc:
             raise ManifestError(f"Could not read manifest {self.path}: {exc}") from exc
         payload, _ = migrate_payload(payload)
@@ -335,7 +347,7 @@ class ManifestStore:
         if not self.path.exists():
             return self._empty(), False
         try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            payload = json.loads(_read_text_with_retry(self.path))
         except (OSError, json.JSONDecodeError) as exc:
             raise ManifestError(f"Could not read manifest {self.path}: {exc}") from exc
         payload, migrated = migrate_payload(payload)
