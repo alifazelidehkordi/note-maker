@@ -107,6 +107,7 @@ class ParallelCoordinator:
         )
         self._blocked_since: dict[str, float] = {}
         self._started_at = 0.0
+        self._last_worker_check = time.monotonic()
         self._shutting_down = False
         self._target_worker_count = min(config.worker_count, max(1, len(self.jobs)))
         self._next_worker_index = 1
@@ -542,6 +543,8 @@ class ParallelCoordinator:
 
     def _check_workers(self) -> None:
         now = time.monotonic()
+        coordinator_was_blind = now - self._last_worker_check >= self.config.worker_timeout
+        self._last_worker_check = now
         for slot in list(self.slots.values()):
             if not slot.process.is_alive() and not slot.stop_sent:
                 self._handle_lost_worker(
@@ -556,6 +559,12 @@ class ParallelCoordinator:
                         f"worker readiness timed out after {self.config.worker_ready_timeout:.1f}s",
                     )
                     continue
+                if slot.ready and coordinator_was_blind:
+                    # A heartbeat timeout is meaningful only while the coordinator
+                    # was actually able to observe worker events. After a long
+                    # coordinator-side stall, allow one full heartbeat window for
+                    # multiprocessing queue feeder threads to surface pending events.
+                    slot.last_heartbeat = now
                 if slot.ready and now - slot.last_heartbeat > self.config.worker_timeout:
                     self._handle_lost_worker(
                         slot,
