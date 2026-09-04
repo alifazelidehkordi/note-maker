@@ -85,8 +85,9 @@ save_diagnostics = true
 
     def test_nonfinite_runtime_value_is_rejected(self):
         for value in (float("nan"), float("inf"), float("-inf")):
-            with self.subTest(value=value), self.assertRaisesRegex(
-                ConfigError, "worker_timeout must be finite"
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(ConfigError, "worker_timeout must be finite"),
             ):
                 resolve_config(
                     "pdf",
@@ -115,7 +116,7 @@ save_diagnostics = true
 
     def test_invalid_command_numeric_ranges_are_rejected(self):
         cases = (
-            ("limit", 0, "limit must be at least 1"),
+            ("limit", -1, "limit must not be negative"),
             ("max_attempts", 0, "max_attempts must be at least 1"),
             ("download_timeout", 0, "download_timeout must be at least 1"),
             ("close_delay", -1, "close_delay must not be negative"),
@@ -123,6 +124,10 @@ save_diagnostics = true
         for key, value, message in cases:
             with self.subTest(key=key), self.assertRaisesRegex(ConfigError, message):
                 resolve_config("pdf", cli_overrides={key: value}, environ={})
+
+    def test_zero_limit_remains_supported(self):
+        resolved = resolve_config("pdf", cli_overrides={"limit": 0}, environ={})
+        self.assertEqual(resolved.values["limit"], 0)
 
     def test_invalid_cli_override_exits_with_argparse_error(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {}, clear=True):
@@ -137,12 +142,12 @@ save_diagnostics = true
                         "run",
                         "pdf",
                         "--set",
-                        "limit=0",
+                        "limit=-1",
                         "--dry-run",
                     ]
                 )
         self.assertEqual(raised.exception.code, 2)
-        self.assertIn("limit must be at least 1", stderr.getvalue())
+        self.assertIn("limit must not be negative", stderr.getvalue())
 
     def test_invalid_output_extension_is_rejected(self):
         with self.assertRaisesRegex(ConfigError, "output_ext must be one of"):
@@ -181,10 +186,13 @@ save_diagnostics = true
             self.assertEqual(pdf.values["max_attempts"], 6)
 
     def test_explicit_empty_environment_does_not_use_process_overrides(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            os.environ,
-            {"NOTE_MAKER_PARALLEL_RUNS": "7"},
-            clear=True,
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(
+                os.environ,
+                {"NOTE_MAKER_PARALLEL_RUNS": "7"},
+                clear=True,
+            ),
         ):
             resolved = resolve_config("pdf", environ={}, cwd=Path(tmp))
         self.assertEqual(resolved.runtime.parallel_runs, 1)
