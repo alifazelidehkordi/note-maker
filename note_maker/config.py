@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
@@ -292,6 +293,40 @@ def _validate_command_values(values: dict[str, Any]) -> None:
         raise ConfigError("sections must be a string or null.")
 
 
+def _validate_runtime_value_types(values: Mapping[str, Any]) -> None:
+    for key in RUNTIME_KEYS:
+        value = values.get(key)
+        expected = _ENV_TYPES[key]
+        if value is None:
+            if key in {"runtime_dir", "profile_snapshot"}:
+                continue
+            raise ConfigError(f"{key} may not be null.")
+        if expected is bool:
+            if not isinstance(value, bool):
+                raise ConfigError(f"{key} must be a boolean.")
+            continue
+        if expected is int:
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ConfigError(f"{key} must be an integer.")
+            continue
+        if expected is float:
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ConfigError(f"{key} must be a number.")
+            try:
+                finite = math.isfinite(value)
+            except OverflowError:
+                finite = False
+            if not finite:
+                raise ConfigError(f"{key} must be a finite number.")
+            continue
+        if key in {"runtime_dir", "profile_snapshot"}:
+            if not isinstance(value, (str, Path)):
+                raise ConfigError(f"{key} must be a string or filesystem path.")
+            continue
+        if expected is str and not isinstance(value, str):
+            raise ConfigError(f"{key} must be a string.")
+
+
 def _normalize_paths(values: dict[str, Any], base_dir: Path) -> None:
     for key in PATH_KEYS:
         raw = values.get(key)
@@ -376,6 +411,7 @@ def resolve_config(
         )
 
     _validate_command_values(values)
+    _validate_runtime_value_types(values)
     _normalize_paths(values, base_dir)
     runtime = _runtime_from_values(values)
     for key, value in asdict(runtime).items():
