@@ -229,7 +229,7 @@ def _coerce_env(name: str, value: str, expected: type) -> Any:
 
 
 def environment_overrides(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
-    environ = environ or os.environ
+    environ = os.environ if environ is None else environ
     resolved: dict[str, Any] = {}
     for key, expected in _ENV_TYPES.items():
         env_name = f"NOTE_MAKER_{key.upper()}"
