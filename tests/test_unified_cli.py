@@ -33,8 +33,7 @@ class UnifiedCliTests(unittest.TestCase):
         parser = build_parser()
         existing = parser.parse_args(["run", "pdf", "--input-dir", "inputs"])
         interactive = parser.parse_args(["interactive", "--dry-run"])
-        self.assertEqual(existing.command, "run")
-        self.assertEqual(existing.run_command, "pdf")
+        self.assertEqual((existing.command, existing.run_command), ("run", "pdf"))
         self.assertEqual(existing.input_dir, Path("inputs"))
         self.assertEqual(interactive.command, "interactive")
         self.assertTrue(interactive.dry_run)
@@ -120,7 +119,7 @@ prompt = "prompt.md"
         with self.assertRaisesRegex(InteractiveInputError, "between 1 and 3"):
             parse_selection("4", 3)
 
-    def test_prompt_discovery_includes_project_and_custom_config_prompts(self):
+    def test_prompt_discovery_and_output_validation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = root / "project"
@@ -142,17 +141,14 @@ prompt = "prompt.md"
                 config_path=config,
                 default_prompt=custom_prompt,
             )
-
             self.assertIn(project_prompt.resolve(), prompts)
             self.assertIn(custom_prompt.resolve(), prompts)
             self.assertNotIn(ignored.resolve(), prompts)
 
-    def test_output_validation_rejects_existing_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "not-a-directory"
-            output.write_text("occupied", encoding="utf-8")
+            invalid_output = root / "not-a-directory"
+            invalid_output.write_text("occupied", encoding="utf-8")
             with self.assertRaisesRegex(InteractiveInputError, "not a directory"):
-                validate_output_dir(output)
+                validate_output_dir(invalid_output)
 
     def test_run_validation_rejects_empty_input_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -224,7 +220,7 @@ parallel_runs = 2
             self.assertIn("Resolved configuration", transcript.getvalue())
             self.assertIn(str(default_prompt.resolve()), transcript.getvalue())
 
-    def test_interactive_keyboard_interrupt_is_clean_cancellation(self):
+    def test_keyboard_interrupt_and_cancel_command_are_clean(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with self.assertRaises(InteractiveCancelled):
@@ -237,12 +233,13 @@ parallel_runs = 2
                     project_root=root,
                 )
 
-    def test_interactive_command_returns_130_on_cancellation(self):
         args = types.SimpleNamespace(config=None, profile=None, dry_run=False)
         output = io.StringIO()
-        with patch("note_maker.cli.build_interactive_plan", side_effect=InteractiveCancelled):
-            with redirect_stdout(output):
-                code = _interactive(args)
+        with (
+            patch("note_maker.cli.build_interactive_plan", side_effect=InteractiveCancelled),
+            redirect_stdout(output),
+        ):
+            code = _interactive(args)
         self.assertEqual(code, 130)
         self.assertIn("Cancelled", output.getvalue())
 
