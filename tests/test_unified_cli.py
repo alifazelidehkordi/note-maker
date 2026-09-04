@@ -199,7 +199,7 @@ parallel_runs = 2
                 + "\n",
                 encoding="utf-8",
             )
-            answers = iter(["", "2", "", "", "", "", "", "y"])
+            answers = iter(["", "2", "", "", "", "", "", "", "y"])
             transcript = io.StringIO()
 
             plan = build_interactive_plan(
