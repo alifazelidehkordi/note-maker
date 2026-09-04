@@ -67,6 +67,7 @@ class JobTimeoutWatchdogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             coordinator = object.__new__(ParallelCoordinator)
             coordinator.config = self._config(Path(temp_dir), job_timeout=5.0)
+            coordinator._last_worker_check = 100.0
             slot = self._slot(job_started_at=90.0)
             coordinator.slots = {slot.worker_id: slot}
             lost: list[tuple[_WorkerSlot, str]] = []
@@ -84,6 +85,7 @@ class JobTimeoutWatchdogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             coordinator = object.__new__(ParallelCoordinator)
             coordinator.config = self._config(Path(temp_dir), job_timeout=0.0)
+            coordinator._last_worker_check = 100.0
             slot = self._slot(job_started_at=1.0)
             coordinator.slots = {slot.worker_id: slot}
             lost: list[tuple[_WorkerSlot, str]] = []
