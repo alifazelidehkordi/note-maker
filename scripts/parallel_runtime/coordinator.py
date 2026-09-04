@@ -629,6 +629,32 @@ class ParallelCoordinator:
                 if self._assign(slot):
                     capacity -= 1
 
+    def _cleanup_runtime_profiles(self, *, success: bool) -> None:
+        """Apply whole-run profile cleanup only from the coordinator process."""
+        import os
+        from pathlib import Path
+
+        from browser_runtime import ProfileManager
+
+        project_root = Path(__file__).resolve().parents[2]
+        runtime_root = Path(
+            os.environ.get("CHATGPT_RUNTIME_DIR", project_root / ".runtime")
+        ).expanduser().resolve()
+        if not (runtime_root / "runs").exists():
+            return
+        try:
+            manager = ProfileManager.from_environment(project_root)
+            outcome = manager.cleanup_run(self.config.run_id, success=success)
+            self._log(
+                f"Run runtime cleanup [{outcome.status.value}]: {self.config.run_id} — "
+                f"{outcome.reason}"
+            )
+        except Exception as exc:
+            self._log(
+                f"Run runtime cleanup [failed]: {self.config.run_id} — "
+                f"{type(exc).__name__}: {exc}"
+            )
+
     def _shutdown(self, *, interrupted: bool = False) -> None:
         self._shutting_down = True
         for slot in list(self.slots.values()):
@@ -659,6 +685,7 @@ class ParallelCoordinator:
                     current_job=None,
                 )
         self.claims.release_run(self.config.run_id)
+        self._cleanup_runtime_profiles(success=not interrupted and not self.result.failed)
         self._close_queue(self.event_queue)
 
     def _finalize_control_metrics(self) -> None:
