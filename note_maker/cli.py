@@ -437,7 +437,7 @@ def _selected_input_directory(
         return
 
     activate_legacy_imports()
-    import batch_common  # type: ignore[import-not-found]
+    import batch_common
 
     selected = [path.resolve() for path in input_files]
     if selected == batch_common.collect_input_files(input_dir):
