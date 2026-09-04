@@ -68,8 +68,26 @@ save_diagnostics = true
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "note-maker.toml"
             config.write_text('[runtime]\nparallel_runs = "4"\n', encoding="utf-8")
-            with self.assertRaisesRegex(ConfigError, "Invalid runtime configuration"):
+            with self.assertRaisesRegex(ConfigError, "parallel_runs must be an integer"):
                 resolve_config("pdf", config_path=config, environ={})
+
+    def test_runtime_boolean_string_is_rejected_instead_of_becoming_truthy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "note-maker.toml"
+            config.write_text('[runtime]\nkeep_runtime = "false"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ConfigError, "keep_runtime must be a boolean"):
+                resolve_config("pdf", config_path=config, environ={})
+
+    def test_nonfinite_runtime_value_is_rejected(self):
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ConfigError, "worker_timeout must be a finite number"
+            ):
+                resolve_config(
+                    "pdf",
+                    cli_overrides={"worker_timeout": value},
+                    environ={},
+                )
 
     def test_markdown_requires_an_explicit_source(self):
         with self.assertRaisesRegex(ConfigError, "markdown_file is required"):
