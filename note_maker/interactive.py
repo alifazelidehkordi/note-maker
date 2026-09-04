@@ -222,9 +222,7 @@ class _Wizard:
             default_prompt=default,
         )
         default_index = (
-            prompts.index(default) + 1
-            if default is not None and default in prompts
-            else None
+            prompts.index(default) + 1 if default is not None and default in prompts else None
         )
         if prompts:
             self.say("Available prompts:")
@@ -309,7 +307,9 @@ class _Wizard:
         values, resolved = plan.resolved.values, plan.resolved
         self.say("\nResolved configuration")
         self.say("----------------------")
-        self.say(f"Workflow: {'Markdown sections' if resolved.command == 'markdown' else 'File batch'}")
+        self.say(
+            f"Workflow: {'Markdown sections' if resolved.command == 'markdown' else 'File batch'}"
+        )
         if plan.input_files is not None:
             self.say(f"Inputs: {len(plan.input_files)} file(s)")
             for path in plan.input_files[:8]:
