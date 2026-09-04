@@ -46,6 +46,10 @@ from .profile_safety import install_profile_safety
 install_runtime_hardening()
 install_profile_safety()
 
+from .profile_recovery_guard import install_profile_recovery_guard
+
+install_profile_recovery_guard()
+
 from .factory import create_browser_provider, ensure_browser_session
 from .profile_manager import (
     AuthSessionEvidence,
