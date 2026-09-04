@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from note_maker.config import ConfigError, resolve_config
 
@@ -154,6 +156,15 @@ save_diagnostics = true
                 cwd=root,
             )
             self.assertEqual(pdf.values["max_attempts"], 6)
+
+    def test_explicit_empty_environment_does_not_use_process_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"NOTE_MAKER_PARALLEL_RUNS": "7"},
+            clear=True,
+        ):
+            resolved = resolve_config("pdf", environ={}, cwd=Path(tmp))
+        self.assertEqual(resolved.runtime.parallel_runs, 1)
 
 
 if __name__ == "__main__":
