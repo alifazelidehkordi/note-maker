@@ -63,10 +63,9 @@ class ManifestLockCleanupTests(unittest.TestCase):
 
             def read_once_locked(path, *args, **kwargs):
                 nonlocal attempts
-                if path == manifest_path:
-                    attempts += 1
-                    if attempts == 1:
-                        raise PermissionError("temporary Windows file lock")
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError("temporary Windows file lock")
                 return original_read_text(path, *args, **kwargs)
 
             with (
@@ -83,15 +82,12 @@ class ManifestLockCleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             manifest_path = Path(tmp) / "manifest.json"
             self._write_manifest(manifest_path)
-            original_read_text = manifest.Path.read_text
             attempts = 0
 
             def read_always_locked(path, *args, **kwargs):
                 nonlocal attempts
-                if path == manifest_path:
-                    attempts += 1
-                    raise PermissionError("persistent Windows file lock")
-                return original_read_text(path, *args, **kwargs)
+                attempts += 1
+                raise PermissionError("persistent Windows file lock")
 
             with (
                 mock.patch.object(manifest.Path, "read_text", new=read_always_locked),
