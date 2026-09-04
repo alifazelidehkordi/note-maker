@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
@@ -312,12 +311,6 @@ def _validate_runtime_value_types(values: Mapping[str, Any]) -> None:
         if expected is float:
             if not isinstance(value, (int, float)) or isinstance(value, bool):
                 raise ConfigError(f"{key} must be a number.")
-            try:
-                finite = math.isfinite(value)
-            except OverflowError:
-                finite = False
-            if not finite:
-                raise ConfigError(f"{key} must be a finite number.")
             continue
         if key in {"runtime_dir", "profile_snapshot"}:
             if not isinstance(value, (str, Path)):
