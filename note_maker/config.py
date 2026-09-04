@@ -70,6 +70,25 @@ PATH_KEYS = {
     "chrome_profile_dir",
 }
 RUNTIME_KEYS = tuple(field.name for field in fields(runtime_flags.RuntimeSettings))
+ALL_COMMAND_KEYS = frozenset(
+    key for defaults in COMMAND_DEFAULTS.values() for key in defaults
+)
+BOOLEAN_COMMAND_KEYS = frozenset(
+    {
+        "overwrite",
+        "save_diagnostics",
+        "save_page_source",
+        "no_warm_up",
+        "keep_browser",
+        "resume",
+        "retry_failed",
+        "adopt_existing",
+    }
+)
+POSITIVE_INT_COMMAND_KEYS = frozenset(
+    {"max_attempts", "max_section_attempts", "download_timeout"}
+)
+SUPPORTED_OUTPUT_EXTENSIONS = frozenset({"opml", "md", "markdown"})
 
 _ENV_TYPES: dict[str, type] = {
     "browser_provider": str,
@@ -104,9 +123,13 @@ _ENV_TYPES: dict[str, type] = {
     "prompt": str,
     "manifest": str,
     "markdown_file": str,
+    "chrome_profile_dir": str,
     "output_ext": str,
+    "sections": str,
     "model": str,
     "limit": int,
+    "max_attempts": int,
+    "max_section_attempts": int,
     "overwrite": bool,
     "save_diagnostics": bool,
     "save_page_source": bool,
@@ -216,6 +239,59 @@ def environment_overrides(environ: Mapping[str, str] | None = None) -> dict[str,
     return resolved
 
 
+def _validate_integer(value: Any, *, name: str, minimum: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ConfigError(f"{name} must be an integer.")
+    if value < minimum:
+        if minimum == 0:
+            raise ConfigError(f"{name} must not be negative.")
+        raise ConfigError(f"{name} must be at least {minimum}.")
+
+
+def _validate_command_values(values: dict[str, Any]) -> None:
+    allowed_keys = set(RUNTIME_KEYS) | set(ALL_COMMAND_KEYS)
+    unknown = sorted(set(values) - allowed_keys)
+    if unknown:
+        names = ", ".join(unknown)
+        suffix = "s" if len(unknown) != 1 else ""
+        raise ConfigError(f"Unknown configuration key{suffix}: {names}.")
+
+    for key in BOOLEAN_COMMAND_KEYS:
+        if key in values and not isinstance(values[key], bool):
+            raise ConfigError(f"{key} must be a boolean.")
+
+    for key in POSITIVE_INT_COMMAND_KEYS:
+        if key in values:
+            _validate_integer(values[key], name=key, minimum=1)
+
+    if "close_delay" in values:
+        _validate_integer(values["close_delay"], name="close_delay", minimum=0)
+
+    limit = values.get("limit")
+    if limit is not None:
+        _validate_integer(limit, name="limit", minimum=1)
+
+    output_ext = values.get("output_ext")
+    if output_ext is not None:
+        if not isinstance(output_ext, str):
+            raise ConfigError("output_ext must be a string.")
+        normalized_extension = output_ext.lstrip(".").lower()
+        if normalized_extension not in SUPPORTED_OUTPUT_EXTENSIONS:
+            supported = ", ".join(sorted(SUPPORTED_OUTPUT_EXTENSIONS))
+            raise ConfigError(
+                f"output_ext must be one of {supported}; received {output_ext!r}."
+            )
+        values["output_ext"] = normalized_extension
+
+    model = values.get("model")
+    if model is not None and not isinstance(model, str):
+        raise ConfigError("model must be a string or null.")
+
+    sections = values.get("sections")
+    if sections is not None and not isinstance(sections, str):
+        raise ConfigError("sections must be a string or null.")
+
+
 def _normalize_paths(values: dict[str, Any], base_dir: Path) -> None:
     for key in PATH_KEYS:
         raw = values.get(key)
@@ -236,6 +312,8 @@ def _runtime_from_values(values: Mapping[str, Any]) -> runtime_flags.RuntimeSett
         return runtime_flags.validate_runtime_settings(**runtime_values)
     except runtime_flags.RuntimeConfigurationError as exc:
         raise ConfigError(str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Invalid runtime configuration: {exc}") from exc
 
 
 def resolve_config(
@@ -297,6 +375,7 @@ def resolve_config(
             {key: value for key, value in cli_overrides.items() if value is not None},
         )
 
+    _validate_command_values(values)
     _normalize_paths(values, base_dir)
     runtime = _runtime_from_values(values)
     for key, value in asdict(runtime).items():
