@@ -421,7 +421,28 @@ def validate_runtime_settings(
     )
 
 
+def _validate_batch_namespace(args: argparse.Namespace) -> None:
+    constraints = {
+        "limit": 0,
+        "max_attempts": 1,
+        "max_section_attempts": 1,
+        "download_timeout": 1,
+        "close_delay": 0,
+    }
+    for name, minimum in constraints.items():
+        value = getattr(args, name, None)
+        if value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise RuntimeConfigurationError(f"{name} must be an integer.")
+        if value < minimum:
+            if minimum == 0:
+                raise RuntimeConfigurationError(f"{name} must not be negative.")
+            raise RuntimeConfigurationError(f"{name} must be at least {minimum}.")
+
+
 def settings_from_namespace(args: argparse.Namespace) -> RuntimeSettings:
+    _validate_batch_namespace(args)
     return validate_runtime_settings(
         browser_provider=getattr(args, "browser_provider", DEFAULT_BROWSER_PROVIDER),
         parallel_runs=getattr(args, "parallel_runs", DEFAULT_PARALLEL_RUNS),
