@@ -61,7 +61,9 @@ def _add_runtime_shortcuts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--runtime-dir", type=Path, default=None)
     parser.add_argument("--profile-snapshot", default=None)
     parser.add_argument("--keep-runtime", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--adaptive-concurrency", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument(
+        "--adaptive-concurrency", action=argparse.BooleanOptionalAction, default=None
+    )
     parser.add_argument("--global-rate-limit-cooldown", type=float, default=None)
     parser.add_argument("--network-retries", type=int, default=None)
     parser.add_argument("--browser-retries", type=int, default=None)
@@ -105,7 +107,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {_version()}")
     parser.add_argument("--config", type=Path, default=None, help="Path to note-maker.toml.")
-    parser.add_argument("--profile", default=None, help="Named profile from the configuration file.")
+    parser.add_argument(
+        "--profile", default=None, help="Named profile from the configuration file."
+    )
     parser.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON where supported."
     )
@@ -441,9 +445,7 @@ def _selected_input_directory(
         return
 
     try:
-        temporary = tempfile.TemporaryDirectory(
-            prefix=".note-maker-selection-", dir=input_dir
-        )
+        temporary = tempfile.TemporaryDirectory(prefix=".note-maker-selection-", dir=input_dir)
     except OSError:
         temporary = tempfile.TemporaryDirectory(prefix=".note-maker-selection-")
     with temporary as stage_name:
