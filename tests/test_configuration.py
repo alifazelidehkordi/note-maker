@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
+from note_maker.cli import main as cli_main
 from note_maker.config import ConfigError, resolve_config
 
 
@@ -120,6 +123,26 @@ save_diagnostics = true
         for key, value, message in cases:
             with self.subTest(key=key), self.assertRaisesRegex(ConfigError, message):
                 resolve_config("pdf", cli_overrides={key: value}, environ={})
+
+    def test_invalid_cli_override_exits_with_argparse_error(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {}, clear=True):
+            config = Path(tmp) / "note-maker.toml"
+            config.write_text("", encoding="utf-8")
+            stderr = StringIO()
+            with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                cli_main(
+                    [
+                        "--config",
+                        str(config),
+                        "run",
+                        "pdf",
+                        "--set",
+                        "limit=0",
+                        "--dry-run",
+                    ]
+                )
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("limit must be at least 1", stderr.getvalue())
 
     def test_invalid_output_extension_is_rejected(self):
         with self.assertRaisesRegex(ConfigError, "output_ext must be one of"):
