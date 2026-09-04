@@ -115,9 +115,13 @@ class StageReporter:
 class StagedBrowserSession:
     """Provider-neutral observer that reports measurable browser operation stages."""
 
-    def __init__(self, session, reporter: StageReporter) -> None:
+    def __init__(
+        self,
+        session,
+        reporter_getter: Callable[[], StageReporter | None],
+    ) -> None:
         self._session = session
-        self._reporter = reporter
+        self._reporter_getter = reporter_getter
 
     @property
     def provider_name(self) -> str:
@@ -127,21 +131,34 @@ class StagedBrowserSession:
     def raw_handle(self) -> object:
         return self._session.raw_handle
 
+    def _reporter(self) -> StageReporter | None:
+        return self._reporter_getter()
+
     def wait_until_logged_in(self, timeout: int = 600) -> None:
-        self._reporter.browser_stage(StageKind.WAITING_FOR_LOGIN)
+        reporter = self._reporter()
+        if reporter is not None:
+            reporter.browser_stage(StageKind.WAITING_FOR_LOGIN)
         self._session.wait_until_logged_in(timeout)
-        self._reporter.browser_stage(StageKind.PREPARING_BROWSER)
+        reporter = self._reporter()
+        if reporter is not None:
+            reporter.browser_stage(StageKind.PREPARING_BROWSER)
 
     def upload(self, request) -> None:
-        self._reporter.content_stage(StageKind.UPLOADING)
+        reporter = self._reporter()
+        if reporter is not None:
+            reporter.content_stage(StageKind.UPLOADING)
         self._session.upload(request)
 
     def wait_for_response(self, request) -> None:
-        self._reporter.content_stage(StageKind.WAITING_FOR_RESPONSE)
+        reporter = self._reporter()
+        if reporter is not None:
+            reporter.content_stage(StageKind.WAITING_FOR_RESPONSE)
         self._session.wait_for_response(request)
 
     def resolve_download(self, request):
-        self._reporter.content_stage(StageKind.RESOLVING_DOWNLOAD)
+        reporter = self._reporter()
+        if reporter is not None:
+            reporter.content_stage(StageKind.RESOLVING_DOWNLOAD)
         return self._session.resolve_download(request)
 
     def __getattr__(self, name: str):
@@ -160,8 +177,7 @@ class StagedBrowserProvider:
         return self._provider.name
 
     def _wrap(self, session):
-        reporter = self._reporter_getter()
-        return session if reporter is None else StagedBrowserSession(session, reporter)
+        return StagedBrowserSession(session, self._reporter_getter)
 
     def open_session(self, options=None):
         return self._wrap(self._provider.open_session(options))
