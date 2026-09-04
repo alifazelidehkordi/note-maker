@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,21 +69,25 @@ class RuntimeSettings:
     retry_jitter_ratio: float = DEFAULT_RETRY_JITTER_RATIO
 
 
-def _positive_float(value: str) -> float:
+def _finite_float(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("must be a number") from exc
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError("must be finite")
+    return parsed
+
+
+def _positive_float(value: str) -> float:
+    parsed = _finite_float(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be positive")
     return parsed
 
 
 def _nonnegative_float(value: str) -> float:
-    try:
-        parsed = float(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("must be a number") from exc
+    parsed = _finite_float(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError("must not be negative")
     return parsed
@@ -318,6 +323,26 @@ def validate_runtime_settings(
         raise RuntimeConfigurationError(
             f"parallel_runs must not exceed {MAX_PARALLEL_RUNS}."
         )
+    for name, value in {
+        "worker_heartbeat_interval": worker_heartbeat_interval,
+        "worker_timeout": worker_timeout,
+        "worker_ready_timeout": worker_ready_timeout,
+        "worker_startup_stagger": worker_startup_stagger,
+        "shutdown_grace_seconds": shutdown_grace_seconds,
+        "global_rate_limit_cooldown": global_rate_limit_cooldown,
+        "rate_limit_window_seconds": rate_limit_window_seconds,
+        "adaptive_recovery_seconds": adaptive_recovery_seconds,
+        "worker_memory_limit_mb": worker_memory_limit_mb,
+        "retry_backoff_base": retry_backoff_base,
+        "retry_backoff_cap": retry_backoff_cap,
+        "retry_jitter_ratio": retry_jitter_ratio,
+    }.items():
+        try:
+            finite = math.isfinite(value)
+        except TypeError as exc:
+            raise RuntimeConfigurationError(f"{name} must be a number.") from exc
+        if not finite:
+            raise RuntimeConfigurationError(f"{name} must be finite.")
     if worker_heartbeat_interval <= 0:
         raise RuntimeConfigurationError("worker_heartbeat_interval must be positive.")
     if worker_timeout <= worker_heartbeat_interval:

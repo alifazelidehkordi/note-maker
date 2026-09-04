@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
+from unittest import mock
 
+from note_maker.cli import main as cli_main
 from note_maker.config import ConfigError, resolve_config
 
 
@@ -64,9 +69,133 @@ save_diagnostics = true
                 environ={},
             )
 
+    def test_invalid_runtime_type_is_reported_as_config_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "note-maker.toml"
+            config.write_text('[runtime]\nparallel_runs = "4"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ConfigError, "parallel_runs must be an integer"):
+                resolve_config("pdf", config_path=config, environ={})
+
+    def test_runtime_boolean_string_is_rejected_instead_of_becoming_truthy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "note-maker.toml"
+            config.write_text('[runtime]\nkeep_runtime = "false"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ConfigError, "keep_runtime must be a boolean"):
+                resolve_config("pdf", config_path=config, environ={})
+
+    def test_nonfinite_runtime_value_is_rejected(self):
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(ConfigError, "worker_timeout must be finite"),
+            ):
+                resolve_config(
+                    "pdf",
+                    cli_overrides={"worker_timeout": value},
+                    environ={},
+                )
+
     def test_markdown_requires_an_explicit_source(self):
         with self.assertRaisesRegex(ConfigError, "markdown_file is required"):
             resolve_config("markdown", environ={})
+
+    def test_string_boolean_is_rejected_instead_of_becoming_truthy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "note-maker.toml"
+            config.write_text('[commands.pdf]\noverwrite = "false"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ConfigError, "overwrite must be a boolean"):
+                resolve_config("pdf", config_path=config, environ={})
+
+    def test_unknown_configuration_key_is_rejected(self):
+        with self.assertRaisesRegex(ConfigError, "Unknown configuration key: paralell_runs"):
+            resolve_config(
+                "pdf",
+                cli_overrides={"paralell_runs": 4},
+                environ={},
+            )
+
+    def test_invalid_command_numeric_ranges_are_rejected(self):
+        cases = (
+            ("limit", -1, "limit must not be negative"),
+            ("max_attempts", 0, "max_attempts must be at least 1"),
+            ("download_timeout", 0, "download_timeout must be at least 1"),
+            ("close_delay", -1, "close_delay must not be negative"),
+        )
+        for key, value, message in cases:
+            with self.subTest(key=key), self.assertRaisesRegex(ConfigError, message):
+                resolve_config("pdf", cli_overrides={key: value}, environ={})
+
+    def test_zero_limit_remains_supported(self):
+        resolved = resolve_config("pdf", cli_overrides={"limit": 0}, environ={})
+        self.assertEqual(resolved.values["limit"], 0)
+
+    def test_invalid_cli_override_exits_with_argparse_error(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {}, clear=True):
+            config = Path(tmp) / "note-maker.toml"
+            config.write_text("", encoding="utf-8")
+            stderr = StringIO()
+            with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                cli_main(
+                    [
+                        "--config",
+                        str(config),
+                        "run",
+                        "pdf",
+                        "--set",
+                        "limit=-1",
+                        "--dry-run",
+                    ]
+                )
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("limit must not be negative", stderr.getvalue())
+
+    def test_invalid_output_extension_is_rejected(self):
+        with self.assertRaisesRegex(ConfigError, "output_ext must be one of"):
+            resolve_config("pdf", cli_overrides={"output_ext": "txt"}, environ={})
+
+    def test_output_extension_keeps_legacy_normalization(self):
+        resolved = resolve_config("pdf", cli_overrides={"output_ext": ".MD"}, environ={})
+        self.assertEqual(resolved.values["output_ext"], "md")
+
+    def test_all_documented_command_environment_overrides_are_supported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resolved = resolve_config(
+                "markdown",
+                environ={
+                    "NOTE_MAKER_MARKDOWN_FILE": "lecture.md",
+                    "NOTE_MAKER_MAX_SECTION_ATTEMPTS": "5",
+                    "NOTE_MAKER_SECTIONS": "1,3-4",
+                    "NOTE_MAKER_CHROME_PROFILE_DIR": "browser-profile",
+                },
+                cwd=root,
+            )
+            self.assertEqual(resolved.values["markdown_file"], (root / "lecture.md").resolve())
+            self.assertEqual(resolved.values["max_section_attempts"], 5)
+            self.assertEqual(resolved.values["sections"], "1,3-4")
+            self.assertEqual(
+                resolved.values["chrome_profile_dir"],
+                (root / "browser-profile").resolve(),
+            )
+
+            pdf = resolve_config(
+                "pdf",
+                environ={"NOTE_MAKER_MAX_ATTEMPTS": "6"},
+                cwd=root,
+            )
+            self.assertEqual(pdf.values["max_attempts"], 6)
+
+    def test_explicit_empty_environment_does_not_use_process_overrides(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(
+                os.environ,
+                {"NOTE_MAKER_PARALLEL_RUNS": "7"},
+                clear=True,
+            ),
+        ):
+            resolved = resolve_config("pdf", environ={}, cwd=Path(tmp))
+        self.assertEqual(resolved.runtime.parallel_runs, 1)
 
 
 if __name__ == "__main__":
