@@ -40,14 +40,18 @@ from .models import (
 )
 from .patchright_provider import PatchrightBrowserSession, PatchrightProvider
 from .runtime_hardening import install_runtime_hardening
+from .profile_safety import install_profile_safety
 
-# Apply the P0 behavior fixes before factory/provider users or the legacy facade
-# snapshot the affected callables.
+# Apply behavior fixes before factory/provider/session users snapshot affected callables.
 install_runtime_hardening()
+install_profile_safety()
 
 from .factory import create_browser_provider, ensure_browser_session
 from .profile_manager import (
     AuthSessionEvidence,
+    CleanupOutcome,
+    CleanupStatus,
+    OwnershipState,
     ProfileActivity,
     ProfileLease,
     ProfileManager,
@@ -103,6 +107,9 @@ __all__ = [
     'PatchrightProvider',
     'PatchrightBrowserSession',
     'AuthSessionEvidence',
+    'CleanupOutcome',
+    'CleanupStatus',
+    'OwnershipState',
     'ProfileActivity',
     'ProfileLease',
     'ProfileManager',
