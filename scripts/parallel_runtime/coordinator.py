@@ -156,6 +156,26 @@ class ParallelCoordinator:
                 return None
             time.sleep(min(0.001, remaining))
 
+    def _drain_pending_events(self) -> None:
+        """Process queued worker state before evaluating liveness timeouts."""
+        while True:
+            handled = False
+            for slot in list(self.slots.values()):
+                event_queue = slot.event_queue
+                if event_queue is None:
+                    continue
+                try:
+                    event = event_queue.get_nowait()
+                except Empty:
+                    continue
+                except (EOFError, OSError, ValueError):
+                    continue
+                if isinstance(event, WorkerEvent):
+                    self._handle_event(event)
+                    handled = True
+            if not handled:
+                return
+
     def _spawn_worker(self, worker_id: str, *, generation: int = 1, restarts: int = 0) -> _WorkerSlot:
         command_queue = self.context.Queue()
         event_queue = self.context.Queue()
@@ -664,6 +684,7 @@ class ParallelCoordinator:
                 event = self._next_event()
                 if isinstance(event, WorkerEvent):
                     self._handle_event(event)
+                self._drain_pending_events()
                 self._maybe_start_more_workers()
                 self._check_workers()
                 self._dispatch_idle_workers()
