@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import platform
 import shutil
 import sys
@@ -12,7 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from .compat import activate_legacy_imports
-from .config import ConfigError, ResolvedConfig, resolve_config
+from .config import ConfigError, ResolvedConfig, discover_config_path, resolve_config
+from .project import (
+    ProjectInitSettings,
+    default_config_path,
+    load_session_aliases,
+    resolve_session_reference,
+    set_session_alias,
+    validate_session_alias,
+    write_project_config,
+)
 
 
 def _version() -> str:
@@ -55,7 +65,11 @@ def _add_runtime_shortcuts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--browser-provider", choices=("selenium", "patchright"), default=None)
     parser.add_argument("--parallel-runs", type=int, default=None)
     parser.add_argument("--runtime-dir", type=Path, default=None)
-    parser.add_argument("--profile-snapshot", default=None)
+    parser.add_argument(
+        "--profile-snapshot",
+        default=None,
+        help="Immutable snapshot ID/path or a browser session alias from [sessions].",
+    )
     parser.add_argument(
         "--keep-runtime",
         action=argparse.BooleanOptionalAction,
@@ -110,7 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {_version()}")
     parser.add_argument("--config", type=Path, default=None, help="Path to note-maker.toml.")
     parser.add_argument(
-        "--profile", default=None, help="Named profile from the configuration file."
+        "--profile",
+        default=None,
+        help="Named configuration preset from [profiles.*], not a browser session.",
     )
     parser.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON where supported."
@@ -118,11 +134,53 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command", required=True)
 
+    init = commands.add_parser("init", help="Create reusable project settings in note-maker.toml.")
+    init.add_argument("--input-dir", type=Path, default=Path("inputs"))
+    init.add_argument("--output-dir", type=Path, default=Path("outputs/notes"))
+    init.add_argument("--prompt", type=Path, default=Path("prompts/prompt-mind-map.md"))
+    init.add_argument(
+        "--format",
+        "--output-ext",
+        dest="output_ext",
+        choices=("opml", "md", "markdown"),
+        default="md",
+    )
+    init.add_argument("--browser-provider", choices=("selenium", "patchright"), default="selenium")
+    init.add_argument("--workers", type=int, default=1, help="Saved worker count for this project.")
+    init.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing project configuration instead of refusing to overwrite it.",
+    )
+
+    login = commands.add_parser(
+        "login",
+        help="Open dedicated Chromium and save a reusable browser session alias.",
+    )
+    login.add_argument("--name", default="default", help="Stable human name for the new session.")
+
+    profiles = commands.add_parser(
+        "profiles",
+        help="List or inspect reusable browser sessions; configuration presets use --profile.",
+    )
+    profile_commands = profiles.add_subparsers(dest="profiles_command", required=True)
+    profile_commands.add_parser("list", help="List session aliases and immutable snapshots.")
+    profile_inspect = profile_commands.add_parser(
+        "inspect", help="Inspect a session alias or immutable snapshot without opening a browser."
+    )
+    profile_inspect.add_argument("reference")
+
     doctor = commands.add_parser(
-        "doctor", help="Check dependencies, configuration, and browser availability."
+        "doctor", help="Check the resolved workflow, paths, selected provider, and session availability."
     )
     doctor.add_argument(
-        "--strict", action="store_true", help="Treat missing optional browsers as errors."
+        "--strict", action="store_true", help="Treat missing optional system browsers as errors."
+    )
+    doctor.add_argument(
+        "--target",
+        choices=("pdf", "markdown"),
+        default="pdf",
+        help="Workflow configuration to diagnose (default: pdf).",
     )
 
     status = commands.add_parser("status", help="Show or watch live batch status.")
@@ -193,54 +251,190 @@ def _print(payload: Any, *, as_json: bool) -> None:
         print(payload)
 
 
+def _project_config_path(args: argparse.Namespace, *, require_existing: bool) -> Path:
+    selected = discover_config_path(args.config)
+    path = selected if selected is not None else default_config_path()
+    if require_existing and not path.is_file():
+        raise ConfigError(f"Configuration file does not exist: {path}. Run `note-maker init` first.")
+    return path
+
+
+def _profile_services(project_root: Path) -> tuple[Any, type[Any], type[Exception]]:
+    activate_legacy_imports()
+    from browser_runtime.errors import ProfileSnapshotError  # type: ignore[import-not-found]
+    from browser_runtime.login_bootstrap import LoginBootstrapper  # type: ignore[import-not-found]
+    from browser_runtime.profile_manager import ProfileManager  # type: ignore[import-not-found]
+
+    return ProfileManager.from_environment(project_root), LoginBootstrapper, ProfileSnapshotError
+
+
+def _init(args: argparse.Namespace) -> int:
+    config_path = _project_config_path(args, require_existing=False)
+    settings = ProjectInitSettings(
+        input_dir=args.input_dir,
+        output_dir=args.output_dir,
+        prompt=args.prompt,
+        output_ext=args.output_ext,
+        browser_provider=args.browser_provider,
+        parallel_runs=args.workers,
+    )
+    write_project_config(config_path, settings, force=args.force)
+    resolved = resolve_config("pdf", config_path=config_path, environ={})
+    payload = {
+        "config_path": str(config_path),
+        "input_dir": str(resolved.values["input_dir"]),
+        "output_dir": str(resolved.values["output_dir"]),
+        "prompt": str(resolved.values["prompt"]),
+        "output_ext": resolved.values["output_ext"],
+        "browser_provider": resolved.runtime.browser_provider,
+        "parallel_runs": resolved.runtime.parallel_runs,
+    }
+    _print(payload, as_json=args.json)
+    return 0
+
+
+def _login(args: argparse.Namespace) -> int:
+    config_path = _project_config_path(args, require_existing=True)
+    name = validate_session_alias(args.name)
+    project_root = config_path.parent
+    manager, bootstrap_type, _ = _profile_services(project_root)
+    profile_dir = (project_root / "chrome_profile_login" / name).resolve()
+
+    print(
+        "A dedicated Chromium window will open. Complete ChatGPT login, then close that browser. "
+        "The saved cookie markers are local evidence only; server-session validity is not assumed.",
+        file=sys.stderr,
+    )
+    bootstrap = bootstrap_type(profile_manager=manager)
+    bootstrap.open_login_browser(profile_dir, wait=True)
+    snapshot = bootstrap.create_snapshot(profile_dir, name=name)
+    set_session_alias(config_path, name, snapshot.snapshot_id)
+    payload = {
+        "name": name,
+        "snapshot_id": snapshot.snapshot_id,
+        "snapshot": str(snapshot.path),
+        "config_path": str(config_path),
+        "authentication_evidence": bool(snapshot.auth_markers),
+        "server_session_verified": False,
+    }
+    _print(payload, as_json=args.json)
+    return 0
+
+
+def _snapshot_payload(snapshot: Any, *, aliases: list[str]) -> dict[str, Any]:
+    return {
+        "snapshot_id": snapshot.snapshot_id,
+        "aliases": aliases,
+        "path": str(snapshot.path),
+        "created_at": snapshot.created_at,
+        "portable": bool(snapshot.portable),
+        "authentication": {
+            "cookie_markers_present": bool(snapshot.auth_markers),
+            "cookie_markers": list(snapshot.auth_markers),
+            "server_session_verified": False,
+            "detail": "Cookie markers are local authentication evidence, not proof of a currently valid server session.",
+        },
+    }
+
+
+def _profiles(args: argparse.Namespace) -> int:
+    config_path = _project_config_path(args, require_existing=True)
+    aliases = load_session_aliases(config_path)
+    manager, _, snapshot_error = _profile_services(config_path.parent)
+
+    if args.profiles_command == "list":
+        snapshots: list[dict[str, Any]] = []
+        alias_by_snapshot: dict[str, list[str]] = {}
+        for alias, snapshot_id in aliases.items():
+            alias_by_snapshot.setdefault(snapshot_id, []).append(alias)
+        if manager.snapshot_root.is_dir():
+            for path in sorted(manager.snapshot_root.iterdir(), key=lambda item: item.name):
+                if not path.is_dir():
+                    continue
+                try:
+                    snapshot = manager.load_snapshot(path.name)
+                except snapshot_error as exc:
+                    snapshots.append(
+                        {
+                            "snapshot_id": path.name,
+                            "aliases": sorted(alias_by_snapshot.get(path.name, [])),
+                            "valid": False,
+                            "error": str(exc),
+                        }
+                    )
+                    continue
+                entry = _snapshot_payload(
+                    snapshot,
+                    aliases=sorted(alias_by_snapshot.get(snapshot.snapshot_id, [])),
+                )
+                entry["valid"] = True
+                snapshots.append(entry)
+        sessions = [
+            {
+                "name": alias,
+                "snapshot_id": snapshot_id,
+                "available": any(
+                    item.get("snapshot_id") == snapshot_id and item.get("valid") is True
+                    for item in snapshots
+                ),
+            }
+            for alias, snapshot_id in sorted(aliases.items())
+        ]
+        payload = {
+            "config_path": str(config_path),
+            "sessions": sessions,
+            "snapshots": snapshots,
+            "configuration_presets_are_separate": True,
+        }
+        if args.json:
+            _print(payload, as_json=True)
+        else:
+            print("Browser sessions (aliases -> immutable snapshots):")
+            if not sessions:
+                print("  none")
+            for session in sessions:
+                availability = "available" if session["available"] else "missing"
+                print(f"  {session['name']} -> {session['snapshot_id']} ({availability})")
+            print("Configuration presets are separate and are selected with global --profile.")
+        return 0
+
+    alias, snapshot_reference = resolve_session_reference(config_path, args.reference)
+    try:
+        snapshot = manager.load_snapshot(snapshot_reference)
+    except snapshot_error as exc:
+        raise ConfigError(str(exc)) from exc
+    payload = _snapshot_payload(snapshot, aliases=[alias] if alias is not None else [])
+    payload["requested_reference"] = args.reference
+    payload["resolved_from_alias"] = alias
+    _print(payload, as_json=args.json)
+    return 0
+
+
+def _existing_writable_directory(path: Path) -> tuple[bool, str]:
+    path = path.expanduser().resolve()
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    if not candidate.exists():
+        return False, f"no existing parent for {path}"
+    if not candidate.is_dir():
+        return False, f"nearest existing path is not a directory: {candidate}"
+    writable = os.access(candidate, os.W_OK)
+    return writable, f"{path} (nearest existing parent: {candidate})"
+
+
 def _doctor(args: argparse.Namespace) -> int:
-    checks: list[dict[str, Any]] = []
-    checks.append(
+    checks: list[dict[str, Any]] = [
         {
             "name": "python",
             "ok": sys.version_info >= (3, 10),
             "detail": platform.python_version(),
         }
-    )
-    for module in (
-        "selenium",
-        "pyautogui",
-        "pyperclip",
-        "markdown",
-        "weasyprint",
-        "pypdf",
-        "yaml",
-        "patchright",
-    ):
-        checks.append(
-            {
-                "name": f"dependency:{module}",
-                "ok": importlib.util.find_spec(module) is not None,
-                "detail": "installed"
-                if importlib.util.find_spec(module) is not None
-                else "missing",
-            }
-        )
-
-    browsers = {
-        "chrome": shutil.which("google-chrome") or shutil.which("google-chrome-stable"),
-        "chromium": shutil.which("chromium") or shutil.which("chromium-browser"),
-        "edge": shutil.which("microsoft-edge") or shutil.which("microsoft-edge-stable"),
-    }
-    browser_ok = any(browsers.values())
-    checks.append(
-        {
-            "name": "system-browser",
-            "ok": browser_ok or not args.strict,
-            "detail": next(
-                (path for path in browsers.values() if path), "bundled browser may be used"
-            ),
-        }
-    )
-
+    ]
+    resolved: ResolvedConfig | None = None
     try:
         resolved = resolve_config(
-            "pdf",
+            args.target,
             config_path=args.config,
             profile=args.profile,
         )
@@ -253,6 +447,129 @@ def _doctor(args: argparse.Namespace) -> int:
         )
     except ConfigError as exc:
         checks.append({"name": "configuration", "ok": False, "detail": str(exc)})
+
+    provider = resolved.runtime.browser_provider if resolved is not None else None
+    required_modules = {
+        "selenium": ("selenium", "pyautogui", "pyperclip"),
+        "patchright": ("patchright",),
+    }.get(provider, ())
+    for module in required_modules:
+        present = importlib.util.find_spec(module) is not None
+        checks.append(
+            {
+                "name": f"dependency:{module}",
+                "ok": present,
+                "detail": "installed" if present else f"missing for selected provider {provider}",
+            }
+        )
+
+    browsers = {
+        "chrome": shutil.which("google-chrome") or shutil.which("google-chrome-stable"),
+        "chromium": shutil.which("chromium") or shutil.which("chromium-browser"),
+        "edge": shutil.which("microsoft-edge") or shutil.which("microsoft-edge-stable"),
+    }
+    system_browser = next((path for path in browsers.values() if path), None)
+    if provider == "selenium":
+        checks.append(
+            {
+                "name": "browser:selenium",
+                "ok": system_browser is not None or not args.strict,
+                "detail": system_browser
+                or "no system Chromium found; Selenium runtime startup was not launched by doctor",
+            }
+        )
+    elif provider == "patchright":
+        patchright_present = importlib.util.find_spec("patchright") is not None
+        checks.append(
+            {
+                "name": "browser:patchright",
+                "ok": patchright_present,
+                "detail": (
+                    "provider package available; browser startup was not launched by doctor"
+                    if patchright_present
+                    else "provider package missing"
+                ),
+            }
+        )
+
+    if resolved is not None:
+        values = resolved.values
+        if args.target == "pdf":
+            source = values.get("input_dir")
+            source_ok = isinstance(source, Path) and source.is_dir()
+            checks.append(
+                {
+                    "name": "input",
+                    "ok": source_ok,
+                    "detail": str(source) if source_ok else f"input directory unavailable: {source}",
+                }
+            )
+        else:
+            source = values.get("markdown_file")
+            source_ok = isinstance(source, Path) and source.is_file()
+            checks.append(
+                {
+                    "name": "input",
+                    "ok": source_ok,
+                    "detail": str(source) if source_ok else f"Markdown input unavailable: {source}",
+                }
+            )
+
+        prompt = values.get("prompt")
+        prompt_ok = isinstance(prompt, Path) and prompt.is_file()
+        checks.append(
+            {
+                "name": "prompt",
+                "ok": prompt_ok,
+                "detail": str(prompt) if prompt_ok else f"prompt file unavailable: {prompt}",
+            }
+        )
+
+        output = values.get("output_dir")
+        if isinstance(output, Path):
+            output_ok, output_detail = _existing_writable_directory(output)
+        else:
+            output_ok, output_detail = False, f"invalid output directory: {output}"
+        checks.append({"name": "output", "ok": output_ok, "detail": output_detail})
+
+        snapshot_reference = resolved.runtime.profile_snapshot
+        if snapshot_reference:
+            project_root = resolved.config_path.parent if resolved.config_path else Path.cwd()
+            manager, _, snapshot_error = _profile_services(project_root)
+            try:
+                snapshot = manager.load_snapshot(snapshot_reference)
+            except snapshot_error as exc:
+                checks.append(
+                    {
+                        "name": "session",
+                        "ok": False,
+                        "detail": f"configured snapshot unavailable: {exc}",
+                    }
+                )
+            else:
+                marker_detail = (
+                    f"{len(snapshot.auth_markers)} local cookie marker(s) present"
+                    if snapshot.auth_markers
+                    else "no local authentication cookie markers recorded"
+                )
+                checks.append(
+                    {
+                        "name": "session",
+                        "ok": True,
+                        "detail": (
+                            f"snapshot {snapshot.snapshot_id} available; {marker_detail}; "
+                            "live server session not verified"
+                        ),
+                    }
+                )
+        else:
+            checks.append(
+                {
+                    "name": "session",
+                    "ok": True,
+                    "detail": "no reusable snapshot configured; live authentication was not checked",
+                }
+            )
 
     payload = {"ok": all(item["ok"] for item in checks), "checks": checks}
     if args.json:
@@ -524,6 +841,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "init":
+            return _init(args)
+        if args.command == "login":
+            return _login(args)
+        if args.command == "profiles":
+            return _profiles(args)
         if args.command == "doctor":
             return _doctor(args)
         if args.command == "status":
