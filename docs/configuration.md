@@ -113,12 +113,57 @@ Start from [`note-maker.example.toml`](../note-maker.example.toml) or generate a
 
 ## Inspect resolved configuration
 
-Inspect the final values without opening a browser:
+Use `config` when you only want to inspect the merged settings and precedence result:
 
 ```bash
 note-maker --config note-maker.toml --profile fast config pdf --json
-note-maker --config note-maker.toml --profile fast run pdf --dry-run
 ```
+
+## Preview the real execution plan
+
+`run ... --dry-run` now goes beyond configuration display. It performs the same browser-free source discovery and manifest planning used immediately before a real run, then reports every candidate as `run`, `skip`, or `adopt` with the planner reason.
+
+```bash
+note-maker run pdf --dry-run
+note-maker run markdown --sections 1-5 --dry-run
+```
+
+The JSON output keeps the existing resolved `values` payload and adds `preview`, including selected sources, output paths, current manifest decisions, estimated scheduling weight, provider, worker count, and snapshot reference.
+
+Preview is read-only: it does not open a browser, create the output directory, write or migrate a manifest on disk, create job claims, create a managed runtime, or materialize Markdown `_md_sections` files. An existing manifest may be read and validated to reproduce the real resume decision.
+
+### Select PDF/DOCX/Markdown input files
+
+For the directory-based `run pdf` workflow, repeat `--include` and `--exclude` to select top-level filenames before planning or execution:
+
+```bash
+note-maker run pdf \
+  --include "Chapter *.pdf" \
+  --include "Lab *.docx" \
+  --exclude "*draft*" \
+  --dry-run
+```
+
+Then remove `--dry-run` to execute the same filtered collection:
+
+```bash
+note-maker run pdf \
+  --include "Chapter *.pdf" \
+  --include "Lab *.docx" \
+  --exclude "*draft*"
+```
+
+Selection rules are deterministic:
+
+1. The existing collector first finds supported top-level `.pdf`, `.docx`, and `.md` inputs and keeps its built-in index/README exclusions.
+2. Repeated `--include` patterns are ORed. With no include pattern, all collected files remain eligible.
+3. Repeated `--exclude` patterns are applied after includes and always win.
+4. `--limit` is applied after include/exclude filtering.
+5. Patterns match the filename only and are case-sensitive on Linux and Windows. Quote shell globs so the shell does not expand them first.
+
+An exact filename is also a valid pattern, for example `--include "Unit 01.pdf"`.
+
+Markdown-section runs continue to use the existing `--sections` selector; `--include` and `--exclude` are intentionally limited to `run pdf`.
 
 ## Environment overrides
 
@@ -192,8 +237,8 @@ note-maker run pdf \
   --dry-run
 ```
 
-Unknown or invalid runtime values fail through the same central validation used by the existing script entry points.
+Unknown or invalid runtime values fail through the same central validation used by the existing script entry points. With `--dry-run`, those resolved values feed the read-only real planner preview.
 
 ## Compatibility
 
-The shell launchers and direct modules remain supported. The unified CLI is an orchestration layer over the existing configuration resolver, browser runtime, profile manager, and batch implementations, not a second automation or credential system.
+The shell launchers and direct modules remain supported. The installed `note-maker` console command adds project-oriented preview and selection around the existing configuration resolver, planner, browser runtime, profile manager, and batch implementations; it does not introduce a second planner, manifest, browser automation engine, or credential system.
