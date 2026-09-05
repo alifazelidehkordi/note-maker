@@ -153,32 +153,6 @@ class StageExecutorIntegrationTests(unittest.TestCase):
         session.wait_until_logged_in()
         return session
 
-    def _run_with_slow_provider(self, executor, provider, clock):
-        events: list[tuple[EventKind, dict[str, object]]] = []
-        executor.emit = lambda kind, **payload: events.append((kind, payload))
-        executor.provider = provider
-
-        original_validate = batch_common.validate_artifact
-        original_fsync = batch_common._fsync_file
-
-        def slow_validate(*args, **kwargs):
-            clock.advance(2.0)
-            return original_validate(*args, **kwargs)
-
-        def slow_fsync(path):
-            clock.advance(2.0)
-            return original_fsync(path)
-
-        with (
-            mock.patch.object(batch_common, "bootstrap_session", self._fake_bootstrap),
-            mock.patch.object(batch_common, "validate_artifact", slow_validate),
-            mock.patch.object(batch_common, "_fsync_file", slow_fsync),
-            mock.patch("parallel_runtime.stages.time.monotonic", clock),
-        ):
-            result = executor.execute(self.job)
-
-        return result, events
-
     def _assert_complete_stage_sequence(self, events, *, source_filename: str):
         stage_payloads = [payload for kind, payload in events if kind == EventKind.STAGE]
         started = [payload for payload in stage_payloads if payload["phase"] == "started"]
@@ -247,7 +221,7 @@ class StageExecutorIntegrationTests(unittest.TestCase):
                 worker_id="worker-001",
                 emit=lambda kind, **payload: events.append((kind, payload)),
             )
-            self.job = ExecutionJob(
+            job = ExecutionJob(
                 key="source.pdf::md",
                 source=source,
                 source_hash="source-hash",
@@ -278,7 +252,7 @@ class StageExecutorIntegrationTests(unittest.TestCase):
                 mock.patch.object(batch_common, "_fsync_file", slow_fsync),
                 mock.patch("parallel_runtime.stages.time.monotonic", clock),
             ):
-                result = executor.execute(self.job)
+                result = executor.execute(job)
 
             self.assertTrue(result.success)
             self.assertTrue((output_dir / "source.md").exists())
@@ -305,7 +279,7 @@ class StageExecutorIntegrationTests(unittest.TestCase):
                 worker_id="worker-001",
                 emit=lambda kind, **payload: events.append((kind, payload)),
             )
-            self.job = ExecutionJob(
+            job = ExecutionJob(
                 key="lecture.md::section-0001::md",
                 source=source,
                 source_hash="source-hash",
@@ -340,7 +314,7 @@ class StageExecutorIntegrationTests(unittest.TestCase):
                 mock.patch.object(batch_common, "_fsync_file", slow_fsync),
                 mock.patch("parallel_runtime.stages.time.monotonic", clock),
             ):
-                result = executor.execute(self.job)
+                result = executor.execute(job)
 
             self.assertTrue(result.success)
             self.assertTrue((output_dir / "01_topic.md").exists())
