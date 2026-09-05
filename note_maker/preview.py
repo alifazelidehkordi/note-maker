@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 
 from .compat import activate_legacy_imports
 from .config import ConfigError, ResolvedConfig
@@ -70,12 +71,12 @@ def _read_prompt(path: Path) -> str:
     return prompt
 
 
-def _manifest_path(values: dict[str, Any], output_dir: Path) -> Path:
+def _manifest_path(values: Mapping[str, Any], output_dir: Path) -> Path:
     configured = _optional_path(values.get("manifest"), name="manifest")
     return (configured or (output_dir / "manifest.json")).expanduser().resolve()
 
 
-def _planning_options(values: dict[str, Any]) -> Any:
+def _planning_options(values: Mapping[str, Any]) -> Any:
     from parallel_runtime.models import PlanningOptions  # type: ignore[import-not-found]
 
     return PlanningOptions(
