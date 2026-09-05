@@ -85,7 +85,6 @@ def main(argv: list[str] | None = None) -> int:
         cleaned, includes, excludes = _extract_selection(values)
     except ConfigError as exc:
         cli.build_parser().error(str(exc))
-        raise AssertionError("argparse.error did not exit")
 
     if _pdf_help_requested(cleaned):
         try:
