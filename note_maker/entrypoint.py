@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
-from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 from . import cli
 from .config import ConfigError, ResolvedConfig, resolve_config
@@ -59,13 +59,12 @@ def _print_pdf_selection_help() -> None:
     )
 
 
-def _resolved_run(args: object) -> ResolvedConfig:
-    namespace = args
-    overrides = cli._namespace_overrides(namespace, cli._RUN_KEYS)  # type: ignore[arg-type]
+def _resolved_run(args: argparse.Namespace) -> ResolvedConfig:
+    overrides = cli._namespace_overrides(args, cli._RUN_KEYS)
     return resolve_config(
-        namespace.run_command,  # type: ignore[attr-defined]
-        config_path=namespace.config,  # type: ignore[attr-defined]
-        profile=namespace.profile,  # type: ignore[attr-defined]
+        args.run_command,
+        config_path=args.config,
+        profile=args.profile,
         cli_overrides=overrides,
     )
 
