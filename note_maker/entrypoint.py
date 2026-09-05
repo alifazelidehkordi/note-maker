@@ -4,8 +4,8 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from . import cli as legacy_cli
 from .compat import activate_legacy_imports
