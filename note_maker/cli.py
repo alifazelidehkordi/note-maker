@@ -8,15 +8,16 @@ import platform
 import shutil
 import sys
 import tempfile
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-import time
 from importlib import metadata
 from pathlib import Path
 from typing import Any
 
 from .compat import activate_legacy_imports
 from .config import ConfigError, ResolvedConfig, discover_config_path, resolve_config
+from .interactive import InteractiveCancelled, build_interactive_plan
 from .project import (
     ProjectInitSettings,
     default_config_path,
@@ -26,7 +27,6 @@ from .project import (
     validate_session_alias,
     write_project_config,
 )
-from .interactive import InteractiveCancelled, build_interactive_plan
 
 
 def _version() -> str:
@@ -169,7 +169,8 @@ def build_parser() -> argparse.ArgumentParser:
     profile_inspect.add_argument("reference")
 
     doctor = commands.add_parser(
-        "doctor", help="Check the resolved workflow, paths, selected provider, and session availability."
+        "doctor",
+        help="Check the resolved workflow, paths, selected provider, and session availability.",
     )
     doctor.add_argument(
         "--strict", action="store_true", help="Treat missing optional system browsers as errors."
@@ -181,7 +182,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Workflow configuration to diagnose (default: pdf).",
     )
 
-    status = commands.add_parser("status", help="Show or watch live batch status.")
+    status = commands.add_parser(
+        "status",
+        help="Show or watch live batch status.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Detailed status options for the note-maker console:\n"
+            "  --details          Show event and worker-log summaries.\n"
+            "  --run-dir PATH     Read telemetry from a specific run directory.\n"
+            "  --recent-events N  Include the N most recent events (default: 8)."
+        ),
+    )
     status.add_argument(
         "--summary",
         type=Path,
@@ -263,7 +274,9 @@ def _project_config_path(args: argparse.Namespace, *, require_existing: bool) ->
     selected = discover_config_path(args.config)
     path = selected if selected is not None else default_config_path()
     if require_existing and not path.is_file():
-        raise ConfigError(f"Configuration file does not exist: {path}. Run `note-maker init` first.")
+        raise ConfigError(
+            f"Configuration file does not exist: {path}. Run `note-maker init` first."
+        )
     return path
 
 
@@ -406,14 +419,16 @@ def _profiles(args: argparse.Namespace) -> int:
             print("Configuration presets are separate and are selected with global --profile.")
         return 0
 
-    alias, snapshot_reference = resolve_session_reference(config_path, args.reference)
+    resolved_alias, snapshot_reference = resolve_session_reference(config_path, args.reference)
     try:
         snapshot = manager.load_snapshot(snapshot_reference)
     except snapshot_error as exc:
         raise ConfigError(str(exc)) from exc
-    payload = _snapshot_payload(snapshot, aliases=[alias] if alias is not None else [])
+    payload = _snapshot_payload(
+        snapshot, aliases=[resolved_alias] if resolved_alias is not None else []
+    )
     payload["requested_reference"] = args.reference
-    payload["resolved_from_alias"] = alias
+    payload["resolved_from_alias"] = resolved_alias
     _print(payload, as_json=args.json)
     return 0
 
@@ -460,7 +475,7 @@ def _doctor(args: argparse.Namespace) -> int:
     required_modules = {
         "selenium": ("selenium", "pyautogui", "pyperclip"),
         "patchright": ("patchright",),
-    }.get(provider, ())
+    }.get(provider or "", ())
     for module in required_modules:
         present = importlib.util.find_spec(module) is not None
         checks.append(
@@ -509,7 +524,9 @@ def _doctor(args: argparse.Namespace) -> int:
                 {
                     "name": "input",
                     "ok": source_ok,
-                    "detail": str(source) if source_ok else f"input directory unavailable: {source}",
+                    "detail": str(source)
+                    if source_ok
+                    else f"input directory unavailable: {source}",
                 }
             )
         else:

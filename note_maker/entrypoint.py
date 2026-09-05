@@ -94,7 +94,6 @@ def _status_details(args: argparse.Namespace, detail_args: argparse.Namespace) -
         time.sleep(args.interval)
 
 
-
 def _extract_selection(values: Sequence[str]) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
     cleaned: list[str] = []
     includes: list[str] = []
@@ -136,7 +135,7 @@ def _pdf_help_requested(values: Sequence[str]) -> bool:
 
 def _print_pdf_selection_help() -> None:
     print(
-        "\nPart 2B file selection:\n"
+        "\nFile selection:\n"
         "  --include GLOB   Include matching top-level filenames; may be repeated.\n"
         "  --exclude GLOB   Exclude matching top-level filenames; may be repeated.\n"
         "Patterns are case-sensitive on every platform. Includes are ORed, exclusions run after includes,\n"

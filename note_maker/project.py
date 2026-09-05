@@ -146,15 +146,15 @@ def _replace_or_append_session(text: str, *, alias: str, snapshot_id: str) -> st
     header = _SESSIONS_HEADER_RE.search(text)
     if header is None:
         prefix = text.rstrip()
-        return f"{prefix}\n\n[sessions]\n{assignment}\n" if prefix else f"[sessions]\n{assignment}\n"
+        return (
+            f"{prefix}\n\n[sessions]\n{assignment}\n" if prefix else f"[sessions]\n{assignment}\n"
+        )
 
     body_start = header.end()
     next_header = _TABLE_HEADER_RE.search(text, body_start)
     body_end = next_header.start() if next_header is not None else len(text)
     body = text[body_start:body_end]
-    assignment_re = re.compile(
-        rf"(?m)^\s*(?:{re.escape(alias)}|{re.escape(quoted_alias)})\s*=.*$"
-    )
+    assignment_re = re.compile(rf"(?m)^\s*(?:{re.escape(alias)}|{re.escape(quoted_alias)})\s*=.*$")
     if assignment_re.search(body):
         body = assignment_re.sub(assignment, body, count=1)
     else:
@@ -171,7 +171,9 @@ def set_session_alias(path: Path, alias: str, snapshot_id: str) -> None:
     if not snapshot_id:
         raise ConfigError("Snapshot identifier may not be empty.")
     if not path.is_file():
-        raise ConfigError(f"Configuration file does not exist: {path}. Run `note-maker init` first.")
+        raise ConfigError(
+            f"Configuration file does not exist: {path}. Run `note-maker init` first."
+        )
 
     current = path.read_text(encoding="utf-8")
     # Parse the existing file before and after the targeted section edit so a

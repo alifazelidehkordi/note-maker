@@ -133,6 +133,51 @@ The legacy launchers such as `run_pdf_to_notes.sh`, `run_pdf_batch.sh`, `run_md_
 
 ## Configuration and profiles
 
+Initialize reusable project settings and save a browser session:
+
+```bash
+note-maker init --input-dir inputs --output-dir outputs/notes \
+  --prompt prompts/prompt-rewrite-notes.md --format md --browser-provider patchright
+note-maker login --name default
+note-maker --json profiles list
+note-maker --json profiles inspect default
+```
+
+`--profile` selects a configuration preset under `[profiles.*]`.
+`--profile-snapshot default` resolves the browser alias under `[sessions]`.
+Session aliases contain snapshot identifiers, never cookies or credentials.
+
+## Execution preview and live status
+
+Preview the actual file and manifest plan without opening a browser or writing
+outputs, runtime directories, claims, or manifest entries:
+
+```bash
+note-maker run pdf --include '*.pdf' --exclude 'Appendix*' --dry-run
+note-maker run pdf --include '*.pdf' --exclude 'Appendix*' --profile-snapshot default
+```
+
+Patterns match top-level filenames, case-sensitively on all platforms. Repeated
+includes are combined, exclusions take precedence, and `--limit` applies last.
+An empty selection returns exit code 1. Invalid preview inputs return a usage
+error (exit code 2). `config pdf` remains available to inspect configuration
+without requiring source files.
+
+Read live status or the detailed event and worker-log summary:
+
+```bash
+note-maker status --watch
+note-maker --json status --details --recent-events 10
+note-maker --json status --details --snapshot logs/runs/RUN_ID/status.json
+note-maker --json status --summary logs/last_batch_summary.json
+```
+
+Detailed status reads the existing snapshots and JSONL logs without modifying
+them. `--run-dir PATH` selects a specific telemetry directory. The snapshot,
+event journal, and structured logs supplement the existing batch summary.
+
+### Configuration precedence
+
 Interactive and non-interactive execution share `note_maker.config.resolve_config`; there is no separate wizard configuration store.
 
 Configuration precedence remains:

@@ -59,6 +59,8 @@ It was built for dense university and medical material, but the workflow works w
 
 ## Project documentation
 
+- [CLI: interactive runs, projects, previews, and status](docs/CLI.md)
+- [Branch integration and validation report (فارسی)](docs/INTEGRATION_REPORT_FA.md)
 - [Unified configuration and CLI](docs/configuration.md)
 - [Implementation reports (فارسی)](docs/implementation-reports/README.md)
 - [Architecture decisions](docs/adr/README.md)
@@ -95,7 +97,13 @@ python -m pip install --no-deps -e .
 note-maker --version
 ```
 
-The existing `setup.sh` and `setup.cmd` scripts remain available for compatibility.
+The `setup.sh` and `setup.cmd` scripts also install the console command and prepare
+a browser. For the manual installation above, install Chromium before using the
+Patchright provider:
+
+```bash
+python -m patchright install chromium
+```
 
 ### 2. Initialize the project
 

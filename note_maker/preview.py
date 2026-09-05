@@ -65,7 +65,10 @@ def _optional_path(value: object, *, name: str) -> Path | None:
 def _read_prompt(path: Path) -> str:
     if not path.is_file():
         raise ConfigError(f"Prompt file does not exist: {path}")
-    prompt = path.read_text(encoding="utf-8").strip()
+    try:
+        prompt = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"Could not read UTF-8 prompt {path}: {exc}") from exc
     if not prompt:
         raise ConfigError(f"Prompt file is empty: {path}")
     return prompt
@@ -239,9 +242,9 @@ def build_markdown_preview(resolved: ResolvedConfig) -> dict[str, Any]:
 
     activate_legacy_imports()
     import batch_markdown  # type: ignore[import-not-found]
-    import manifest as manifest_store  # type: ignore[import-not-found]
-    from parallel_runtime.job_sources import build_section_candidates  # type: ignore[import-not-found]
-    from parallel_runtime.planner import plan_jobs  # type: ignore[import-not-found]
+    import manifest as manifest_store
+    from parallel_runtime.job_sources import build_section_candidates
+    from parallel_runtime.planner import plan_jobs
 
     values = resolved.values
     markdown_file = _path_value(values["markdown_file"], name="markdown_file")
@@ -251,8 +254,11 @@ def build_markdown_preview(resolved: ResolvedConfig) -> dict[str, Any]:
         raise ConfigError(f"Markdown source does not exist: {markdown_file}")
     prompt = _read_prompt(prompt_path)
 
-    all_sections = batch_markdown.split_markdown_sections(markdown_file)
-    section_filter = batch_markdown.parse_section_numbers(values.get("sections"))
+    try:
+        all_sections = batch_markdown.split_markdown_sections(markdown_file)
+        section_filter = batch_markdown.parse_section_numbers(values.get("sections"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ConfigError(f"Could not preview Markdown sections: {exc}") from exc
     limit_value = values.get("limit")
     limit = None if limit_value is None else int(limit_value)
     selected = batch_markdown.select_sections(all_sections, section_filter, limit)
@@ -306,7 +312,7 @@ def selected_pdf_collection(
     """Apply Part 2B selectors to the existing collector for one CLI run only."""
 
     activate_legacy_imports()
-    import batch_common  # type: ignore[import-not-found]
+    import batch_common
 
     includes = _patterns(include_patterns)
     excludes = _patterns(exclude_patterns)
