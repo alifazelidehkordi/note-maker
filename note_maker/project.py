@@ -136,7 +136,8 @@ def resolve_session_reference(path: Path, reference: str) -> tuple[str | None, s
 
 
 def _replace_or_append_session(text: str, *, alias: str, snapshot_id: str) -> str:
-    assignment = f"{alias} = {_toml_string(snapshot_id)}"
+    quoted_alias = _toml_string(alias)
+    assignment = f"{quoted_alias} = {_toml_string(snapshot_id)}"
     header = _SESSIONS_HEADER_RE.search(text)
     if header is None:
         prefix = text.rstrip()
@@ -146,7 +147,9 @@ def _replace_or_append_session(text: str, *, alias: str, snapshot_id: str) -> st
     next_header = _TABLE_HEADER_RE.search(text, body_start)
     body_end = next_header.start() if next_header is not None else len(text)
     body = text[body_start:body_end]
-    assignment_re = re.compile(rf"(?m)^\s*{re.escape(alias)}\s*=.*$")
+    assignment_re = re.compile(
+        rf"(?m)^\s*(?:{re.escape(alias)}|{re.escape(quoted_alias)})\s*=.*$"
+    )
     if assignment_re.search(body):
         body = assignment_re.sub(assignment, body, count=1)
     else:
