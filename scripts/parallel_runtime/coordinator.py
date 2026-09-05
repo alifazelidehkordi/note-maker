@@ -14,6 +14,7 @@ from manifest import ManifestCoordinator, ManifestStore
 
 from .claims import ClaimStore, JobClaim
 from .event_bus import EventKind, WorkerCommand, WorkerEvent
+from .event_journal import EventJournal
 from .models import ExecutionJob, RunConfig
 from .process_hygiene import cleanup_descendants, descendant_pids, process_tree_rss_mb
 from .resilience import GlobalRuntimeController
@@ -79,7 +80,7 @@ class _WorkerSlot:
 
 
 class ParallelCoordinator:
-    """Single-writer coordinator with global resilience and live status snapshots."""
+    """Single-writer coordinator with resilience, status, and event journaling."""
 
     def __init__(
         self,
@@ -90,6 +91,7 @@ class ParallelCoordinator:
         mp_context=None,
         event_logger: Callable[[str], None] | None = None,
         status_store: StatusSnapshotStore | None = None,
+        event_journal: EventJournal | None = None,
     ) -> None:
         self.config = config
         self.jobs = tuple(jobs)
@@ -131,11 +133,68 @@ class ParallelCoordinator:
         self._status_last_publish = 0.0
         self._status_publish_interval = max(0.25, min(1.0, config.heartbeat_interval / 4.0))
         self._status_error_logged = False
+        self._event_journal = event_journal or EventJournal(config.run_id)
+        self._journal_error_logged = False
         self.result.stale_claims_recovered = len(self.claims.recover_stale())
 
     def _log(self, message: str) -> None:
         if self.event_logger is not None:
             self.event_logger(message)
+
+    def _journal_coordinator(
+        self,
+        kind: str,
+        *,
+        worker_id: str | None = None,
+        runtime_worker_id: str | None = None,
+        generation: int | None = None,
+        job_key: str | None = None,
+        attempt: int | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        try:
+            self._event_journal.append_coordinator_event(
+                kind,
+                worker_id=worker_id,
+                runtime_worker_id=runtime_worker_id,
+                generation=generation,
+                job_key=job_key,
+                attempt=attempt,
+                payload=payload,
+            )
+            self._journal_error_logged = False
+        except (AttributeError, OSError, TypeError, ValueError) as exc:
+            if not self._journal_error_logged:
+                self._log(f"Event journal update failed: {type(exc).__name__}: {exc}")
+                self._journal_error_logged = True
+
+    def _journal_worker_event(
+        self,
+        event: WorkerEvent,
+        *,
+        slot: _WorkerSlot | object | None,
+        disposition: str,
+    ) -> None:
+        attempt = event.payload.get("attempt")
+        if attempt is None and slot is not None:
+            attempt = getattr(slot, "current_attempt", None)
+        try:
+            resolved_attempt = None if attempt is None else int(attempt)
+        except (TypeError, ValueError):
+            resolved_attempt = None
+        generation = None if slot is None else getattr(slot, "generation", None)
+        try:
+            self._event_journal.append_worker_event(
+                event,
+                generation=None if generation is None else int(generation),
+                attempt=resolved_attempt,
+                disposition=disposition,
+            )
+            self._journal_error_logged = False
+        except (AttributeError, OSError, TypeError, ValueError) as exc:
+            if not self._journal_error_logged:
+                self._log(f"Event journal update failed: {type(exc).__name__}: {exc}")
+                self._journal_error_logged = True
 
     @staticmethod
     def _close_queue(queue) -> None:
@@ -217,6 +276,7 @@ class ParallelCoordinator:
             runnable=int(run.get("runnable_jobs", len(self.jobs)) or 0),
         )
         control = self.control.snapshot()
+        journal_path = getattr(self._event_journal, "path", None)
         return {
             "mode": run.get("mode"),
             "state": state,
@@ -225,6 +285,7 @@ class ParallelCoordinator:
             "browser_provider": run.get("browser_provider") or self.config.executor_config.get("browser_provider"),
             "requested_workers": self.config.worker_count,
             "active_worker_limit": control.active_limit,
+            "event_journal": str(journal_path) if journal_path is not None else None,
             "counters": counters,
             "workers": [
                 self._worker_status_payload(slot)
@@ -333,6 +394,13 @@ class ParallelCoordinator:
                 status="starting",
                 runtime_worker_id=runtime_worker_id,
             )
+        self._journal_coordinator(
+            "worker_spawned",
+            worker_id=worker_id,
+            runtime_worker_id=runtime_worker_id,
+            generation=generation,
+            payload={"pid": int(process.pid or 0), "restart_count": restarts},
+        )
         self._publish_status(force=True)
         return slot
 
@@ -380,6 +448,13 @@ class ParallelCoordinator:
             if self._job_completed_elsewhere(job):
                 self.result.externally_completed.append(job.key)
                 self._blocked_since.pop(job.key, None)
+                self._journal_coordinator(
+                    "job_completed_elsewhere",
+                    worker_id=slot.worker_id,
+                    runtime_worker_id=self._runtime_worker_id(slot),
+                    generation=slot.generation,
+                    job_key=job.key,
+                )
                 self._publish_status(force=True)
                 continue
             claim = self.claims.try_acquire(
@@ -391,7 +466,16 @@ class ParallelCoordinator:
             if claim is None:
                 first_blocked = self._blocked_since.setdefault(job.key, time.monotonic())
                 if time.monotonic() - first_blocked > self.config.external_claim_wait:
-                    self.result.failed[job.key] = "Timed out waiting for an external job claim."
+                    message = "Timed out waiting for an external job claim."
+                    self.result.failed[job.key] = message
+                    self._journal_coordinator(
+                        "job_claim_timeout",
+                        worker_id=slot.worker_id,
+                        runtime_worker_id=self._runtime_worker_id(slot),
+                        generation=slot.generation,
+                        job_key=job.key,
+                        payload={"error": message},
+                    )
                     self._publish_status(force=True)
                     continue
                 self.pending.append(job)
@@ -400,6 +484,14 @@ class ParallelCoordinator:
             if self._job_completed_elsewhere(job):
                 self.claims.release(claim)
                 self.result.externally_completed.append(job.key)
+                self._journal_coordinator(
+                    "job_completed_elsewhere",
+                    worker_id=slot.worker_id,
+                    runtime_worker_id=self._runtime_worker_id(slot),
+                    generation=slot.generation,
+                    job_key=job.key,
+                    payload={"after_claim": True},
+                )
                 self._publish_status(force=True)
                 continue
             slot.current_job = job
@@ -417,6 +509,14 @@ class ParallelCoordinator:
                     status="busy",
                     current_job=job.key,
                 )
+            self._journal_coordinator(
+                "job_assigned",
+                worker_id=slot.worker_id,
+                runtime_worker_id=self._runtime_worker_id(slot),
+                generation=slot.generation,
+                job_key=job.key,
+                payload={"claim_id": claim.token},
+            )
             self._publish_status(force=True)
             return True
         return False
@@ -520,9 +620,20 @@ class ParallelCoordinator:
     def _handle_event(self, event: WorkerEvent) -> None:
         slot = self.slots.get(event.worker_id)
         if slot is None:
+            self._journal_worker_event(
+                event,
+                slot=None,
+                disposition="ignored_unknown_worker",
+            )
             return
         if event.runtime_worker_id is not None and event.runtime_worker_id != self._runtime_worker_id(slot):
+            self._journal_worker_event(
+                event,
+                slot=slot,
+                disposition="ignored_stale_generation",
+            )
             return
+        self._journal_worker_event(event, slot=slot, disposition="accepted")
         now = time.monotonic()
         if event.kind in {
             EventKind.WORKER_READY,
@@ -621,8 +732,18 @@ class ParallelCoordinator:
             pass
 
     def _handle_lost_worker(self, slot: _WorkerSlot, reason: str) -> None:
+        runtime_worker_id = self._runtime_worker_id(slot)
+        generation = slot.generation
         self._stop_process(slot, graceful=False)
         job = self._release_current(slot)
+        self._journal_coordinator(
+            "worker_lost",
+            worker_id=slot.worker_id,
+            runtime_worker_id=runtime_worker_id,
+            generation=generation,
+            job_key=job.key if job is not None else None,
+            payload={"reason": reason},
+        )
         if job is not None:
             self.manifest.mark_interrupted(job, run_id=self.config.run_id, reason=reason)
             self.pending.appendleft(job)
@@ -668,12 +789,21 @@ class ParallelCoordinator:
         if slot.current_job is not None or self._shutting_down:
             return
         worker_id = slot.worker_id
+        runtime_worker_id = self._runtime_worker_id(slot)
+        old_generation = slot.generation
         generation = slot.generation + 1
         restarts = slot.restarts
         reason = slot.recycle_reason or "worker recycling requested"
         self._stop_process(slot, graceful=True, grace=min(2.0, self.config.shutdown_grace))
         self.slots.pop(worker_id, None)
         self.result.worker_recycles += 1
+        self._journal_coordinator(
+            "worker_recycled",
+            worker_id=worker_id,
+            runtime_worker_id=runtime_worker_id,
+            generation=old_generation,
+            payload={"reason": reason, "next_generation": generation},
+        )
         if hasattr(self.manifest, "mark_worker_state"):
             self.manifest.mark_worker_state(
                 self.config.run_id,
@@ -743,6 +873,10 @@ class ParallelCoordinator:
         if reason is None or self._circuit_applied:
             return
         self._circuit_applied = True
+        self._journal_coordinator(
+            "circuit_breaker_opened",
+            payload={"reason": reason, "pending_jobs": len(self.pending)},
+        )
         for job in list(self.pending):
             self.manifest.mark_failed(job, run_id=self.config.run_id, error=reason)
             self.result.failed[job.key] = reason
@@ -803,6 +937,10 @@ class ParallelCoordinator:
 
     def _shutdown(self, *, interrupted: bool = False) -> None:
         self._shutting_down = True
+        self._journal_coordinator(
+            "shutdown_started",
+            payload={"interrupted": interrupted, "workers": len(self.slots)},
+        )
         for slot in list(self.slots.values()):
             if interrupted and slot.current_job is not None:
                 self.manifest.mark_interrupted(
@@ -833,6 +971,10 @@ class ParallelCoordinator:
         self.claims.release_run(self.config.run_id)
         self._cleanup_runtime_profiles(success=not interrupted and not self.result.failed)
         self._close_queue(self.event_queue)
+        self._journal_coordinator(
+            "shutdown_completed",
+            payload={"interrupted": interrupted, "failed_jobs": len(self.result.failed)},
+        )
 
     def _finalize_control_metrics(self) -> None:
         snapshot = self.control.snapshot()
@@ -850,8 +992,20 @@ class ParallelCoordinator:
     def run(self) -> CoordinatorResult:
         self._started_at = time.monotonic()
         self._started_at_utc = utc_now()
+        self._journal_coordinator(
+            "run_started",
+            payload={
+                "planned_jobs": len(self.jobs),
+                "requested_workers": self.config.worker_count,
+                "stale_claims_recovered": self.result.stale_claims_recovered,
+            },
+        )
         if not self.jobs:
             self._publish_status(force=True, state="completed")
+            self._journal_coordinator(
+                "run_finished",
+                payload={"state": "completed", "duration_seconds": 0.0},
+            )
             return self.result
         interrupted = False
         previous_sigterm = None
@@ -882,6 +1036,10 @@ class ParallelCoordinator:
                         self.manifest.mark_failed(job, run_id=self.config.run_id, error=reason)
                         self.result.failed[job.key] = reason
                     self.pending.clear()
+                    self._journal_coordinator(
+                        "run_no_workers_available",
+                        payload={"reason": reason, "failed_jobs": len(self.result.failed)},
+                    )
                     self._publish_status(force=True)
                     break
         except KeyboardInterrupt:
@@ -899,4 +1057,16 @@ class ParallelCoordinator:
                 else ("completed_with_failures" if self.result.failed else "completed")
             )
             self._publish_status(force=True, state=final_state)
+            self._journal_coordinator(
+                "run_finished",
+                payload={
+                    "state": final_state,
+                    "duration_seconds": self.result.duration_seconds,
+                    "succeeded": len(self.result.succeeded),
+                    "failed": len(self.result.failed),
+                    "externally_completed": len(self.result.externally_completed),
+                    "worker_restarts": self.result.worker_restarts,
+                    "worker_recycles": self.result.worker_recycles,
+                },
+            )
         return self.result
