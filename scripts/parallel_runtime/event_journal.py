@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ _SENSITIVE_KEYS = {
     "access_key",
     "refresh_token",
     "session_token",
+    "claim_id",
     "credential",
     "credentials",
 }
@@ -60,8 +62,10 @@ def _sanitize(value: object, *, key: object | None = None, depth: int = 0) -> ob
         return _REDACTED
     if depth >= _MAX_DEPTH:
         return _bounded_text(value)
-    if value is None or isinstance(value, (bool, int, float)):
+    if value is None or isinstance(value, (bool, int)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else _bounded_text(value)
     if isinstance(value, str):
         stripped = value.lstrip()
         if stripped.lower().startswith("bearer "):
@@ -82,6 +86,8 @@ def _sanitize(value: object, *, key: object | None = None, depth: int = 0) -> ob
         return result
     if isinstance(value, (list, tuple, set, frozenset)):
         items = list(value)
+        if isinstance(value, (set, frozenset)):
+            items.sort(key=repr)
         result = [
             _sanitize(item, depth=depth + 1)
             for item in items[:_MAX_COLLECTION_ITEMS]
@@ -230,9 +236,12 @@ class EventJournal:
                 "run_id": self.run_id,
                 **dict(record),
             }
+            sanitized = _sanitize(payload)
+            if not isinstance(sanitized, dict):
+                raise TypeError("Sanitized event journal record must remain an object.")
             encoded = (
                 json.dumps(
-                    _sanitize(payload),
+                    sanitized,
                     ensure_ascii=False,
                     sort_keys=True,
                     separators=(",", ":"),
@@ -254,7 +263,7 @@ class EventJournal:
             except OSError:
                 pass
             self._next_sequence += 1
-            return payload
+            return sanitized
 
     def append_worker_event(
         self,
@@ -274,9 +283,8 @@ class EventJournal:
         resolved_attempt = attempt
         if resolved_attempt is None:
             resolved_attempt = _optional_int(raw_payload.get("attempt"))
-        resolved_generation = generation
-        if resolved_generation is None:
-            resolved_generation = _runtime_generation(event.worker_id, event.runtime_worker_id)
+        event_generation = _runtime_generation(event.worker_id, event.runtime_worker_id)
+        resolved_generation = event_generation if event_generation is not None else generation
         record: dict[str, object] = {
             "source": "worker",
             "kind": event.kind.value,
@@ -290,6 +298,8 @@ class EventJournal:
             "observed_at": utc_now(),
             "payload": raw_payload,
         }
+        if generation is not None and event_generation is not None and generation != event_generation:
+            record["coordinator_generation"] = generation
         if event.job_key is not None and event.job_key != correlated_job_key:
             record["event_job_key"] = event.job_key
         return self._append(record)
