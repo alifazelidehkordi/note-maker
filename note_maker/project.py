@@ -32,6 +32,15 @@ def default_config_path(*, cwd: Path | None = None) -> Path:
     return ((cwd or Path.cwd()) / DEFAULT_CONFIG_FILENAME).expanduser().resolve()
 
 
+def validate_session_alias(alias: str) -> str:
+    alias = str(alias).strip()
+    if not SESSION_ALIAS_RE.fullmatch(alias):
+        raise ConfigError(
+            f"Session alias {alias!r} must use only letters, numbers, '.', '_' or '-'."
+        )
+    return alias
+
+
 def _toml_string(value: str) -> str:
     # JSON basic strings use the same quoting/escaping forms needed here and
     # avoid introducing a second TOML writer dependency for this small file.
@@ -113,11 +122,7 @@ def _session_aliases(document: Any, *, path: Path) -> dict[str, str]:
         raise ConfigError("sessions must be a TOML table.")
     aliases: dict[str, str] = {}
     for alias, snapshot in raw.items():
-        name = str(alias)
-        if not SESSION_ALIAS_RE.fullmatch(name):
-            raise ConfigError(
-                f"Session alias {name!r} must use only letters, numbers, '.', '_' or '-'."
-            )
+        name = validate_session_alias(str(alias))
         if not isinstance(snapshot, str) or not snapshot.strip():
             raise ConfigError(f"sessions.{name} must be a non-empty snapshot identifier string.")
         aliases[name] = snapshot.strip()
@@ -161,10 +166,7 @@ def _replace_or_append_session(text: str, *, alias: str, snapshot_id: str) -> st
 
 def set_session_alias(path: Path, alias: str, snapshot_id: str) -> None:
     path = Path(path).expanduser().resolve()
-    if not SESSION_ALIAS_RE.fullmatch(alias):
-        raise ConfigError(
-            f"Session alias {alias!r} must use only letters, numbers, '.', '_' or '-'."
-        )
+    alias = validate_session_alias(alias)
     snapshot_id = snapshot_id.strip()
     if not snapshot_id:
         raise ConfigError("Snapshot identifier may not be empty.")
