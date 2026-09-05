@@ -10,22 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
-import batch_common
-from browser_runtime import BrowserLaunchOptions
 from parallel_runtime.event_bus import (
     EventKind,
     StageKind,
     StagePhase,
     WorkerEvent,
 )
-from parallel_runtime.executors import MarkdownJobExecutor, PdfJobExecutor
-from parallel_runtime.models import ExecutionJob
 from parallel_runtime.stages import StageReporter
-from tests.fakes.fake_browser_provider import (
-    FakeBrowserPlan,
-    FakeBrowserProvider,
-    FakeBrowserSession,
-)
 
 
 VALID_MARKDOWN = """# Generated Note
@@ -47,30 +38,36 @@ class FakeClock:
         self.value += seconds
 
 
-class SlowFakeBrowserSession(FakeBrowserSession):
-    def __init__(self, plan: FakeBrowserPlan, clock: FakeClock) -> None:
-        super().__init__(plan)
-        self.clock = clock
+def make_slow_fake_provider(plan, clock: FakeClock):
+    """Import browser fakes only when an integration test actually needs them."""
+    from browser_runtime import BrowserLaunchOptions
+    from tests.fakes.fake_browser_provider import FakeBrowserProvider, FakeBrowserSession
 
-    def _record(self, operation: str, **payload) -> None:
-        self.clock.advance()
-        super()._record(operation, **payload)
+    class SlowFakeBrowserSession(FakeBrowserSession):
+        def __init__(self, session_plan, session_clock: FakeClock) -> None:
+            super().__init__(session_plan)
+            self.clock = session_clock
 
+        def _record(self, operation: str, **payload) -> None:
+            self.clock.advance()
+            super()._record(operation, **payload)
 
-class SlowFakeBrowserProvider(FakeBrowserProvider):
-    def __init__(self, plan: FakeBrowserPlan, clock: FakeClock) -> None:
-        super().__init__(plan)
-        self.clock = clock
+    class SlowFakeBrowserProvider(FakeBrowserProvider):
+        def __init__(self, provider_plan, provider_clock: FakeClock) -> None:
+            super().__init__(provider_plan)
+            self.clock = provider_clock
 
-    def open_session(self, options: BrowserLaunchOptions | None = None) -> SlowFakeBrowserSession:
-        options = options or BrowserLaunchOptions()
-        self.open_options.append(options)
-        session = SlowFakeBrowserSession(self.plan, self.clock)
-        self.sessions.append(session)
-        session.set_window_size(options.width, options.height)
-        if options.url:
-            session.navigate(options.url)
-        return session
+        def open_session(self, options=None):
+            options = options or BrowserLaunchOptions()
+            self.open_options.append(options)
+            session = SlowFakeBrowserSession(self.plan, self.clock)
+            self.sessions.append(session)
+            session.set_window_size(options.width, options.height)
+            if options.url:
+                session.navigate(options.url)
+            return session
+
+    return SlowFakeBrowserProvider(plan, clock)
 
 
 class StageEventModelTests(unittest.TestCase):
@@ -203,6 +200,11 @@ class StageExecutorIntegrationTests(unittest.TestCase):
         self.assertTrue(any(float(payload["elapsed_seconds"]) > 0 for payload in completed))
 
     def test_slow_fake_provider_exposes_every_pdf_stage(self):
+        import batch_common
+        from parallel_runtime.executors import PdfJobExecutor
+        from parallel_runtime.models import ExecutionJob
+        from tests.fakes.fake_browser_provider import FakeBrowserPlan
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "source.pdf"
@@ -213,7 +215,7 @@ class StageExecutorIntegrationTests(unittest.TestCase):
             candidate.write_text(VALID_MARKDOWN, encoding="utf-8")
             output_dir = root / "output"
             clock = FakeClock()
-            provider = SlowFakeBrowserProvider(FakeBrowserPlan(download_path=candidate), clock)
+            provider = make_slow_fake_provider(FakeBrowserPlan(download_path=candidate), clock)
             events: list[tuple[EventKind, dict[str, object]]] = []
             executor = PdfJobExecutor(
                 config=self._executor_config(output_dir),
@@ -259,6 +261,11 @@ class StageExecutorIntegrationTests(unittest.TestCase):
             self._assert_complete_stage_sequence(events, source_filename="source.pdf")
 
     def test_markdown_executor_uses_same_stage_foundation(self):
+        import batch_common
+        from parallel_runtime.executors import MarkdownJobExecutor
+        from parallel_runtime.models import ExecutionJob
+        from tests.fakes.fake_browser_provider import FakeBrowserPlan
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "lecture.md"
@@ -271,7 +278,7 @@ class StageExecutorIntegrationTests(unittest.TestCase):
             candidate.write_text(VALID_MARKDOWN, encoding="utf-8")
             output_dir = root / "output"
             clock = FakeClock()
-            provider = SlowFakeBrowserProvider(FakeBrowserPlan(download_path=candidate), clock)
+            provider = make_slow_fake_provider(FakeBrowserPlan(download_path=candidate), clock)
             events: list[tuple[EventKind, dict[str, object]]] = []
             executor = MarkdownJobExecutor(
                 config=self._executor_config(output_dir),
