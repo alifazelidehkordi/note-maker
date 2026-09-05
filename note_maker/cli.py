@@ -6,6 +6,7 @@ import json
 import platform
 import shutil
 import sys
+import time
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -124,8 +125,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict", action="store_true", help="Treat missing optional browsers as errors."
     )
 
-    status = commands.add_parser("status", help="Show the latest batch summary.")
-    status.add_argument("--summary", type=Path, default=Path("logs/last_batch_summary.json"))
+    status = commands.add_parser("status", help="Show or watch live batch status.")
+    status.add_argument(
+        "--summary",
+        type=Path,
+        default=None,
+        help="Read a completed batch summary instead of the live status snapshot.",
+    )
+    status.add_argument(
+        "--snapshot",
+        type=Path,
+        default=Path("logs/last_status.json"),
+        help="Live status snapshot path (default: logs/last_status.json).",
+    )
+    status.add_argument("--watch", action="store_true", help="Refresh until the run is terminal.")
+    status.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        metavar="SECONDS",
+        help="Polling interval for --watch (default: 1.0).",
+    )
 
     validate = commands.add_parser(
         "validate", help="Validate generated Markdown or OPML artifacts."
@@ -244,31 +264,96 @@ def _doctor(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _read_summary(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Batch summary must contain a JSON object: {path}")
+    return payload
+
+
 def _status(args: argparse.Namespace) -> int:
-    path = args.summary.expanduser().resolve()
-    if not path.is_file():
-        print(f"No batch summary found at {path}.", file=sys.stderr)
+    if args.interval <= 0:
+        print("--interval must be positive.", file=sys.stderr)
+        return 2
+
+    if args.summary is not None:
+        path = args.summary.expanduser().resolve()
+        if not path.is_file():
+            print(f"No batch summary found at {path}.", file=sys.stderr)
+            return 1
+        try:
+            payload = _read_summary(path)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(f"Could not read batch summary {path}: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print(payload, as_json=True)
+        else:
+            fields = (
+                "mode",
+                "run_id",
+                "successes",
+                "failures",
+                "output_dir",
+                "browser_provider",
+                "parallel_runs",
+                "interrupted",
+            )
+            _print({key: payload.get(key) for key in fields if key in payload}, as_json=False)
+        return 0
+
+    snapshot_path = args.snapshot.expanduser().resolve()
+    if not snapshot_path.is_file():
+        fallback = Path("logs/last_batch_summary.json").expanduser().resolve()
+        if not args.watch and fallback.is_file():
+            try:
+                payload = _read_summary(fallback)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                print(f"Could not read batch summary {fallback}: {exc}", file=sys.stderr)
+                return 1
+            if args.json:
+                _print(payload, as_json=True)
+            else:
+                fields = (
+                    "mode",
+                    "run_id",
+                    "successes",
+                    "failures",
+                    "output_dir",
+                    "browser_provider",
+                    "parallel_runs",
+                    "interrupted",
+                )
+                _print({key: payload.get(key) for key in fields if key in payload}, as_json=False)
+            return 0
+        print(f"No live status snapshot found at {snapshot_path}.", file=sys.stderr)
         return 1
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"Could not read batch summary {path}: {exc}", file=sys.stderr)
-        return 1
-    if args.json:
-        _print(payload, as_json=True)
-    else:
-        fields = (
-            "mode",
-            "run_id",
-            "successes",
-            "failures",
-            "output_dir",
-            "browser_provider",
-            "parallel_runs",
-            "interrupted",
-        )
-        _print({key: payload.get(key) for key in fields if key in payload}, as_json=False)
-    return 0
+
+    activate_legacy_imports()
+    from parallel_runtime.status import (  # type: ignore[import-not-found]
+        format_status_snapshot,
+        is_terminal_snapshot,
+        read_status_snapshot,
+    )
+
+    while True:
+        try:
+            payload = read_status_snapshot(snapshot_path)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(f"Could not read live status {snapshot_path}: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            if args.watch:
+                print(json.dumps(payload, sort_keys=True, ensure_ascii=False), flush=True)
+            else:
+                _print(payload, as_json=True)
+        else:
+            if args.watch and sys.stdout.isatty():
+                print("\x1b[2J\x1b[H", end="")
+            print(format_status_snapshot(payload), flush=True)
+        if not args.watch or is_terminal_snapshot(payload):
+            return 0
+        time.sleep(args.interval)
 
 
 def _validate(args: argparse.Namespace) -> int:
