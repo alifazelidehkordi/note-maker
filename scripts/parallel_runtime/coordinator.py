@@ -138,8 +138,9 @@ class ParallelCoordinator:
         self.result.stale_claims_recovered = len(self.claims.recover_stale())
 
     def _log(self, message: str) -> None:
-        if self.event_logger is not None:
-            self.event_logger(message)
+        logger = getattr(self, "event_logger", None)
+        if logger is not None:
+            logger(message)
 
     def _journal_coordinator(
         self,
@@ -152,8 +153,11 @@ class ParallelCoordinator:
         attempt: int | None = None,
         payload: dict[str, object] | None = None,
     ) -> None:
+        journal = getattr(self, "_event_journal", None)
+        if journal is None:
+            return
         try:
-            self._event_journal.append_coordinator_event(
+            journal.append_coordinator_event(
                 kind,
                 worker_id=worker_id,
                 runtime_worker_id=runtime_worker_id,
@@ -164,7 +168,7 @@ class ParallelCoordinator:
             )
             self._journal_error_logged = False
         except (AttributeError, OSError, TypeError, ValueError) as exc:
-            if not self._journal_error_logged:
+            if not getattr(self, "_journal_error_logged", False):
                 self._log(f"Event journal update failed: {type(exc).__name__}: {exc}")
                 self._journal_error_logged = True
 
@@ -175,6 +179,9 @@ class ParallelCoordinator:
         slot: _WorkerSlot | object | None,
         disposition: str,
     ) -> None:
+        journal = getattr(self, "_event_journal", None)
+        if journal is None:
+            return
         attempt = event.payload.get("attempt")
         if attempt is None and slot is not None:
             attempt = getattr(slot, "current_attempt", None)
@@ -184,7 +191,7 @@ class ParallelCoordinator:
             resolved_attempt = None
         generation = None if slot is None else getattr(slot, "generation", None)
         try:
-            self._event_journal.append_worker_event(
+            journal.append_worker_event(
                 event,
                 generation=None if generation is None else int(generation),
                 attempt=resolved_attempt,
@@ -192,7 +199,7 @@ class ParallelCoordinator:
             )
             self._journal_error_logged = False
         except (AttributeError, OSError, TypeError, ValueError) as exc:
-            if not self._journal_error_logged:
+            if not getattr(self, "_journal_error_logged", False):
                 self._log(f"Event journal update failed: {type(exc).__name__}: {exc}")
                 self._journal_error_logged = True
 
@@ -276,7 +283,8 @@ class ParallelCoordinator:
             runnable=int(run.get("runnable_jobs", len(self.jobs)) or 0),
         )
         control = self.control.snapshot()
-        journal_path = getattr(self._event_journal, "path", None)
+        journal = getattr(self, "_event_journal", None)
+        journal_path = getattr(journal, "path", None)
         return {
             "mode": run.get("mode"),
             "state": state,
@@ -515,7 +523,7 @@ class ParallelCoordinator:
                 runtime_worker_id=self._runtime_worker_id(slot),
                 generation=slot.generation,
                 job_key=job.key,
-                payload={"claim_id": claim.token},
+                payload={"claim_acquired": True},
             )
             self._publish_status(force=True)
             return True
