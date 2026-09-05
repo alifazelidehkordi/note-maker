@@ -59,6 +59,9 @@ It was built for dense university and medical material, but the workflow works w
 
 ## Project documentation
 
+- [CLI: interactive runs, projects, previews, and status](docs/CLI.md)
+- [Branch integration and validation report (فارسی)](docs/INTEGRATION_REPORT_FA.md)
+- [Unified configuration and CLI](docs/configuration.md)
 - [Implementation reports (فارسی)](docs/implementation-reports/README.md)
 - [Architecture decisions](docs/adr/README.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
@@ -82,51 +85,64 @@ It was built for dense university and medical material, but the workflow works w
 
 ## Quick start
 
+The supported entry point for new generation workflows is the installed `note-maker` command on Python 3.10 or newer. Existing shell/CMD launchers remain compatibility entry points.
+
 ### 1. Install
 
 ```bash
 git clone https://github.com/alifazelidehkordi/note-maker.git
 cd note-maker
-chmod +x setup.sh run_*.sh
-./setup.sh
+python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
+note-maker --version
 ```
 
-On Windows, run:
-
-```bat
-setup.cmd
-```
-
-### 2. Create a reusable ChatGPT login snapshot
-
-Log in once using a dedicated browser profile, then close the browser before creating the snapshot.
+The `setup.sh` and `setup.cmd` scripts also install the console command and prepare
+a browser. For the manual installation above, install Chromium before using the
+Patchright provider:
 
 ```bash
-./run_login.sh --profile chrome_profile_login --snapshot-name default
+python -m patchright install chromium
 ```
 
-Windows:
-
-```bat
-run_login.cmd --profile chrome_profile_login --snapshot-name default
-```
-
-The snapshot is copied into isolated profiles for each run or worker. The original login profile is not shared directly.
-
-### 3. Rewrite a batch
-
-Place source files in `inputs/`, then run:
+### 2. Initialize the project
 
 ```bash
-./run_pdf_to_notes.sh \
+note-maker init \
+  --input-dir inputs \
+  --output-dir outputs/notes \
+  --prompt prompts/prompt-rewrite-notes.md \
+  --format md \
   --browser-provider patchright \
-  --profile-snapshot default \
-  --overwrite
+  --workers 1
 ```
 
-Generated Markdown files are written to `outputs/notes/`.
+This creates `note-maker.toml`; later runs reuse those saved paths and runtime settings.
 
-### 4. Build PDFs and a combined book
+### 3. Create a reusable ChatGPT browser session
+
+```bash
+note-maker login --name default
+note-maker profiles inspect default
+```
+
+`login` uses a dedicated browser profile, waits for that browser to close, then records only a human alias to the immutable snapshot ID in project configuration. The original login profile is not shared directly with workers, and credentials/cookies are never written to `note-maker.toml`.
+
+Cookie markers are local authentication evidence only; they do not prove that a server session is currently valid.
+
+### 4. Rewrite a batch
+
+Place source files in the configured input directory, then run:
+
+```bash
+note-maker run pdf --profile-snapshot default --overwrite
+```
+
+Generated Markdown files are written to the configured output directory. The existing `--profile-snapshot` option accepts the human session alias and resolves it to the immutable snapshot internally.
+
+### 5. Build PDFs and a combined book
+
+PDF/book export still uses the existing compatibility tools:
 
 ```bash
 NOTES_DIR=outputs/notes \
@@ -142,10 +158,10 @@ Combined books use one continuous visible page-number sequence across the genera
 
 | Requirement | Notes |
 |---|---|
-| Python 3.10+ | Runs the automation and document-processing scripts |
+| Python 3.10+ | Supported Python environment for the `note-maker` CLI and processing tools |
 | Google Chrome or Chromium | Required for ChatGPT web automation |
 | ChatGPT account | Required for authenticated browser sessions |
-| Linux or Windows | Shell and CMD launchers are included |
+| Linux or Windows | Supported runtime platforms; legacy shell/CMD launchers remain available |
 | WeasyPrint system libraries | Needed only for PDF export |
 
 Python packages are installed from `requirements.txt`, including Selenium, Patchright, WeasyPrint, pypdf, Markdown, PyYAML, PyAutoGUI, and clipboard helpers.
@@ -166,15 +182,17 @@ Package names may vary by distribution.
 
 | Input or goal | Command | Result |
 |---|---|---|
-| PDFs or DOCX files in `inputs/` | `./run_pdf_to_notes.sh --overwrite` | Structured Markdown notes |
-| One Markdown file split by `##` headings | `MARKDOWN_FILE=lecture.md ./run_md_to_notes.sh` | One note per section |
+| PDFs or DOCX files in a configured input directory | `note-maker run pdf --profile-snapshot NAME` | Structured Markdown/OPML notes |
+| One Markdown file split by `##` headings | `note-maker run markdown --markdown-file lecture.md --profile-snapshot NAME` | One note per section |
+| Configure reusable project settings | `note-maker init ...` | `note-maker.toml` |
+| Create/inspect a reusable browser session | `note-maker login --name NAME`; `note-maker profiles inspect NAME` | Immutable snapshot alias |
 | Existing notes | `./run_notes_to_pdf.sh` | Individual study PDFs |
 | Notes plus original page metadata | Set `ORIGINAL_PARTS_DIR` | Enriched frontmatter |
 | Rich study index | Add `GENERATE_RICH_INDEX=1` | `STUDY_INDEX-rewritten.md` |
-| Complete pipeline | Enable PDF, enrichment, index, and combined output flags | Notes → index → PDFs → book |
+| Complete legacy pipeline | Enable PDF, enrichment, index, and combined output flags | Notes → index → PDFs → book |
 | OPML/XMind mind maps | `./run_pdf_to_xmind.sh` | OPML and XMind files |
 
-### Full pipeline example
+### Full compatibility-pipeline example
 
 ```bash
 ORIGINAL_PARTS_DIR=/path/to/original-parts \
@@ -219,13 +237,12 @@ The automation expects a **downloadable artifact link**, not only text displayed
 Recommended first run:
 
 ```bash
-./run_pdf_to_notes.sh \
-  --browser-provider patchright \
+note-maker run pdf \
   --profile-snapshot default \
   --parallel-runs 1
 ```
 
-After confirming that login, uploads, downloads, and validation work reliably, increase the worker count gradually.
+The browser provider and default worker count can be saved by `note-maker init`, so they do not need to be repeated on every run. After confirming that login, uploads, downloads, and validation work reliably, increase the worker count gradually.
 
 Each worker receives isolated runtime directories for its browser profile, downloads, logs, and diagnostics under:
 
@@ -248,13 +265,12 @@ The coordinator provides:
 Example:
 
 ```bash
-./run_pdf_to_notes.sh \
-  --browser-provider patchright \
+note-maker run pdf \
   --profile-snapshot default \
   --parallel-runs 4 \
   --global-rate-limit-cooldown 180 \
   --adaptive-concurrency \
-  --worker-max-jobs 20 \
+  --set worker_max_jobs=20 \
   --network-retries 4 \
   --browser-retries 3 \
   --download-retries 2 \
@@ -407,13 +423,15 @@ note-maker/
 ├── inputs/                  # Source PDFs and DOCX files
 ├── outputs/                 # Generated notes, PDFs, and books
 ├── prompts/                 # ChatGPT prompt templates
+├── note_maker/              # Supported Python package and unified CLI
 ├── scripts/                 # Indexing, enrichment, PDF, and acceptance tools
-├── setup.sh / setup.cmd     # Environment setup
-├── run_login.*              # Login and snapshot creation
-├── run_pdf_to_notes.*       # PDF/DOCX batch workflow
-├── run_md_to_notes.*        # Markdown-section workflow
+├── setup.sh / setup.cmd     # Compatibility environment setup
+├── run_login.*              # Compatibility login/snapshot entry points
+├── run_pdf_to_notes.*       # Compatibility PDF/DOCX batch entry points
+├── run_md_to_notes.*        # Compatibility Markdown-section entry points
 ├── run_notes_to_pdf.*       # PDF export workflow
 ├── run_pdf_to_xmind.*       # Legacy mind-map workflow
+├── note-maker.example.toml  # Project configuration example
 ├── requirements.txt         # Python dependencies
 └── package.json             # Test and acceptance command aliases
 ```
@@ -421,6 +439,7 @@ note-maker/
 ## Safety and privacy
 
 - Do not commit browser profiles, cookies, login snapshots, credentials, or personal documents.
+- Project configuration may contain session aliases/snapshot references, never credentials or cookie material.
 - Review generated notes before relying on them for study, clinical, legal, or professional decisions.
 - Use conservative parallelism to reduce account challenges and rate-limit pressure.
 - Keep sensitive source material local and verify what is uploaded to ChatGPT.
@@ -428,7 +447,7 @@ note-maker/
 ## Troubleshooting
 
 **The browser opens but is logged out**  
-Create a fresh snapshot and ensure the reference browser is fully closed before snapshot creation.
+Run `note-maker login --name NAME` to create a fresh immutable snapshot alias. Cookie markers are evidence only; a server-side session can expire independently.
 
 **ChatGPT responds with text instead of a file**  
 Update the prompt so it explicitly requests a downloadable Markdown artifact.

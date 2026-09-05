@@ -24,6 +24,12 @@ prompt = "prompts/prompt-mind-map.md"
 output_ext = "md"
 resume = true
 
+# Browser session aliases are references to immutable snapshots created by
+# `note-maker login --name NAME`. Never place credentials or cookies here.
+[sessions]
+# anatomy = "anatomy-20260905T120000Z-a1b2c3d4"
+
+# These are configuration presets, selected with global `--profile`.
 [profiles.conservative.runtime]
 browser_provider = "patchright"
 parallel_runs = 1

@@ -182,6 +182,16 @@ def _table(value: Any, *, label: str) -> Mapping[str, Any]:
     return value
 
 
+def _session_aliases(document: Mapping[str, Any]) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for raw_name, raw_snapshot in _table(document.get("sessions"), label="sessions").items():
+        name = str(raw_name)
+        if not isinstance(raw_snapshot, str) or not raw_snapshot.strip():
+            raise ConfigError(f"sessions.{name} must be a non-empty snapshot identifier string.")
+        aliases[name] = raw_snapshot.strip()
+    return aliases
+
+
 def load_config_file(path: Path) -> Mapping[str, Any]:
     try:
         with path.open("rb") as handle:
@@ -358,10 +368,12 @@ def resolve_config(
     values: dict[str, Any] = asdict(runtime_flags.RuntimeSettings())
     values.update(COMMAND_DEFAULTS[command])
     base_dir = cwd
+    session_aliases: dict[str, str] = {}
 
     if selected_path is not None:
         document = load_config_file(selected_path)
         base_dir = selected_path.parent
+        session_aliases = _session_aliases(document)
         _deep_merge(values, _table(document.get("runtime"), label="runtime"))
         commands = _table(document.get("commands"), label="commands")
         _deep_merge(values, _table(commands.get(command), label=f"commands.{command}"))
@@ -396,6 +408,10 @@ def resolve_config(
             values,
             {key: value for key, value in cli_overrides.items() if value is not None},
         )
+
+    snapshot_reference = values.get("profile_snapshot")
+    if isinstance(snapshot_reference, str) and snapshot_reference in session_aliases:
+        values["profile_snapshot"] = session_aliases[snapshot_reference]
 
     _validate_command_values(values)
     _validate_runtime_value_types(values)

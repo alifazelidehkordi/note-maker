@@ -68,6 +68,13 @@ class LoginBootstrapper:
         process = subprocess.Popen(command)
         if wait:
             process.wait()
+            activity = self.profile_manager.wait_for_profile_release(
+                profile_dir,
+                attempts=30,
+                delay_seconds=0.2,
+            )
+            if activity.active:
+                self.profile_manager.assert_profile_inactive(profile_dir)
         return process
 
     def create_snapshot(

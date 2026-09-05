@@ -2,6 +2,34 @@
 
 All notable changes to Note Maker are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Integrated conservative profile ownership and scoped cleanup, stage events,
+  live status snapshots, persistent event journals, structured worker logs,
+  and detailed run summaries.
+- Integrated project initialization, browser session aliases, provider-aware
+  diagnostics, read-only execution previews, filename selection, and the
+  interactive CLI. Setup scripts now install the console entry point.
+
+### Fixed
+
+- Combined competing console entry points so detailed status and execution
+  previews coexist with interactive and legacy workflows.
+- Fixed strict typing and formatting errors in the integrated CLI modules.
+- Invalid Markdown section selectors and unreadable/non-UTF-8 preview inputs
+  now produce usage errors instead of uncaught exceptions.
+- Documented Chromium installation for the manual Patchright setup path.
+
+### Maintenance
+
+- Merged the reviewed checkout, setup-python, and upload-artifact v7 updates.
+- Preserved the existing single-file PDF converter and combined-book pipeline;
+  did not replace them with obsolete branch implementations.
+- See [integration report](docs/INTEGRATION_REPORT_FA.md) for branch decisions,
+  conflict resolutions, validation, and environment limitations.
+
 ## [0.8.2] — 2026-07-29
 
 ### Fixed

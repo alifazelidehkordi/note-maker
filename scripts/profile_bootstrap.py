@@ -88,8 +88,10 @@ def main() -> int:
                     "auth_markers": list(evidence.markers),
                     "auth_reason": evidence.reason,
                     "active": activity.active,
+                    "ownership_state": activity.ownership_state.value,
                     "active_markers": list(activity.active_markers),
                     "stale_markers": list(activity.stale_markers),
+                    "uncertain_markers": list(activity.uncertain_markers),
                 },
                 indent=2,
             )
@@ -143,8 +145,10 @@ def main() -> int:
         return 0
 
     if args.command == "cleanup-run":
-        deleted = manager.cleanup_run(args.run_id, success=args.success)
-        print(f"deleted={str(deleted).lower()}")
+        outcome = manager.cleanup_run(args.run_id, success=args.success)
+        print(f"deleted={str(outcome).lower()}")
+        print(f"status={outcome.status.value}")
+        print(f"reason={outcome.reason}")
         return 0
 
     raise AssertionError(args.command)

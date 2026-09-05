@@ -12,6 +12,7 @@ fi
 
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip
 "${VENV_DIR}/bin/python" -m pip install -r requirements.txt
+"${VENV_DIR}/bin/python" -m pip install --no-deps -e .
 if [[ "${SKIP_PATCHRIGHT_BROWSER_INSTALL:-0}" != "1" ]]; then
   if command -v google-chrome-stable >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
     echo "System Chrome/Chromium detected; skipping Patchright browser download."
@@ -21,6 +22,7 @@ if [[ "${SKIP_PATCHRIGHT_BROWSER_INSTALL:-0}" != "1" ]]; then
 fi
 
 echo "Setup complete."
+echo "  Interactive CLI: ${VENV_DIR}/bin/note-maker interactive"
 echo "  PDF -> XMind : ./run_pdf_to_xmind.sh"
 echo "  MD  -> XMind : ./run_md_to_xmind.sh"
 echo "  OPML only    : ./run_opml_to_xmind.sh"
