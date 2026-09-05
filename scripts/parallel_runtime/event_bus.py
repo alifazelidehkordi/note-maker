@@ -20,6 +20,7 @@ class EventKind(str, Enum):
     JOB_REQUESTED = "job_requested"
     JOB_STARTED = "job_started"
     ATTEMPT_STARTED = "attempt_started"
+    STAGE = "stage"
     RETRY_SCHEDULED = "retry_scheduled"
     GLOBAL_COOLDOWN_REQUESTED = "global_cooldown_requested"
     AUTH_FAILURE = "auth_failure"
@@ -29,6 +30,50 @@ class EventKind(str, Enum):
     DIAGNOSTIC_SAVED = "diagnostic_saved"
     WORKER_STOPPED = "worker_stopped"
     WORKER_FATAL = "worker_fatal"
+
+
+class StageKind(str, Enum):
+    PREPARING_BROWSER = "preparing_browser"
+    WAITING_FOR_LOGIN = "waiting_for_login"
+    UPLOADING = "uploading"
+    WAITING_FOR_RESPONSE = "waiting_for_response"
+    RESOLVING_DOWNLOAD = "resolving_download"
+    VALIDATING = "validating"
+    SAVING = "saving"
+    COMPLETED = "completed"
+
+
+class StagePhase(str, Enum):
+    STARTED = "started"
+    COMPLETED = "completed"
+
+
+@dataclass(frozen=True)
+class StageEventData:
+    """Structured stage payload carried by the existing worker event stream."""
+
+    run_id: str
+    worker_id: str
+    source_filename: str
+    stage: StageKind
+    phase: StagePhase
+    stage_started_at: str
+    elapsed_seconds: float
+    last_activity_at: str
+    attempt: int | None = None
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "worker_id": self.worker_id,
+            "source_filename": self.source_filename,
+            "attempt": self.attempt,
+            "stage": self.stage.value,
+            "phase": self.phase.value,
+            "stage_started_at": self.stage_started_at,
+            "elapsed_seconds": self.elapsed_seconds,
+            "last_activity_at": self.last_activity_at,
+        }
 
 
 @dataclass(frozen=True)

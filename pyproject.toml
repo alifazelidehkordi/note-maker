@@ -48,7 +48,7 @@ dev = [
 ]
 
 [project.scripts]
-note-maker = "note_maker.cli:main"
+note-maker = "note_maker.entrypoint:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
