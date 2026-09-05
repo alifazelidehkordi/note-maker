@@ -339,7 +339,7 @@ anatomy = "anatomy-immutable-123"
             self.assertIn("live server session not verified", checks["session"]["detail"])
 
     def test_help_distinguishes_configuration_presets_from_browser_sessions(self):
-        help_text = build_parser().format_help()
+        help_text = " ".join(build_parser().format_help().split())
         self.assertIn("not a browser session", help_text)
         self.assertIn("profiles", help_text)
         self.assertIn("login", help_text)
