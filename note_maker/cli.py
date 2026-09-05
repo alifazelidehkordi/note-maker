@@ -158,12 +158,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Open dedicated Chromium and save a reusable browser session alias.",
     )
     login.add_argument("--name", default="default", help="Stable human name for the new session.")
-    login.add_argument(
-        "--profile-dir",
-        type=Path,
-        default=None,
-        help="Dedicated login profile directory; defaults inside the project login-profile root.",
-    )
 
     profiles = commands.add_parser(
         "profiles",
@@ -304,13 +298,7 @@ def _login(args: argparse.Namespace) -> int:
     name = validate_session_alias(args.name)
     project_root = config_path.parent
     manager, bootstrap_type, _ = _profile_services(project_root)
-    if args.profile_dir is None:
-        profile_dir = project_root / "chrome_profile_login" / name
-    else:
-        profile_dir = args.profile_dir.expanduser()
-        if not profile_dir.is_absolute():
-            profile_dir = project_root / profile_dir
-        profile_dir = profile_dir.resolve()
+    profile_dir = (project_root / "chrome_profile_login" / name).resolve()
 
     print(
         "A dedicated Chromium window will open. Complete ChatGPT login, then close that browser. "
