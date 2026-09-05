@@ -249,7 +249,7 @@ class ParallelCoordinator:
             self._status_store.publish(self._status_payload(state=state))
             self._status_last_publish = now
             self._status_error_logged = False
-        except (OSError, ValueError, TypeError) as exc:
+        except (AttributeError, OSError, ValueError, TypeError) as exc:
             if not self._status_error_logged:
                 self._log(f"Status snapshot update failed: {type(exc).__name__}: {exc}")
                 self._status_error_logged = True
