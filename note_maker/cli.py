@@ -7,6 +7,9 @@ import os
 import platform
 import shutil
 import sys
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 import time
 from importlib import metadata
 from pathlib import Path
@@ -23,6 +26,7 @@ from .project import (
     validate_session_alias,
     write_project_config,
 )
+from .interactive import InteractiveCancelled, build_interactive_plan
 
 
 def _version() -> str:
@@ -70,15 +74,9 @@ def _add_runtime_shortcuts(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Immutable snapshot ID/path or a browser session alias from [sessions].",
     )
+    parser.add_argument("--keep-runtime", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
-        "--keep-runtime",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-    )
-    parser.add_argument(
-        "--adaptive-concurrency",
-        action=argparse.BooleanOptionalAction,
-        default=None,
+        "--adaptive-concurrency", action=argparse.BooleanOptionalAction, default=None
     )
     parser.add_argument("--global-rate-limit-cooldown", type=float, default=None)
     parser.add_argument("--network-retries", type=int, default=None)
@@ -217,6 +215,16 @@ def build_parser() -> argparse.ArgumentParser:
     config.add_argument("target", choices=("pdf", "markdown"), default="pdf", nargs="?")
     config.add_argument("--markdown-file", type=Path, default=None)
     _add_runtime_shortcuts(config)
+
+    interactive = commands.add_parser(
+        "interactive",
+        help="Guide input, workflow, prompt, output, and runtime selection interactively.",
+    )
+    interactive.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Review the interactive configuration without running the browser pipeline.",
+    )
 
     run = commands.add_parser("run", help="Run a configured batch.")
     run_commands = run.add_subparsers(dest="run_command", required=True)
@@ -771,52 +779,140 @@ _RUN_KEYS = (
 )
 
 
-def _run(args: argparse.Namespace) -> int:
-    overrides = _namespace_overrides(args, _RUN_KEYS)
-    resolved = resolve_config(
-        args.run_command,
-        config_path=args.config,
-        profile=args.profile,
-        cli_overrides=overrides,
-    )
-    if args.dry_run:
-        _print(resolved.as_dict(), as_json=True)
-        return 0
+def _validate_output_target(path: Path) -> None:
+    if path.exists() and not path.is_dir():
+        raise ConfigError(f"output_dir exists and is not a directory: {path}")
+    ancestor = path
+    while not ancestor.exists() and ancestor != ancestor.parent:
+        ancestor = ancestor.parent
+    if ancestor.exists() and not ancestor.is_dir():
+        raise ConfigError(f"output_dir parent is not a directory: {ancestor}")
+
+
+def _validate_resolved_run(
+    resolved: ResolvedConfig,
+    *,
+    input_files: Sequence[Path] | None = None,
+) -> None:
+    values = resolved.values
+    prompt = values.get("prompt")
+    output_dir = values.get("output_dir")
+    if not isinstance(prompt, Path) or not prompt.is_file():
+        raise ConfigError(f"Prompt file does not exist: {prompt}")
+    try:
+        if not prompt.read_text(encoding="utf-8").strip():
+            raise ConfigError(f"Prompt file is empty: {prompt}")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"Could not read UTF-8 prompt {prompt}: {exc}") from exc
+    if not isinstance(output_dir, Path):
+        raise ConfigError("output_dir must resolve to a filesystem path.")
+    _validate_output_target(output_dir)
+    if values.get("keep_browser") and resolved.runtime.parallel_runs > 1:
+        raise ConfigError("--keep-browser is only compatible with --parallel-runs 1.")
+
+    if resolved.command == "pdf":
+        input_dir = values.get("input_dir")
+        if not isinstance(input_dir, Path) or not input_dir.is_dir():
+            raise ConfigError(f"Input directory does not exist: {input_dir}")
+        activate_legacy_imports()
+        import batch_common  # type: ignore[import-not-found]
+
+        discovered = batch_common.collect_input_files(input_dir)
+        files = list(input_files) if input_files is not None else discovered
+        if input_files is not None:
+            allowed = set(discovered)
+            for path in files:
+                if path.resolve() not in allowed:
+                    raise ConfigError(
+                        f"Input file is missing, unsupported, or excluded by batch rules: {path}"
+                    )
+        if not files:
+            raise ConfigError(f"No supported PDF, DOCX, or MD files found in {input_dir}.")
+        return
+
+    markdown_file = values.get("markdown_file")
+    if not isinstance(markdown_file, Path) or not markdown_file.is_file():
+        raise ConfigError(f"Markdown file does not exist: {markdown_file}")
+
+
+@contextmanager
+def _selected_input_directory(
+    input_dir: Path, input_files: Sequence[Path] | None
+) -> Iterator[Path]:
+    if input_files is None:
+        yield input_dir
+        return
 
     activate_legacy_imports()
+    import batch_common
+
+    selected = [path.resolve() for path in input_files]
+    if selected == batch_common.collect_input_files(input_dir):
+        yield input_dir
+        return
+
+    try:
+        temporary = tempfile.TemporaryDirectory(prefix=".note-maker-selection-", dir=input_dir)
+    except OSError:
+        temporary = tempfile.TemporaryDirectory(prefix=".note-maker-selection-")
+    with temporary as stage_name:
+        stage = Path(stage_name)
+        for source in selected:
+            target = stage / source.name
+            try:
+                os.link(source, target)
+            except OSError:
+                shutil.copy2(source, target)
+        yield stage
+
+
+def _execute_resolved(
+    resolved: ResolvedConfig,
+    *,
+    input_files: Sequence[Path] | None = None,
+) -> int:
+    _validate_resolved_run(resolved, input_files=input_files)
+    activate_legacy_imports()
     values = resolved.values
-    if args.run_command == "pdf":
+    if resolved.command == "pdf":
         import batch_pdf  # type: ignore[import-not-found]
 
-        return batch_pdf.run_batch(  # type: ignore[no-any-return]
-            input_dir=values["input_dir"],
-            output_dir=values["output_dir"],
-            prompt_path=values["prompt"],
-            overwrite=bool(values["overwrite"]),
-            limit=values["limit"],
-            model=values["model"],
-            save_diagnostics=bool(values["save_diagnostics"]),
-            save_page_source=bool(values["save_page_source"]),
-            max_attempts=int(values["max_attempts"]),
-            download_timeout=int(values["download_timeout"]),
-            close_delay=int(values["close_delay"]),
-            skip_warmup=bool(values["no_warm_up"]),
-            keep_browser=bool(values["keep_browser"]),
-            output_ext=str(values["output_ext"]),
-            manifest_path=values["manifest"],
-            resume=bool(values["resume"]),
-            retry_failed=bool(values["retry_failed"]),
-            adopt_existing=bool(values["adopt_existing"]),
-            runtime_settings=resolved.runtime,
-        )
+        input_dir = values["input_dir"]
+        assert isinstance(input_dir, Path)
+        with _selected_input_directory(input_dir, input_files) as execution_input_dir:
+            return batch_pdf.run_batch(  # type: ignore[no-any-return]
+                input_dir=execution_input_dir,
+                output_dir=values["output_dir"],
+                prompt_path=values["prompt"],
+                overwrite=bool(values["overwrite"]),
+                limit=values["limit"],
+                model=values["model"],
+                save_diagnostics=bool(values["save_diagnostics"]),
+                save_page_source=bool(values["save_page_source"]),
+                max_attempts=int(values["max_attempts"]),
+                download_timeout=int(values["download_timeout"]),
+                close_delay=int(values["close_delay"]),
+                skip_warmup=bool(values["no_warm_up"]),
+                keep_browser=bool(values["keep_browser"]),
+                output_ext=str(values["output_ext"]),
+                manifest_path=values["manifest"],
+                resume=bool(values["resume"]),
+                retry_failed=bool(values["retry_failed"]),
+                adopt_existing=bool(values["adopt_existing"]),
+                runtime_settings=resolved.runtime,
+            )
 
     import batch_markdown  # type: ignore[import-not-found]
 
+    try:
+        sections_filter = batch_markdown.parse_section_numbers(values["sections"])
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     return batch_markdown.run_batch(  # type: ignore[no-any-return]
         markdown_file=values["markdown_file"],
         output_dir=values["output_dir"],
         prompt_path=values["prompt"],
-        sections_filter=batch_markdown.parse_section_numbers(values["sections"]),
+        sections_filter=sections_filter,
         overwrite=bool(values["overwrite"]),
         limit=values["limit"],
         model=values["model"],
@@ -837,6 +933,39 @@ def _run(args: argparse.Namespace) -> int:
     )
 
 
+def _run(args: argparse.Namespace) -> int:
+    overrides = _namespace_overrides(args, _RUN_KEYS)
+    resolved = resolve_config(
+        args.run_command,
+        config_path=args.config,
+        profile=args.profile,
+        cli_overrides=overrides,
+    )
+    if args.dry_run:
+        _print(resolved.as_dict(), as_json=True)
+        return 0
+    return _execute_resolved(resolved)
+
+
+def _interactive(args: argparse.Namespace) -> int:
+    try:
+        plan = build_interactive_plan(config_path=args.config, profile=args.profile)
+    except InteractiveCancelled:
+        print("Cancelled.")
+        return 130
+
+    if args.dry_run:
+        return 0
+    print("Starting Note Maker...")
+    code = _execute_resolved(plan.resolved, input_files=plan.input_files)
+    output_dir = plan.resolved.values.get("output_dir")
+    if code == 0:
+        print(f"Completed successfully. Outputs: {output_dir}")
+    else:
+        print(f"Run finished with exit code {code}. Outputs: {output_dir}", file=sys.stderr)
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -855,11 +984,14 @@ def main(argv: list[str] | None = None) -> int:
             return _validate(args)
         if args.command == "config":
             return _config(args)
+        if args.command == "interactive":
+            return _interactive(args)
         if args.command == "run":
             return _run(args)
     except ConfigError as exc:
         parser.error(str(exc))
     except KeyboardInterrupt:
+        print("Cancelled.", file=sys.stderr)
         return 130
     return 1
 
