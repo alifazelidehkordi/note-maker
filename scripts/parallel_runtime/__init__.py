@@ -27,6 +27,11 @@ from .resilience import (
     RetryTracker,
     classify_failure,
 )
+from .structured_logs import install_structured_logging
+
+
+install_structured_logging()
+
 
 __all__ = [
     "ExecutionJob",
