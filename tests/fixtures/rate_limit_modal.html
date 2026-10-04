@@ -1,0 +1,19 @@
+<!--
+Fixture: rate-limit modal, sanitized.
+
+Provenance:
+  captured: 2026-10
+  source:   real ChatGPT session markup (sanitized)
+  notes:    The historical-conversation rate-limit modal. _dismiss_rate_limit_modal
+            targets #modal-conversation-history-rate-limit; state detection uses
+            RATE_LIMIT_PHRASES from the selector registry.
+-->
+<html>
+  <body>
+    <div id="modal-conversation-history-rate-limit" role="dialog" aria-modal="true">
+      <h2>You've reached our limit</h2>
+      <p>Messages per conversation reached the limit. Try again later or start a new chat.</p>
+      <button id="modal-close-btn" aria-label="Close"></button>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+<!--
+Fixture: assistant message containers (new + legacy + nested), sanitized.
+
+Provenance:
+  captured: 2026-10
+  source:   real ChatGPT temporary-chat session markup (sanitized)
+  notes:    All conversation text replaced with neutral placeholders. The DOM
+            structure (attribute names, nesting) is preserved as rendered.
+            - legacy container: [data-message-author-role='assistant']
+            - new container:    [data-markdown-text-style='assistant-message']
+            - message 3 is a new-style container nested inside a legacy
+              container (double-count hazard the :not() clause must exclude).
+-->
+<html>
+  <body>
+    <main>
+      <div class="conversation">
+
+        <!-- 1) legacy container only -->
+        <article data-message-author-role="assistant" data-message-id="m1">
+          <div class="markdown">LEGACY-ONE</div>
+        </article>
+
+        <!-- 2) new container only (current UI) -->
+        <div class="response" data-message-id="m2">
+          <div data-markdown-text-style="assistant-message">NEW-ONE</div>
+        </div>
+
+        <!-- 3) new container nested INSIDE a legacy container -->
+        <article data-message-author-role="assistant" data-message-id="m3">
+          <div data-markdown-text-style="assistant-message">NESTED-INSIDE-LEGACY</div>
+        </article>
+
+        <!-- 4) user message (must never match) -->
+        <article data-message-author-role="user" data-message-id="m4">
+          <div class="markdown">USER-TURN</div>
+        </article>
+
+      </div>
+    </main>
+  </body>
+</html>

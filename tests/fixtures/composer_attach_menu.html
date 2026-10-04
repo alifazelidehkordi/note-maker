@@ -1,0 +1,30 @@
+<!--
+Fixture: redesigned two-step attach menu (composer), sanitized.
+
+Provenance:
+  captured: 2026-10
+  source:   real ChatGPT composer markup (sanitized)
+  notes:    The redesigned composer exposes image-only <input type="file">
+            elements up front; the document input is created only AFTER the
+            user picks a menu item such as "Upload from computer" or
+            "Add photos & files". Setting files on the image-only inputs
+            produces the "This file type isn't supported" error.
+-->
+<html>
+  <body>
+    <div id="composer">
+      <button data-testid="composer-plus-btn" aria-label="Add files and more"></button>
+
+      <!-- image-only inputs present before menu selection -->
+      <input type="file" accept="image/*" multiple data-photo-upload-enabled="true" data-testid="image-input" />
+
+      <div role="menu" id="attach-menu" hidden>
+        <div role="menuitem" tabindex="0">Upload from computer</div>
+        <div role="menuitem" tabindex="0">Connect to Google Drive</div>
+      </div>
+
+      <!-- document input only exists after "Upload from computer" is chosen -->
+      <input type="file" id="doc-input" accept=".pdf,.md,.txt,.docx" hidden />
+    </div>
+  </body>
+</html>

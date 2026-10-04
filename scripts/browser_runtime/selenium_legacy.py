@@ -20,6 +20,8 @@ from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from .selectors import ASSISTANT_MESSAGE_SELECTOR
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROMPT = ROOT / "prompts" / "prompt-mind-map.md"
@@ -436,7 +438,7 @@ def assistant_message_count(driver: webdriver.Edge) -> int:
     return len(
         [
             el
-            for el in driver.find_elements(By.CSS_SELECTOR, "[data-message-author-role='assistant']")
+            for el in driver.find_elements(By.CSS_SELECTOR, ASSISTANT_MESSAGE_SELECTOR)
             if el.is_displayed()
         ]
     )
@@ -1124,7 +1126,7 @@ def click_new_download_link(
     # Attachment cards and buttons in the latest assistant response have highest
     # priority. Older responses are deliberately ignored to avoid stale artifacts.
     try:
-        assistants = driver.find_elements(By.CSS_SELECTOR, "[data-message-author-role='assistant']")
+        assistants = driver.find_elements(By.CSS_SELECTOR, ASSISTANT_MESSAGE_SELECTOR)
         if assistants:
             latest = assistants[-1]
             elements = latest.find_elements(
@@ -1258,7 +1260,7 @@ def resolve_download(
 
 def latest_assistant_text(driver: webdriver.Edge) -> str:
     selectors = [
-        "[data-message-author-role='assistant']",
+        ASSISTANT_MESSAGE_SELECTOR,
         "article",
         "main .markdown",
     ]

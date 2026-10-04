@@ -32,6 +32,8 @@ ATTACH_BUTTON_SELECTORS = (
     "button[data-testid='composer-plus-btn']",
     "button[aria-label*='Attach']",
     "button[aria-label*='Upload']",
+    "button[aria-label*='Add files']",
+    "button[aria-label*='Add photos']",
     "button[aria-label*='پیوست']",
 )
 
@@ -42,7 +44,24 @@ MODEL_BUTTON_SELECTORS = (
 )
 
 FILE_INPUT_SELECTOR = "input[type='file']"
-ASSISTANT_MESSAGE_SELECTOR = "[data-message-author-role='assistant']"
+# Union of the legacy assistant container and the current markdown-text-style
+# container. The :not() clause excludes new-style containers nested INSIDE a
+# legacy container so a single message is never counted twice. Both branches
+# live in one CSS selector string; find_elements(By.CSS_SELECTOR, ...) and
+# Playwright locators accept the union unchanged.
+ASSISTANT_MESSAGE_SELECTOR = (
+    "[data-message-author-role='assistant'], "
+    "[data-markdown-text-style='assistant-message']:not("
+    "[data-message-author-role='assistant'] [data-markdown-text-style='assistant-message'])"
+)
+# Composer menu items exposed by the redesigned two-step attach flow. The
+# document input only appears after one of these is selected.
+ATTACH_MENU_LABEL_PATTERNS = (
+    r"Upload from computer",
+    r"Add photos\s*(?:&|and)\s*files",
+    r"Add files",
+    r"Upload file",
+)
 DOWNLOAD_CANDIDATE_SELECTOR = "a[href], button, [role='link'], [role='button']"
 RATE_LIMIT_MODAL_SELECTOR = "#modal-conversation-history-rate-limit"
 UPLOAD_PROGRESS_SELECTORS = (
