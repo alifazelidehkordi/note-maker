@@ -81,6 +81,16 @@ RATE_LIMIT_WAIT_SECONDS = int(os.environ.get("RATE_LIMIT_WAIT_SECONDS", "180"))
 # Cooldown used when a rate-limit modal survives the bounded re-check during a
 # response wait or blocks a download (see _await_response / download paths).
 RATE_LIMIT_RECHECK_RETRY_SECONDS = RATE_LIMIT_WAIT_SECONDS
+# Verify-and-set ChatGPT "thinking effort" before every submission (plan item 4).
+# Fail closed: a batch silently generated at Medium when High was required is
+# worse than an abort. ArrowRight steps per current level over the 3-level slider.
+CHATGPT_REQUIRED_EFFORT = os.environ.get("CHATGPT_REQUIRED_EFFORT", "").strip().lower()
+EFFORT_SLIDER_STEPS = {"low": 2, "medium": 1, "high": 0}
+# Inline Markdown source delivery (plan item 5): bypass the upload path by
+# appending the full source text to the prompt. The prompt hash is computed on
+# the ORIGINAL prompt only, so toggling inline mode never invalidates resume.
+INLINE_MARKDOWN_ENABLED = os.environ.get("NOTE_MAKER_INLINE_MARKDOWN", "0") == "1"
+INLINE_MARKDOWN_MAX_CHARS = int(os.environ.get("NOTE_MAKER_INLINE_MAX_CHARS", "50000"))
 
 
 def _load_patchright():
@@ -297,6 +307,8 @@ class PatchrightBrowserSession:
         self._last_send_assistant_count: int | None = None
         self._last_send_completed = False
         self._last_send_started_at: float | None = None
+        self._inline_source_text = ""
+        self._delivery_mode = "upload"
         self._bind_page(page)
 
     def _bind_page(self, page: Any) -> None:
@@ -562,6 +574,8 @@ class PatchrightBrowserSession:
             self._last_send_assistant_count = None
             self._last_send_completed = False
             self._last_send_started_at = None
+            self._inline_source_text = ""
+            self._delivery_mode = "upload"
             self._set_state(SessionState.READY)
         except BrowserRuntimeError:
             raise
@@ -618,6 +632,36 @@ class PatchrightBrowserSession:
     def upload(self, request: UploadRequest) -> None:
         if not request.file_path.exists():
             raise BrowserUploadError(f"Upload source does not exist: {request.file_path}")
+        self._inline_source_text = ""
+        if (
+            INLINE_MARKDOWN_ENABLED
+            and request.file_path.suffix.lower() == ".md"
+            and INLINE_MARKDOWN_MAX_CHARS > 0
+        ):
+            source = request.file_path.read_text(encoding="utf-8")
+            if not source.strip():
+                raise BrowserUploadError(f"Source Markdown is empty: {request.file_path.name}")
+            if len(source) > INLINE_MARKDOWN_MAX_CHARS:
+                # Too large for a single message; fall back to the upload path.
+                _log(
+                    "Source delivery: inline skipped, "
+                    f"{request.file_path.name} exceeds NOTE_MAKER_INLINE_MAX_CHARS "
+                    f"({len(source)} > {INLINE_MARKDOWN_MAX_CHARS}); uploading instead."
+                )
+            else:
+                self._inline_source_text = (
+                    f"\n\n--- BEGIN SOURCE DOCUMENT: {request.file_path.name} ---\n"
+                    + source
+                    + "\n--- END SOURCE DOCUMENT ---"
+                )
+                self._delivery_mode = "inline"
+                _log(
+                    "Source delivery: inline Markdown, "
+                    f"{request.file_path.name}, {len(source)} characters (complete)."
+                )
+                self._set_state(SessionState.READY)
+                return
+        self._delivery_mode = "upload"
         self._set_state(SessionState.UPLOADING)
         try:
             def compatible_file_input():
@@ -720,11 +764,46 @@ class PatchrightBrowserSession:
             pass
         self._page.keyboard.insert_text(text)
 
+    def _verify_required_effort(self) -> None:
+        """Verify (and if needed set) the required thinking effort before a
+        submission. Fails closed on any mismatch after the adjustment attempt.
+
+        The ArrowRight step count is computed from the reported current level
+        via EFFORT_SLIDER_STEPS (low: 2, medium: 1, high: 0); an unknown level
+        still attempts the slider and relies on the post-condition check.
+        """
+        if not CHATGPT_REQUIRED_EFFORT:
+            return
+        control = self._page.locator("button[data-selected-reasoning-effort]").first
+        actual = str(control.get_attribute("data-selected-reasoning-effort") or "").lower()
+        if actual != CHATGPT_REQUIRED_EFFORT:
+            control.click()
+            slider = self._page.locator("[data-reasoning-slider]").first
+            if slider.count() and _locator_visible(slider):
+                steps = EFFORT_SLIDER_STEPS.get(actual, EFFORT_SLIDER_STEPS["high"])
+                for _ in range(max(steps, 1)):
+                    slider.press("ArrowRight")
+                try:
+                    self._page.keyboard.press("Escape")
+                except Exception:
+                    pass
+            actual = str(control.get_attribute("data-selected-reasoning-effort") or "").lower()
+        if actual != CHATGPT_REQUIRED_EFFORT:
+            raise BrowserConfigurationError(
+                f"Thinking effort must be {CHATGPT_REQUIRED_EFFORT!r}; "
+                f"composer reports {actual!r}. Submission blocked to avoid "
+                "generating at the wrong effort."
+            )
+        _log(f"Verified thinking effort before submission: {actual}")
+
     def send_message(self, text: str) -> None:
+        self._verify_required_effort()
         normalized = text.strip()
         if not normalized:
             raise BrowserSendError("Cannot send an empty prompt.")
         self._set_state(SessionState.SENDING)
+        # Prompt hash MUST be computed on the original prompt, before any
+        # inline source is appended (manifest/resume dedupe keys on it).
         prompt_hash = self._prompt_hash(normalized)
         before_count = self.assistant_message_count()
 
@@ -749,9 +828,10 @@ class PatchrightBrowserSession:
                 self._dismiss_rate_limit_modal()
                 _log("Rate-limit modal acknowledged; continuing send without cooldown.")
             editor = self._find_editor(timeout=self._options.action_timeout)
+            outgoing = normalized + getattr(self, "_inline_source_text", "")
             current = self._editor_text(editor)
-            if current != normalized:
-                self._fill_editor(editor, normalized)
+            if current != outgoing:
+                self._fill_editor(editor, outgoing)
             self._last_send_hash = prompt_hash
             self._last_send_assistant_count = before_count
             self._last_send_completed = False

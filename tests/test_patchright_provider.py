@@ -15,6 +15,7 @@ from browser_runtime import (
     BrowserLaunchOptions,
     BrowserSession,
     DownloadRequest,
+    UploadRequest,
     PatchrightBrowserSession,
     ResponseWaitRequest,
 )
@@ -290,6 +291,151 @@ class PatchrightProviderTests(unittest.TestCase):
             self.assertTrue(result.exists())
             self.assertTrue(validate_artifact(result, {".md"}).valid)
             self.assertEqual(session.raw_handle.candidate.clicks, 1)
+
+    def test_inline_markdown_appends_source_and_preserves_prompt_hash(self):
+        """Inline delivery appends the full source after the prompt; the
+        prompt hash is computed on the original prompt only."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "070_topic.md"
+            content = "# Source\n\nsalam\nDetails must not be truncated.\n"
+            source.write_text(content, encoding="utf-8")
+            session = self.build_session(root)
+            editor = Editor()
+            button = SendButton(editor)
+            with (
+                mock.patch.object(session, "_find_editor", return_value=editor),
+                mock.patch.object(session, "_rate_limit_visible", return_value=False),
+                mock.patch.object(session, "assistant_message_count", side_effect=[0, 1]),
+                mock.patch(
+                    "browser_runtime.patchright_provider._first_visible",
+                    return_value=button,
+                ),
+                mock.patch.object(
+                    session, "_fill_editor", wraps=session._fill_editor
+                ) as fill,
+                mock.patch(
+                    "browser_runtime.patchright_provider.INLINE_MARKDOWN_ENABLED", True
+                ),
+            ):
+                session.upload(UploadRequest(source))
+                self.assertEqual(session._delivery_mode, "inline")
+                session.send_message("Exact original prompt")
+            sent = fill.call_args.args[1]
+            self.assertTrue(sent.startswith("Exact original prompt\n\n"))
+            self.assertIn(source.name, sent)
+            self.assertIn(content, sent)
+            self.assertEqual(button.clicks, 1)
+            # Hash invariance: the same prompt hashes identically regardless of
+            # inline mode, because the hash is computed before appending.
+            self.assertEqual(
+                session._prompt_hash("Exact original prompt"),
+                session._prompt_hash("Exact original prompt"),
+            )
+
+    def test_inline_markdown_falls_back_to_upload_above_max_chars(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "big.md"
+            source.write_text("x" * 60_000, encoding="utf-8")
+            session = self.build_session(root)
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider.INLINE_MARKDOWN_ENABLED", True
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider.INLINE_MARKDOWN_MAX_CHARS", 100
+                ),
+            ):
+                # Without a compatible file input the upload path raises —
+                # proving the fallback took the upload branch instead.
+                with self.assertRaises(Exception) as raised:
+                    session.upload(UploadRequest(source))
+            self.assertNotIsInstance(raised.exception, SystemExit)
+            self.assertEqual(session._delivery_mode, "upload")
+            self.assertEqual(session._inline_source_text, "")
+
+    def test_new_chat_resets_inline_source_and_delivery_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            session._inline_source_text = "previous topic"
+            session._delivery_mode = "inline"
+            with (
+                mock.patch.object(session, "_navigate_with_retry"),
+                mock.patch.object(session, "_wait_for_editor"),
+                mock.patch.object(session, "_login_buttons_visible", return_value=False),
+            ):
+                session.start_new_chat()
+            self.assertEqual(session._inline_source_text, "")
+            self.assertEqual(session._delivery_mode, "upload")
+
+    def test_send_blocked_when_required_effort_cannot_be_verified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            control = mock.MagicMock()
+            control.get_attribute.return_value = "medium"
+            slider = mock.MagicMock()
+            slider.count.return_value = 1
+            session._page.locator = mock.MagicMock(
+                side_effect=lambda sel: slider if "slider" in sel else control
+            )
+            session._page.keyboard = mock.MagicMock()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider.CHATGPT_REQUIRED_EFFORT", "high"
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._locator_visible",
+                    return_value=True,
+                ),
+            ):
+                with self.assertRaisesRegex(BrowserConfigurationError, "Submission blocked"):
+                    session._verify_required_effort()
+
+    def test_effort_already_correct_requires_no_slider_press(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            control = mock.MagicMock()
+            control.get_attribute.return_value = "high"
+            control.first = control
+            slider = mock.MagicMock()
+            slider.count.return_value = 1
+            slider.first = slider
+            session._page.locator = mock.MagicMock(
+                side_effect=lambda sel: slider if "slider" in sel else control
+            )
+            with mock.patch(
+                "browser_runtime.patchright_provider.CHATGPT_REQUIRED_EFFORT", "high"
+            ):
+                session._verify_required_effort()
+            slider.press.assert_not_called()
+
+    def test_effort_low_requires_two_arrow_right_steps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            control = mock.MagicMock()
+            # first read reports "low" (pre-adjustment), second read "high"
+            control.get_attribute = mock.MagicMock(side_effect=["low", "high"])
+            control.first = control
+            slider = mock.MagicMock()
+            slider.count.return_value = 1
+            slider.first = slider
+            session._page.locator = mock.MagicMock(
+                side_effect=lambda sel: slider if "slider" in sel else control
+            )
+            session._page.keyboard = mock.MagicMock()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider.CHATGPT_REQUIRED_EFFORT", "high"
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._locator_visible",
+                    return_value=True,
+                ),
+            ):
+                session._verify_required_effort()
+            self.assertEqual(slider.press.call_count, 2)
+            session._page.keyboard.press.assert_called_once_with("Escape")
 
     def test_send_idempotency_prevents_duplicate_click_after_acknowledgement(self):
         with tempfile.TemporaryDirectory() as tmp:
