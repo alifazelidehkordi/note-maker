@@ -25,7 +25,18 @@ from browser_runtime.errors import (
     NetworkUnavailableError,
     RateLimitError,
 )
-from browser_runtime.patchright_provider import translate_patchright_error
+from browser_runtime.patchright_provider import (
+    RATE_LIMIT_WAIT_SECONDS,
+    translate_patchright_error,
+)
+from browser_runtime.selectors import ASSISTANT_MESSAGE_SELECTOR
+
+DIALOG_SELECTORS = {
+    "#modal-conversation-history-rate-limit",
+    "[role='dialog']",
+    "[data-testid*='rate-limit' i]",
+    "[data-radix-portal] [role='dialog']",
+}
 from artifact_validation import validate_artifact
 
 
@@ -124,6 +135,16 @@ class BodyLocator:
         return "ChatGPT"
 
 
+class EmptyCollection:
+    """Locator stand-in for dialog queries that match nothing on the fake page."""
+
+    def count(self) -> int:
+        return 0
+
+    def nth(self, _index: int):  # pragma: no cover - never reached when count()==0
+        raise AssertionError("nth() on empty collection")
+
+
 class FakePage:
     url = "https://chatgpt.com/"
 
@@ -139,10 +160,12 @@ class FakePage:
         return self.closed
 
     def locator(self, selector: str):
-        if selector == "[data-message-author-role='assistant']":
+        if selector == ASSISTANT_MESSAGE_SELECTOR:
             return AssistantCollection(Assistant(self.candidate))
         if selector == "body":
             return BodyLocator()
+        if selector in DIALOG_SELECTORS:
+            return EmptyCollection()
         raise AssertionError(selector)
 
     def expect_download(self, timeout: int):
@@ -327,6 +350,115 @@ class PatchrightProviderTests(unittest.TestCase):
                 with self.assertRaisesRegex(RateLimitError, "remained visible"):
                     session.send_message("blocked by persistent modal")
             self.assertEqual(button.clicks, 0)
+
+    def test_wait_tolerates_transient_dismissed_rate_limit_modal(self):
+        """Two consecutive rate-limit observations that dismiss successfully
+        continue the wait; a later stable observation completes normally."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            # observations: rl(visible, dismiss ok), rl(visible, dismiss ok),
+            # then non-rl (resets counter), then stable completion
+            with (
+                mock.patch.object(
+                    session, "_rate_limit_visible", side_effect=[True, True] + [False] * 50
+                ),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ) as dismiss,
+                mock.patch.object(
+                    session, "assistant_message_count", side_effect=[0, 0, 0, 1, 1, 1]
+                ),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+                mock.patch.object(session, "_download_candidate_exists", return_value=True),
+                mock.patch(
+                    "browser_runtime.patchright_provider._body_text",
+                    return_value="stable body",
+                ),
+                mock.patch("browser_runtime.patchright_provider.time.monotonic") as mono,
+            ):
+                # stable_seconds requires >=5s between identical observations
+                mono.side_effect = [0, 1, 2, 3, 4, 10, 11, 12, 13, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160]
+                session.wait_for_response(
+                    ResponseWaitRequest(min_assistant_count=1, timeout=120)
+                )
+            self.assertEqual(dismiss.call_count, 2)
+
+    def test_wait_raises_after_bounded_consecutive_rate_limit_rechecks(self):
+        """Modal dismisses (acknowledged) but persists: 3 consecutive
+        RATE_LIMITED observations raise RateLimitError with retry_after."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(
+                    session, "_rate_limit_visible", side_effect=[True] * 50
+                ),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ),
+                mock.patch.object(session, "assistant_message_count", return_value=0),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+                mock.patch("browser_runtime.patchright_provider.time.sleep"),
+                mock.patch("browser_runtime.patchright_provider.time.monotonic") as mono,
+            ):
+                mono.side_effect = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+                with self.assertRaisesRegex(RateLimitError, "acknowledged") as raised:
+                    session.wait_for_response(
+                        ResponseWaitRequest(min_assistant_count=1, timeout=120)
+                    )
+            self.assertEqual(raised.exception.retry_after, RATE_LIMIT_WAIT_SECONDS)
+
+    def test_wait_resets_recheck_counter_on_non_rate_limited_observation(self):
+        """rl, rl, non-rl (reset), rl, rl, rl -> only the 3 consecutive AFTER
+        the reset raise; total dismissals = 5 not 3+2 (counter reset proof)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(
+                    session,
+                    "_rate_limit_visible",
+                    side_effect=[True, True, False, True, True, True] + [True] * 50,
+                ),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ),
+                mock.patch.object(session, "assistant_message_count", return_value=0),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+                mock.patch("browser_runtime.patchright_provider.time.sleep"),
+                mock.patch("browser_runtime.patchright_provider.time.monotonic") as mono,
+            ):
+                mono.side_effect = list(range(200))
+                with self.assertRaisesRegex(RateLimitError, "acknowledged"):
+                    session.wait_for_response(
+                        ResponseWaitRequest(min_assistant_count=1, timeout=120)
+                    )
+
+    def test_download_miss_raises_rate_limit_when_modal_visible(self):
+        """A rate-limit modal visible during a failed download attempt must
+        raise RateLimitError, not be misclassified as a download failure."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(
+                    session, "_find_download_candidates", return_value=[(0, mock.MagicMock())]
+                ),
+                mock.patch.object(
+                    session, "_page", **{"expect_download.side_effect": RuntimeError("miss")}
+                ),
+                mock.patch.object(session, "_rate_limit_visible", return_value=True),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ),
+            ):
+                with self.assertRaisesRegex(RateLimitError, "artifact download"):
+                    session.resolve_download(
+                        DownloadRequest(
+                            before={},
+                            expected_extensions={".md"},
+                            started_at_ns=1,
+                            timeout=1,
+                            job_key="section/01",
+                        )
+                    )
 
     def test_wait_raises_rate_limit_when_modal_cannot_be_dismissed(self):
         with tempfile.TemporaryDirectory() as tmp:

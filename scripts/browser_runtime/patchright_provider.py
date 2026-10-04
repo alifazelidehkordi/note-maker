@@ -78,6 +78,9 @@ DEFAULT_DOWNLOAD_DIR = ROOT / "downloads"
 LONG_GENERATION_STOP_SECONDS = int(os.environ.get("LONG_GENERATION_STOP_SECONDS", "900"))
 POST_STOP_GRACE_SECONDS = int(os.environ.get("POST_STOP_GRACE_SECONDS", "60"))
 RATE_LIMIT_WAIT_SECONDS = int(os.environ.get("RATE_LIMIT_WAIT_SECONDS", "180"))
+# Cooldown used when a rate-limit modal survives the bounded re-check during a
+# response wait or blocks a download (see _await_response / download paths).
+RATE_LIMIT_RECHECK_RETRY_SECONDS = RATE_LIMIT_WAIT_SECONDS
 
 
 def _load_patchright():
@@ -918,6 +921,14 @@ class PatchrightBrowserSession:
         )
         deadline = time.monotonic() + request.timeout
         extended = False
+        # Bounded re-check for transient rate-limit modals (plan item 3,
+        # critic-pinned semantics): the counter counts consecutive
+        # RATE_LIMITED observations WITHIN this _await_response call and
+        # resets on ANY non-RATE_LIMITED observation. Only dismissal failure
+        # or exhausting the bound raises; a successfully dismissed transient
+        # modal just continues the wait.
+        RATE_LIMIT_RECHECK_BOUND = 3
+        consecutive_rate_limited = 0
         while time.monotonic() < deadline:
             now = time.monotonic()
             rate_limited = self._rate_limit_visible()
@@ -933,9 +944,23 @@ class PatchrightBrowserSession:
             )
 
             if state is ResponseState.RATE_LIMITED:
-                self._dismiss_rate_limit_modal()
+                consecutive_rate_limited += 1
+                dismissed = self._dismiss_rate_limit_modal()
+                detail = (
+                    "acknowledged"
+                    if dismissed
+                    else "remained visible after acknowledgement"
+                )
+                if not dismissed or consecutive_rate_limited >= RATE_LIMIT_RECHECK_BOUND:
+                    raise RateLimitError(
+                        f"ChatGPT response was blocked by a rate-limit dialog ({detail}).",
+                        retry_after=RATE_LIMIT_RECHECK_RETRY_SECONDS,
+                    )
                 time.sleep(1)
                 continue
+
+            # Any non-RATE_LIMITED observation resets the bounded re-check.
+            consecutive_rate_limited = 0
 
             if state in {ResponseState.DOWNLOAD_READY, ResponseState.STABLE}:
                 self._last_send_completed = True
@@ -1084,7 +1109,16 @@ class PatchrightBrowserSession:
             except Exception as exc:
                 # A click can navigate to a sandbox link without emitting a
                 # Playwright download event, or open ChatGPT's artifact preview
-                # in either the current tab or a newly-created tab.
+                # in either the current tab or a newly-created tab. A rate-limit
+                # modal also surfaces here; misclassifying it as a download
+                # failure burns retries, so check and raise first.
+                if self._rate_limit_visible():
+                    dismissed = self._dismiss_rate_limit_modal()
+                    detail = "acknowledged" if dismissed else "still visible"
+                    raise RateLimitError(
+                        f"ChatGPT blocked the artifact download with a rate-limit dialog ({detail}).",
+                        retry_after=RATE_LIMIT_RECHECK_RETRY_SECONDS,
+                    ) from exc
                 detail = str(exc).splitlines()[0].strip()
                 suffix = f" ({detail})" if detail else ""
                 _log(
