@@ -437,6 +437,97 @@ class PatchrightProviderTests(unittest.TestCase):
             self.assertEqual(slider.press.call_count, 2)
             session._page.keyboard.press.assert_called_once_with("Escape")
 
+    def test_upload_uses_two_step_menu_when_no_document_input_exists(self):
+        """Redesigned composer: image-only inputs exist up front; the document
+        input appears only after choosing a menu item. The file-chooser path
+        must be used and the image input never fed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "070_topic.md"
+            source.write_text("# Source\n\nbody\n", encoding="utf-8")
+            session = self.build_session(root)
+
+            menu_item = mock.MagicMock()
+            chooser_cm = mock.MagicMock()
+            chooser = chooser_cm.__enter__.return_value.value
+            chooser_cm.__exit__ = mock.MagicMock(return_value=False)
+
+            class MenuPage(FakePage):
+                def get_by_text(self, pattern):
+                    item = mock.MagicMock()
+                    item.first = menu_item
+                    return item
+
+                def expect_file_chooser(self, timeout):
+                    return chooser_cm
+
+                def locator(self, selector):
+                    if selector == "input[type='file']":
+                        collection = mock.MagicMock()
+                        collection.count.return_value = 0
+                        return collection
+                    return super().locator(selector)
+
+            session._page = MenuPage()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider._locator_visible",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._first_visible",
+                    return_value=mock.MagicMock(),
+                ),
+                # Attachment confirmation: the fake page's body already shows
+                # the file name and no upload is pending.
+                mock.patch(
+                    "browser_runtime.patchright_provider._body_text",
+                    return_value=f"attached {source.name}",
+                ),
+                mock.patch.object(session, "_upload_pending", return_value=False),
+                mock.patch.object(session, "_upload_error_text", return_value=""),
+            ):
+                session.upload(UploadRequest(source))
+            chooser.set_files.assert_called_once_with(str(source))
+            self.assertEqual(session._delivery_mode, "upload")
+            self.assertEqual(session._inline_source_text, "")
+
+    def test_photo_only_accept_list_is_never_used_for_documents(self):
+        """An image-only input must be skipped, not treated as fallback —
+        the old behavior produced "This file type isn't supported"."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "070_topic.md"
+            source.write_text("# Source\n\nbody\n", encoding="utf-8")
+            session = self.build_session(root)
+
+            image_input = mock.MagicMock()
+            image_input.get_attribute.return_value = "image/*"
+            doc_input = mock.MagicMock()
+            doc_input.get_attribute.return_value = ".pdf,.md,.txt,.docx"
+
+            class InputsPage(FakePage):
+                def locator(self, selector):
+                    if selector == "input[type='file']":
+                        collection = mock.MagicMock()
+                        collection.count.return_value = 2
+                        collection.nth.side_effect = [image_input, doc_input]
+                        return collection
+                    return super().locator(selector)
+
+            session._page = InputsPage()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider._body_text",
+                    return_value=f"attached {source.name}",
+                ),
+                mock.patch.object(session, "_upload_pending", return_value=False),
+                mock.patch.object(session, "_upload_error_text", return_value=""),
+            ):
+                session.upload(UploadRequest(source))
+            doc_input.set_input_files.assert_called_once_with(str(source))
+            image_input.set_input_files.assert_not_called()
+
     def test_send_idempotency_prevents_duplicate_click_after_acknowledgement(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = self.build_session(Path(tmp))

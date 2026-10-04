@@ -49,6 +49,7 @@ from .models import (
 from .selectors import (
     ASSISTANT_MESSAGE_SELECTOR,
     ATTACH_BUTTON_SELECTORS,
+    ATTACH_MENU_LABEL_PATTERNS,
     CHATGPT_URL,
     CLOUDFLARE_PHRASES,
     COOKIE_BUTTON_LABELS,
@@ -686,12 +687,19 @@ class PatchrightBrowserSession:
                         return candidate
                     # ChatGPT now keeps a separate image-only file input in
                     # the composer. Never feed Markdown/PDF documents to it.
-                    if all("image/" in token or token in {".gif", ".png", ".jpg", ".jpeg", ".webp", ".mpo"} for token in tokens):
+                    IMAGE_ONLY_TOKENS = {
+                        ".avif", ".bmp", ".gif", ".heic", ".heif",
+                        ".png", ".jpg", ".jpeg", ".webp", ".mpo",
+                    }
+                    if all("image/" in token or token in IMAGE_ONLY_TOKENS for token in tokens):
+                        # Photo-only control: feeding a document here produces
+                        # "This file type isn't supported". Never a fallback.
                         continue
                     fallback = fallback or candidate
                 return fallback
 
             file_input = compatible_file_input()
+            attached_via_chooser = False
             if file_input is None:
                 attach = _first_visible(self._page, ATTACH_BUTTON_SELECTORS, timeout_ms=800)
                 if attach is None:
@@ -700,13 +708,44 @@ class PatchrightBrowserSession:
                     attach.evaluate("(element) => element.click()")
                 except Exception:
                     attach.click()
+
+                # The redesigned composer opens a two-step menu: the document
+                # input is only created after selecting "Upload from computer"
+                # / "Add photos & files". Setting one of the image-only inputs
+                # already present in the DOM produces the misleading "This file
+                # type isn't supported" error, so drive the menu explicitly.
+                for pattern in ATTACH_MENU_LABEL_PATTERNS:
+                    menu_item = self._page.get_by_text(re.compile(pattern, re.I)).first
+                    try:
+                        visible = _locator_visible(menu_item, timeout_ms=800)
+                    except Exception:
+                        visible = False
+                    if not visible:
+                        continue
+                    try:
+                        with self._page.expect_file_chooser(timeout=3000) as chooser_info:
+                            menu_item.click()
+                        chooser_info.value.set_files(str(request.file_path))
+                        attached_via_chooser = True
+                        break
+                    except Exception:
+                        # Older composer variants expose a document input after
+                        # the menu opens without emitting a file-chooser event;
+                        # fall through to the polling path below.
+                        break
+
                 deadline = time.monotonic() + 3
-                while file_input is None and time.monotonic() < deadline:
+                while (
+                    not attached_via_chooser
+                    and file_input is None
+                    and time.monotonic() < deadline
+                ):
                     time.sleep(0.25)
                     file_input = compatible_file_input()
-            if file_input is None:
+            if file_input is None and not attached_via_chooser:
                 raise PageStateError("A document-compatible file input is unavailable.")
-            file_input.set_input_files(str(request.file_path))
+            if not attached_via_chooser:
+                file_input.set_input_files(str(request.file_path))
 
             deadline = time.monotonic() + request.timeout
             name_marker = request.file_path.name[:48]
