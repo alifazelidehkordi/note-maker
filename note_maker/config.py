@@ -114,6 +114,11 @@ _ENV_TYPES: dict[str, type] = {
     "retry_backoff_base": float,
     "retry_backoff_cap": float,
     "retry_jitter_ratio": float,
+    "rest_every": int,
+    "rest_seconds": float,
+    "rest_state": str,
+    "rest_base_completed": int,
+    "retry_jitter_ratio": float,
     "input_dir": str,
     "output_dir": str,
     "prompt": str,
@@ -301,7 +306,7 @@ def _validate_runtime_value_types(values: Mapping[str, Any]) -> None:
         value = values.get(key)
         expected = _ENV_TYPES[key]
         if value is None:
-            if key in {"runtime_dir", "profile_snapshot"}:
+            if key in {"runtime_dir", "profile_snapshot", "rest_state"}:
                 continue
             raise ConfigError(f"{key} may not be null.")
         if expected is bool:

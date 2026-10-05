@@ -143,6 +143,10 @@ class RunConfig:
     retry_backoff_base: float = 3.0
     retry_backoff_cap: float = 24.0
     retry_jitter_ratio: float = 0.20
+    rest_every: int = 0
+    rest_seconds: float = 1800.0
+    rest_state: str | None = None
+    rest_base_completed: int = 0
 
     def __post_init__(self) -> None:
         if not self.run_id.strip():
@@ -177,6 +181,12 @@ class RunConfig:
             raise ValueError("retry backoff values must not be negative.")
         if not 0 <= self.retry_jitter_ratio <= 1:
             raise ValueError("retry_jitter_ratio must be between 0 and 1.")
+        if self.rest_every < 0:
+            raise ValueError("rest_every must not be negative.")
+        if self.rest_seconds < 0:
+            raise ValueError("rest_seconds must not be negative.")
+        if self.rest_base_completed < 0:
+            raise ValueError("rest_base_completed must not be negative.")
         object.__setattr__(self, "manifest_path", Path(self.manifest_path).resolve())
         object.__setattr__(self, "claims_dir", Path(self.claims_dir).resolve())
         object.__setattr__(self, "executor_config", MappingProxyType(dict(self.executor_config)))
@@ -216,6 +226,10 @@ class RunConfig:
             "retry_backoff_base": self.retry_backoff_base,
             "retry_backoff_cap": self.retry_backoff_cap,
             "retry_jitter_ratio": self.retry_jitter_ratio,
+            "rest_every": self.rest_every,
+            "rest_seconds": self.rest_seconds,
+            "rest_state": self.rest_state,
+            "rest_base_completed": self.rest_base_completed,
         }
 
     @classmethod
@@ -254,6 +268,14 @@ class RunConfig:
             retry_backoff_base=float(payload.get("retry_backoff_base", 3.0)),
             retry_backoff_cap=float(payload.get("retry_backoff_cap", 24.0)),
             retry_jitter_ratio=float(payload.get("retry_jitter_ratio", 0.20)),
+            rest_every=int(payload.get("rest_every", 0)),
+            rest_seconds=float(payload.get("rest_seconds", 1800.0)),
+            rest_state=(
+                str(payload["rest_state"])
+                if payload.get("rest_state") is not None
+                else None
+            ),
+            rest_base_completed=int(payload.get("rest_base_completed", 0)),
         )
 
 

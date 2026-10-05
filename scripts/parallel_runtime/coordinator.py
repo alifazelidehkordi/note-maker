@@ -6,6 +6,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from queue import Empty
 from typing import Callable, Iterable
 
@@ -120,6 +121,16 @@ class ParallelCoordinator:
             adaptive_recovery_seconds=config.adaptive_recovery_seconds,
             clock=time.monotonic,
         )
+        self._rest_schedule = None
+        if config.rest_every > 0 and config.rest_state:
+            from .rest_schedule import RestSchedule
+
+            self._rest_schedule = RestSchedule(
+                Path(config.rest_state),
+                interval=config.rest_every,
+                seconds=config.rest_seconds,
+                logger=event_logger,
+            )
         self._blocked_since: dict[str, float] = {}
         self._started_at = 0.0
         self._started_at_utc: str | None = None
@@ -908,6 +919,12 @@ class ParallelCoordinator:
             return
         busy = sum(slot.current_job is not None for slot in self.slots.values())
         capacity = max(0, self.control.active_limit - busy)
+        if self._rest_schedule is not None:
+            capacity = self._rest_schedule.capacity(
+                completed=config.rest_base_completed + len(self.result.succeeded),
+                busy=busy,
+                available=capacity,
+            )
         if capacity <= 0:
             return
         for slot in list(self.slots.values()):
