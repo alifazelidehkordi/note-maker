@@ -5,10 +5,10 @@ import signal
 import threading
 import time
 from collections import deque
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Empty
-from typing import Callable, Iterable
 
 from artifact_validation import validate_artifact
 from manifest import ManifestCoordinator, ManifestStore
@@ -27,7 +27,6 @@ from .status import (
     utc_now,
 )
 from .worker import worker_process_main
-
 
 install_manifest_status_tracking()
 
@@ -52,6 +51,10 @@ class CoordinatorResult:
     minimum_active_workers: int = 1
     final_active_workers: int = 1
     adaptive_scale_downs: int = 0
+    download_fallbacks: int = 0
+    last_fallback_reason: str | None = None
+    delivery_modes: dict[str, str] = field(default_factory=dict)
+    interrupted_at_stage: str | None = None
     adaptive_scale_ups: int = 0
     circuit_breaker_reason: str | None = None
 
@@ -563,6 +566,20 @@ class ParallelCoordinator:
         }
         if retry_counts:
             self.result.retry_counts[job.key] = retry_counts
+        # Observability aggregation (plan phase-2 B6/B8): download-fallback
+        # and delivery-mode signals from workers flow into the run summary.
+        fallbacks = int(payload.get("download_fallbacks", 0) or 0)
+        if fallbacks:
+            self.result.download_fallbacks += fallbacks
+            reason = payload.get("last_fallback_reason")
+            if reason:
+                self.result.last_fallback_reason = str(reason)
+        delivery_mode = payload.get("delivery_mode")
+        if delivery_mode:
+            self.result.delivery_modes[job.key] = str(delivery_mode)
+        stage = payload.get("interrupted_at_stage")
+        if stage and self.result.interrupted_at_stage is None:
+            self.result.interrupted_at_stage = str(stage)
         if event.kind == EventKind.JOB_SUCCEEDED:
             try:
                 self.manifest.mark_completed(
@@ -993,6 +1010,14 @@ class ParallelCoordinator:
                     status="stopped",
                     current_job=None,
                 )
+            # Deterministic cleanup of every multiprocessing pipe on ALL
+            # shutdown paths: unclosed feeder threads / fds are the source
+            # of the leaked-resource warnings in real batch logs. Test fakes
+            # may use minimal slot namespaces without queues.
+            for attr in ("command_queue", "event_queue"):
+                queue = getattr(slot, attr, None)
+                if queue is not None:
+                    self._close_queue(queue)
         self.claims.release_run(self.config.run_id)
         self._cleanup_runtime_profiles(success=not interrupted and not self.result.failed)
         self._close_queue(self.event_queue)

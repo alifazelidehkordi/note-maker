@@ -20,12 +20,16 @@ class FakeDriver:
     title = "ChatGPT"
     page_source = "<html><body>private page</body></html>"
 
-    def __init__(self, *, screenshot_error: Exception | None = None) -> None:
+    def __init__(self, *, screenshot_error: Exception | None = None,
+                 screenshot_result: bool | None = None) -> None:
         self.screenshot_error = screenshot_error
+        self.screenshot_result = screenshot_result
 
     def save_screenshot(self, path: str) -> bool:
         if self.screenshot_error is not None:
             raise self.screenshot_error
+        if self.screenshot_result is False:
+            return False
         Path(path).write_bytes(b"png")
         return True
 
@@ -111,6 +115,34 @@ class DiagnosticsTests(unittest.TestCase):
                 (result.directory / "metadata.json").read_text(encoding="utf-8")
             )
             self.assertTrue(any(item.startswith("screenshot:") for item in metadata["capture_errors"]))
+
+    def test_screenshot_false_falls_back_to_page_source(self):
+        """Plan phase-2 B5 (16x measured 'driver returned False'): when the
+        screenshot fails, the page source is captured automatically so
+        diagnostics survive a dead driver; the original error is preserved."""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = diagnostics.save_failure_diagnostics(
+                driver=FakeDriver(screenshot_result=False),
+                output_dir=Path(tmp),
+                run_id="run-false",
+                job_key="source.pdf",
+                attempt=2,
+                max_attempts=2,
+                stage="automation",
+                expected_extensions={".md"},
+                source="source.pdf",
+                prompt_hash="sha256:false",
+                error=RuntimeError("browser failed"),
+                response_text="last text",
+            )
+            self.assertFalse((result.directory / "last_state.png").exists())
+            self.assertTrue((result.directory / "page_source.html").exists())
+            self.assertTrue(any(item.startswith("screenshot:") for item in result.capture_errors))
+            metadata = json.loads(
+                (result.directory / "metadata.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["error_type"], "RuntimeError")
+            self.assertEqual(metadata["error_message"], "browser failed")
 
     def test_page_source_is_opt_in(self):
         with tempfile.TemporaryDirectory() as tmp:

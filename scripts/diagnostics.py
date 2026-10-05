@@ -112,6 +112,7 @@ def save_failure_diagnostics(
     except Exception as exc:  # diagnostics must remain best-effort
         capture_errors.append(f"response: {type(exc).__name__}: {exc}")
 
+    screenshot_failed = False
     screenshot_path = target_dir / "last_state.png"
     if driver is not None and hasattr(driver, "save_screenshot"):
         try:
@@ -123,17 +124,23 @@ def save_failure_diagnostics(
             files.append(screenshot_path)
         except Exception as exc:
             capture_errors.append(f"screenshot: {type(exc).__name__}: {exc}")
+            screenshot_failed = True
     else:
         capture_errors.append("screenshot: driver is unavailable")
+        screenshot_failed = True
 
-    if save_page_source:
+    # Page-source capture: explicit opt-in, and the automatic fallback when
+    # the screenshot failed — a dead driver is exactly when diagnostics
+    # matter most, so the page source is preserved even if pixels are not.
+    if save_page_source or (screenshot_failed and driver is not None):
         page_source_path = target_dir / "page_source.html"
-        try:
-            page_source = _page_source(driver)
-            _atomic_write_text(page_source_path, page_source)
-            files.append(page_source_path)
-        except Exception as exc:
-            capture_errors.append(f"page_source: {type(exc).__name__}: {exc}")
+        if not page_source_path.exists():
+            try:
+                page_source = _page_source(driver)
+                _atomic_write_text(page_source_path, page_source)
+                files.append(page_source_path)
+            except Exception as exc:
+                capture_errors.append(f"page_source: {type(exc).__name__}: {exc}")
 
     copied_candidate: Path | None = None
     if rejected_path is not None:

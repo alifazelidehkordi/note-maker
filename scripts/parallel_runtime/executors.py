@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 import time
-from typing import Callable
+from collections.abc import Callable
+from pathlib import Path
 
 from .event_bus import EventKind, StageKind
 from .models import ExecutionJob, WorkerExecutionResult
 from .resilience import FailureCategory, RetryBudgetPolicy, RetryTracker
-from .stages import StageReporter, StagedBrowserProvider, observe_artifact_stages
+from .stages import StagedBrowserProvider, StageReporter, observe_artifact_stages
 
 
 class _BrowserExecutorBase:
@@ -172,6 +172,13 @@ class _BrowserExecutorBase:
         category = tracker.last_category.value if tracker and tracker.last_category else None
         retry_counts = tracker.as_dict() if tracker else {}
         browser_restarts = max(self.browser_restarts, int(retry_counts.get("browser", 0)))
+        # Observability (plan phase-2 B6/B8): pull the provider-level
+        # fallback counters and delivery mode off the live session when
+        # they exist (patchright sessions); selenium sessions simply omit.
+        driver_obj = self.driver
+        download_fallbacks = int(getattr(driver_obj, "_download_fallbacks", 0) or 0)
+        last_fallback_reason = getattr(driver_obj, "_last_fallback_reason", None)
+        delivery_mode = getattr(driver_obj, "_delivery_mode", None)
         return WorkerExecutionResult(
             success=ok,
             error=None if ok else "No valid artifact was produced after all retry budgets were exhausted.",
@@ -182,6 +189,11 @@ class _BrowserExecutorBase:
             retryable=False,
             retry_after=(tracker.last_decision.retry_after if tracker and tracker.last_decision else None),
             retry_counts=retry_counts,
+            download_fallbacks=download_fallbacks,
+            last_fallback_reason=(
+                str(last_fallback_reason) if last_fallback_reason else None
+            ),
+            delivery_mode=str(delivery_mode) if delivery_mode else None,
             metadata={
                 "rate_limit_signaled": self.rate_limit_count > 0,
                 "auth_signaled": category == FailureCategory.AUTH.value,

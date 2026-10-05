@@ -3,13 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, FrozenSet
-
+from typing import Any
 
 DownloadSnapshot = dict[Path, tuple[int, int] | None]
 
 
-def normalize_extensions(values: set[str] | frozenset[str]) -> FrozenSet[str]:
+def normalize_extensions(values: set[str] | frozenset[str]) -> frozenset[str]:
     normalized: set[str] = set()
     for value in values:
         item = str(value).strip().lower()
@@ -89,7 +88,7 @@ class ResponseWaitRequest:
 @dataclass(frozen=True)
 class DownloadRequest:
     before: Any
-    expected_extensions: FrozenSet[str] | set[str]
+    expected_extensions: frozenset[str] | set[str]
     started_at_ns: int
     timeout: int = 90
     click: bool = True

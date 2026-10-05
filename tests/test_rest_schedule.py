@@ -211,5 +211,55 @@ class RestScheduleTests(unittest.TestCase):
             self.assertEqual(resolved.runtime.rest_seconds, 600.0)
 
 
+    def test_shutdown_closes_every_queue_deterministically(self):
+        """Plan phase-2 B4: all multiprocessing pipes get close()/join_thread()
+        on the shutdown path — unclosed feeder threads are the measured source
+        of leaked-resource warnings (5 occurrences in real batch logs)."""
+        from unittest import mock
+        from parallel_runtime.models import ExecutionJob, RunConfig
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = RunConfig(
+                run_id="queue-close",
+                manifest_path=root / "manifest.json",
+                claims_dir=root / "claims",
+                worker_count=1,
+                executor_path="parallel_runtime.executors:PdfJobExecutor",
+            )
+            from parallel_runtime.coordinator import ParallelCoordinator
+
+            job = ExecutionJob(
+                key="job/01",
+                source=root / "a.md",
+                source_hash="abc123",
+                prompt_path=root / "p.md",
+                prompt_hash="def456",
+                output=root / "a.md.out",
+                expected_extensions=(".md",),
+                mode="pdf-md",
+            )
+            with mock.patch(
+                "parallel_runtime.coordinator.ManifestCoordinator"
+            ) as manifest:
+                manifest.return_value.claim_snapshot.return_value = {}
+                coordinator = ParallelCoordinator(config, [job])
+            closed = []
+            with (
+                mock.patch.object(
+                    ParallelCoordinator, "_close_queue",
+                    side_effect=lambda q: closed.append(q),
+                ),
+                mock.patch.object(coordinator, "_cleanup_runtime_profiles"),
+                mock.patch.object(coordinator, "_journal_coordinator"),
+            ):
+                coordinator._shutdown()
+            # main event queue + per-slot command/event queues all closed
+            self.assertIn(coordinator.event_queue, closed)
+            for slot in coordinator.slots.values():
+                self.assertIn(slot.command_queue, closed)
+                self.assertIn(slot.event_queue, closed)
+
 if __name__ == "__main__":
+
     unittest.main()

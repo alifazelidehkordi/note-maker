@@ -1,5 +1,6 @@
 from .contracts import BrowserProvider, BrowserSession
 from .errors import (
+    ActiveProfileError,
     AuthenticationRequiredError,
     BrowserAuthenticationError,
     BrowserConfigurationError,
@@ -16,7 +17,6 @@ from .errors import (
     GenerationStalledError,
     NetworkUnavailableError,
     PageStateError,
-    ActiveProfileError,
     ProfileConfigurationError,
     ProfileLeaseError,
     ProfileRuntimeError,
@@ -39,8 +39,8 @@ from .models import (
     UploadRequest,
 )
 from .patchright_provider import PatchrightBrowserSession, PatchrightProvider
-from .runtime_hardening import install_runtime_hardening
 from .profile_safety import install_profile_safety
+from .runtime_hardening import install_runtime_hardening
 
 # Apply behavior fixes before factory/provider/session users snapshot affected callables.
 install_runtime_hardening()
@@ -64,8 +64,8 @@ from .profile_manager import (
     RunProfileContext,
     WorkerProfileContext,
 )
-from .session_manager import ManagedBrowserSession, SessionBootstrapper
 from .selenium_provider import SeleniumBrowserSession, SeleniumProvider
+from .session_manager import ManagedBrowserSession, SessionBootstrapper
 from .state_machine import ResponseState, ResponseStateMachine, SessionState
 
 __all__ = [

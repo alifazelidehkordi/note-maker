@@ -3,12 +3,11 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from . import profile_manager as _profiles
-
 
 _GUARD_ROOT = Path(tempfile.gettempdir()) / "note-maker-profile-guards"
 
@@ -94,4 +93,4 @@ def install_profile_recovery_guard() -> None:
 
     lease_cls.acquire = guarded_acquire
     manager_cls.clear_stale_locks = guarded_clear_stale_locks
-    setattr(_profiles, "_part1a_profile_recovery_guard_installed", True)
+    _profiles._part1a_profile_recovery_guard_installed = True

@@ -7,8 +7,9 @@ import re
 import shutil
 import time
 import urllib.request
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from .contracts import BrowserSession
 from .downloads import (
@@ -30,7 +31,6 @@ from .errors import (
     BrowserStartupError,
     BrowserUploadError,
     CloudflareChallengeError,
-    DownloadNotFoundError,
     GenerationStalledError,
     NetworkUnavailableError,
     PageStateError,
@@ -269,7 +269,7 @@ def _contains_any(text: str, phrases: Iterable[str]) -> bool:
 def _apply_stealth(context: Any) -> None:
     try:
         module = importlib.import_module("playwright_stealth")
-        stealth_type = getattr(module, "Stealth")
+        stealth_type = module.Stealth
         stealth = stealth_type(init_scripts_only=True)
         stealth.apply_stealth_sync(context)
     except ModuleNotFoundError as exc:
@@ -310,6 +310,8 @@ class PatchrightBrowserSession:
         self._last_send_started_at: float | None = None
         self._inline_source_text = ""
         self._delivery_mode = "upload"
+        self._download_fallbacks = 0
+        self._last_fallback_reason: str | None = None
         self._bind_page(page)
 
     def _bind_page(self, page: Any) -> None:
@@ -1240,6 +1242,8 @@ class PatchrightBrowserSession:
                     ) from exc
                 detail = str(exc).splitlines()[0].strip()
                 suffix = f" ({detail})" if detail else ""
+                self._download_fallbacks += 1
+                self._last_fallback_reason = detail or "download event not emitted"
                 _log(
                     "Patchright direct download event was not emitted; "
                     f"checking artifact preview/fallback{suffix}."

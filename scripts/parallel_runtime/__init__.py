@@ -29,7 +29,6 @@ from .resilience import (
 )
 from .structured_logs import install_structured_logging
 
-
 install_structured_logging()
 
 

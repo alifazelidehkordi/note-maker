@@ -4,13 +4,12 @@ import json
 import math
 import os
 import threading
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Mapping
 
 from .event_bus import WorkerEvent
-
 
 EVENT_JOURNAL_SCHEMA_VERSION = 1
 _MAX_STRING_LENGTH = 16_384

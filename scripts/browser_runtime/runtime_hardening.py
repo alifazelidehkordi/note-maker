@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
+from . import selenium_legacy
 from .downloads import score_download_trigger
 from .errors import RateLimitError
 from .models import ResponseWaitRequest
 from .patchright_provider import PatchrightBrowserSession
-from . import selenium_legacy
-
 
 _HARDENING_FLAG = "_p0_runtime_hardening_installed"
 _ORIGINAL_SEND_MESSAGE = PatchrightBrowserSession.send_message

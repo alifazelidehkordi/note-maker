@@ -10,11 +10,12 @@ import sqlite3
 import stat
 import tempfile
 import time
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 from uuid import uuid4
 
 from process_liveness import pid_is_alive
@@ -319,7 +320,7 @@ class ProfileLease:
         # filesystem, so fail closed instead of stealing it by age.
         return False
 
-    def acquire(self) -> "ProfileLease":
+    def acquire(self) -> ProfileLease:
         _ensure_private_directory(self.profile_dir)
         payload = {
             "schema_version": PROFILE_METADATA_SCHEMA_VERSION,
@@ -369,7 +370,7 @@ class ProfileLease:
             self.path.unlink(missing_ok=True)
         self._acquired = False
 
-    def __enter__(self) -> "ProfileLease":
+    def __enter__(self) -> ProfileLease:
         return self.acquire()
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -391,7 +392,7 @@ class ProfileManager:
         _ensure_private_directory(self.snapshot_root)
 
     @classmethod
-    def from_environment(cls, project_root: Path) -> "ProfileManager":
+    def from_environment(cls, project_root: Path) -> ProfileManager:
         project_root = Path(project_root).resolve()
         runtime_root = Path(os.environ.get("CHATGPT_RUNTIME_DIR", project_root / ".runtime"))
         snapshot_root = Path(

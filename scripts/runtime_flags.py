@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
 DEFAULT_BROWSER_PROVIDER = "selenium"
 DEFAULT_PARALLEL_RUNS = 1
 MAX_PARALLEL_RUNS = 16

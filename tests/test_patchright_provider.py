@@ -528,6 +528,31 @@ class PatchrightProviderTests(unittest.TestCase):
             doc_input.set_input_files.assert_called_once_with(str(source))
             image_input.set_input_files.assert_not_called()
 
+    def test_close_path_emits_no_unawaited_coroutine_warnings(self):
+        """Contract guard (plan phase-2 B3): the close path must not create
+        un-awaited coroutines. The current implementation uses the sync API,
+        so no warning is expected — this test pins that contract so any
+        future async leakage fails here instead of in a real batch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            import warnings
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                session.close()
+            runtime_warnings = [
+                w for w in caught
+                if issubclass(w.category, RuntimeWarning) and "never awaited" in str(w.message)
+            ]
+            self.assertEqual(runtime_warnings, [])
+
+    def test_close_is_idempotent_and_survives_dead_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            session.close()
+            session.close()  # second close must be a no-op, not an error
+            self.assertTrue(session._closed)
+
     def test_send_idempotency_prevents_duplicate_click_after_acknowledgement(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = self.build_session(Path(tmp))

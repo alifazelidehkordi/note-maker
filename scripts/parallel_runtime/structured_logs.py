@@ -4,11 +4,10 @@ import json
 import os
 import re
 import threading
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from .event_journal import EventJournal
-
 
 STRUCTURED_LOG_SCHEMA_VERSION = 1
 _HEARTBEAT_KIND = "heartbeat"

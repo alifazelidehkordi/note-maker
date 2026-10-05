@@ -11,17 +11,15 @@ from pathlib import Path
 import pyperclip
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver import Keys
-from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from .selectors import ASSISTANT_MESSAGE_SELECTOR
-
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROMPT = ROOT / "prompts" / "prompt-mind-map.md"

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Generic, Iterable, Mapping, TypeVar
-
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -89,7 +89,7 @@ class ExecutionJob:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> "ExecutionJob":
+    def from_payload(cls, payload: Mapping[str, object]) -> ExecutionJob:
         return cls(
             key=str(payload["key"]),
             source=Path(str(payload["source"])),
@@ -233,7 +233,7 @@ class RunConfig:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> "RunConfig":
+    def from_payload(cls, payload: Mapping[str, object]) -> RunConfig:
         return cls(
             run_id=str(payload["run_id"]),
             manifest_path=Path(str(payload["manifest_path"])),
@@ -288,6 +288,10 @@ class WorkerExecutionResult:
     rate_limit_count: int = 0
     failure_category: str | None = None
     retryable: bool = False
+    download_fallbacks: int = 0
+    last_fallback_reason: str | None = None
+    delivery_mode: str | None = None
+    interrupted_at_stage: str | None = None
     retry_after: float | None = None
     retry_counts: Mapping[str, int] = field(default_factory=dict)
     metadata: Mapping[str, object] = field(default_factory=dict)
@@ -304,6 +308,10 @@ class WorkerExecutionResult:
             "retry_after": self.retry_after,
             "retry_counts": dict(self.retry_counts),
             "metadata": dict(self.metadata),
+            "download_fallbacks": self.download_fallbacks,
+            "last_fallback_reason": self.last_fallback_reason,
+            "delivery_mode": self.delivery_mode,
+            "interrupted_at_stage": self.interrupted_at_stage,
         }
 
 

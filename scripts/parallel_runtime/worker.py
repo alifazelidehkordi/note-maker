@@ -5,7 +5,6 @@ import os
 import threading
 import traceback
 from queue import Empty
-from typing import Callable
 
 from .event_bus import CommandKind, EventKind, WorkerEvent
 from .models import ExecutionJob, RunConfig, WorkerExecutionResult

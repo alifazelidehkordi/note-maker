@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Mapping
 
 
 def utc_now() -> str:
@@ -83,11 +83,11 @@ class WorkerCommand:
     reason: str | None = None
 
     @classmethod
-    def run_job(cls, payload: dict[str, object]) -> "WorkerCommand":
+    def run_job(cls, payload: dict[str, object]) -> WorkerCommand:
         return cls(CommandKind.RUN_JOB, job_payload=payload)
 
     @classmethod
-    def stop(cls, reason: str = "coordinator shutdown") -> "WorkerCommand":
+    def stop(cls, reason: str = "coordinator shutdown") -> WorkerCommand:
         return cls(CommandKind.STOP, reason=reason)
 
 
@@ -100,7 +100,7 @@ class WorkerEvent:
     payload: Mapping[str, object] = field(default_factory=dict)
     created_at: str = field(default_factory=utc_now)
 
-    def with_payload(self, **payload: object) -> "WorkerEvent":
+    def with_payload(self, **payload: object) -> WorkerEvent:
         return WorkerEvent(
             kind=self.kind,
             worker_id=self.worker_id,
