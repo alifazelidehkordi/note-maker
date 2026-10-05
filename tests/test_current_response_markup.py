@@ -9,10 +9,10 @@ the two branches of ASSISTANT_MESSAGE_SELECTOR plus the :not() nesting
 exclusion. A CSS engine would duplicate the logic under test; this does not.
 """
 
-from html.parser import HTMLParser
-from pathlib import Path
 import sys
 import unittest
+from html.parser import HTMLParser
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -29,7 +29,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 class _Node:
-    def __init__(self, tag: str, attrs: dict[str, str], parent: "_Node | None") -> None:
+    def __init__(self, tag: str, attrs: dict[str, str], parent: _Node | None) -> None:
         self.tag = tag
         self.attrs = attrs
         self.parent = parent

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 """Rest schedule regression tests (plan item 6, critic-approved)."""
 
-from pathlib import Path
 import json
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -113,7 +113,8 @@ class RestScheduleTests(unittest.TestCase):
     def test_coordinator_creates_schedule_from_run_config(self):
         """The coordinator builds the gate from RunConfig when rest is enabled."""
         from unittest import mock
-        from parallel_runtime.models import RunConfig, ExecutionJob
+
+        from parallel_runtime.models import ExecutionJob, RunConfig
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -149,7 +150,8 @@ class RestScheduleTests(unittest.TestCase):
 
     def test_coordinator_skips_schedule_when_rest_disabled(self):
         from unittest import mock
-        from parallel_runtime.models import RunConfig, ExecutionJob
+
+        from parallel_runtime.models import ExecutionJob, RunConfig
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

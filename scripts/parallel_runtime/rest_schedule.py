@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Persistent admission control for a scheduled rest (plan item 6).
 
 After every ``interval`` completed files the coordinator pauses new job
@@ -10,6 +8,8 @@ multi-subject batches); the coordinator supplies the global completed count
 (any base offset already included) at the call site, exactly as the original
 wrapper did with NOTE_MAKER_REST_BASE_COMPLETED.
 """
+
+from __future__ import annotations
 
 import json
 import time
