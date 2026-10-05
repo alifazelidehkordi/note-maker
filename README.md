@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-0.8.2-2563eb)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-64748b)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-CI%20verified-16a34a)](#testing)
+[![Tests](https://img.shields.io/badge/tests-343%20passing-16a34a)](#testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-fbbf24.svg)](LICENSE)
 
 </div>
@@ -60,8 +60,9 @@ It was built for dense university and medical material, but the workflow works w
 ## Project documentation
 
 - [CLI: interactive runs, projects, previews, and status](docs/CLI.md)
+- [Unified configuration and CLI](docs/configuration.md) — configuration precedence, environment overrides, run previews
+- [Runtime environment variables](docs/runtime-variables.md) — complete `NOTE_MAKER_*` reference
 - [Branch integration and validation report (فارسی)](docs/INTEGRATION_REPORT_FA.md)
-- [Unified configuration and CLI](docs/configuration.md)
 - [Implementation reports (فارسی)](docs/implementation-reports/README.md)
 - [Architecture decisions](docs/adr/README.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
@@ -83,9 +84,24 @@ It was built for dense university and medical material, but the workflow works w
 - **Combined study books** with bookmarks, internal links, and continuous page numbering
 - **Legacy OPML/XMind workflows** for mind-map generation
 
+### Resilience features added in 0.9.0
+
+- **Current-UI selector registry** — assistant-message detection covers both the legacy and current ChatGPT markup (including the new markdown-text-style container) for *both* browser providers, with double-counting protection. Future UI changes are a one-line registry edit, not a code hunt.
+- **Bounded rate-limit re-check** — transient rate-limit modals are dismissed and the wait continues; a retry (with the proper cooldown) only happens when the modal cannot be dismissed or persists. Measured against 74 real rate-limit events.
+- **Thinking-effort verification** — set `CHATGPT_REQUIRED_EFFORT=high` and every submission verifies the composer's reasoning-effort setting first, adjusting it via the slider when needed, and fails closed on mismatch. No more batches silently generated at the wrong effort.
+- **Inline Markdown delivery** — set `NOTE_MAKER_INLINE_MARKDOWN=1` to deliver `.md` sources inline (wrapped in BEGIN/END markers) instead of uploading, bypassing the upload UI entirely. `NOTE_MAKER_INLINE_MAX_CHARS` (default 50,000) falls back to normal upload for oversized sources. Prompt hashes are computed on the original prompt only, so resume matching is unaffected by delivery mode.
+- **Modernized composer uploads** — handles the redesigned two-step attach menu (the document input only exists after choosing "Upload from computer") and never feeds documents into photo-only inputs.
+- **Scheduled rest** — pause workers automatically after every N successful files (e.g. 30 minutes after each 30 files), with persistent state that survives restarts and a global completed-count offset for multi-subject batches. See [Scheduled rest](#scheduled-rest).
+- **Run observability** — `summary.json` now records `download_fallbacks`, `last_fallback_reason`, per-job `delivery_modes`, and `interrupted_at_stage`, so the next ChatGPT UI change is detectable from aggregate summaries instead of grep sessions.
+- **Hardened diagnostics** — when the screenshot capture fails (typically a dead driver), the page source is captured automatically so the failure is still debuggable.
+- **`doctor` preflight** — `note-maker doctor` now validates the rest schedule (including state-file writability), the required-effort flag, and inline-delivery settings before you start a long batch.
+
 ## Quick start
 
 The supported entry point for new generation workflows is the installed `note-maker` command on Python 3.10 or newer. Existing shell/CMD launchers remain compatibility entry points.
+
+> [!TIP]
+> Use **Python 3.10–3.13**. Python 3.14 currently breaks the CLI's argument parser (`BooleanOptionalAction` rejects `--no-*` option names) and is not yet supported.
 
 ### 1. Install
 
@@ -97,9 +113,7 @@ python -m pip install --no-deps -e .
 note-maker --version
 ```
 
-The `setup.sh` and `setup.cmd` scripts also install the console command and prepare
-a browser. For the manual installation above, install Chromium before using the
-Patchright provider:
+The `setup.sh` and `setup.cmd` scripts also install the console command and prepare a browser. For the manual installation above, install Chromium before using the Patchright provider:
 
 ```bash
 python -m patchright install chromium
@@ -158,7 +172,7 @@ Combined books use one continuous visible page-number sequence across the genera
 
 | Requirement | Notes |
 |---|---|
-| Python 3.10+ | Supported Python environment for the `note-maker` CLI and processing tools |
+| Python 3.10–3.13 | 3.14 is not yet supported (CLI argument parser incompatibility) |
 | Google Chrome or Chromium | Required for ChatGPT web automation |
 | ChatGPT account | Required for authenticated browser sessions |
 | Linux or Windows | Supported runtime platforms; legacy shell/CMD launchers remain available |
@@ -186,6 +200,7 @@ Package names may vary by distribution.
 | One Markdown file split by `##` headings | `note-maker run markdown --markdown-file lecture.md --profile-snapshot NAME` | One note per section |
 | Configure reusable project settings | `note-maker init ...` | `note-maker.toml` |
 | Create/inspect a reusable browser session | `note-maker login --name NAME`; `note-maker profiles inspect NAME` | Immutable snapshot alias |
+| Preflight-check a long batch | `note-maker doctor --target pdf --strict` | Configuration, dependency, and path report |
 | Existing notes | `./run_notes_to_pdf.sh` | Individual study PDFs |
 | Notes plus original page metadata | Set `ORIGINAL_PARTS_DIR` | Enriched frontmatter |
 | Rich study index | Add `GENERATE_RICH_INDEX=1` | `STUDY_INDEX-rewritten.md` |
@@ -277,6 +292,54 @@ note-maker run pdf \
   --rate-limit-retries 2
 ```
 
+### Scheduled rest
+
+Long batches can now pace themselves: after every `rest_every` completed files, no new jobs are admitted for `rest_seconds` — in-flight jobs finish first, and the pause survives coordinator restarts so a crashed run does not re-trigger it.
+
+Configure it in `note-maker.toml`:
+
+```toml
+[runtime]
+rest_every = 30        # pause after every 30 completed files (0 = disabled)
+rest_seconds = 1800    # rest duration in seconds
+rest_state = "logs/rest-state.json"
+```
+
+or via environment variables (which override the TOML, matching the general configuration precedence):
+
+```bash
+export NOTE_MAKER_REST_EVERY=30
+export NOTE_MAKER_REST_SECONDS=1800
+export NOTE_MAKER_REST_STATE=logs/rest-state.json
+# optional: count previous subjects toward the interval (multi-batch wrappers)
+export NOTE_MAKER_REST_BASE_COMPLETED=60
+```
+
+The state file records `last_pause_after` and `until`; deleting it resets the schedule. `note-maker doctor` reports whether the configured state path is usable before you start.
+
+### Required thinking effort
+
+ChatGPT's reasoning-effort selector is per-conversation and can silently reset. When a batch must run at High:
+
+```bash
+export CHATGPT_REQUIRED_EFFORT=high
+note-maker run pdf --profile-snapshot default
+```
+
+Every submission re-reads the composer's effort setting, adjusts it through the slider (computing the exact arrow-key steps from the reported level), and **aborts the submission** if the required effort cannot be confirmed.
+
+### Inline Markdown delivery
+
+When the upload path is problematic (large batches, UI changes), deliver `.md` sources inside the prompt instead:
+
+```bash
+export NOTE_MAKER_INLINE_MARKDOWN=1
+# optional size guard (characters); larger files use the normal upload path
+export NOTE_MAKER_INLINE_MAX_CHARS=50000
+```
+
+The full source is appended to the prompt between `BEGIN/END SOURCE DOCUMENT` markers. Resume decisions hash the original prompt only, so a batch can be resumed with a different delivery mode without re-running completed files. `summary.json` records which mode each job used.
+
 ### Job timeout watchdog
 
 Worker heartbeats report process liveness, not whether the active Selenium job is still making progress. The coordinator therefore tracks a separate deadline for every assigned job.
@@ -305,10 +368,23 @@ Common options:
 | `--retry-failed` | Retry failed, interrupted, pending, or invalidated jobs |
 | `--adopt-existing` | Validate and register existing untracked outputs |
 | `--save-diagnostics` | Save diagnostics for every failed retry |
+| `--save-page-source` | Also save the page source for failed retries |
 | `--manifest PATH` | Use a custom manifest file |
 | `--sections 1,3,5-8` | Process selected Markdown sections |
 
-An existing output is only replaced after the new artifact passes structural validation. Final failures can preserve response text, metadata, and screenshots for debugging.
+An existing output is only replaced after the new artifact passes structural validation. Final failures preserve response text, metadata, screenshots, and (on screenshot failure) the page source for debugging.
+
+### Reading `summary.json`
+
+Every run writes `logs/runs/<run-id>/summary.json` (plus a `logs/last_batch_summary.json` pointer). Beyond the historical fields, summaries now include:
+
+| Field | Meaning |
+|---|---|
+| `download_fallbacks` | How many downloads needed the artifact-preview fallback path |
+| `last_fallback_reason` | Why the last fallback fired — a rising count is the earliest signal of a ChatGPT UI change |
+| `delivery_modes` | Per-job source delivery mode (`upload` or `inline`) |
+| `interrupted_at_stage` | The pipeline stage at which an interrupted run stopped |
+| `rate_limit_events` / `auth_failures` | Aggregate protection signals |
 
 ## Study index and source metadata
 
@@ -398,10 +474,10 @@ Study-index files, combined-book outputs, and README files are excluded from top
 
 ## Testing
 
-Run the main test suite:
+Run the main test suite (343 tests):
 
 ```bash
-npm test
+npm test        # or: ./run_tests.sh
 ```
 
 Run acceptance checks:
@@ -416,6 +492,9 @@ Run the Level 6 acceptance suite:
 npm run acceptance:level6
 ```
 
+> [!NOTE]
+> `run_tests.sh` expects a `.venv-linux` virtual environment (created by `setup.sh`) running **Python ≤ 3.13**. On Python 3.14 the CLI argument parser raises `ValueError: invalid option name '--no-warm-up' for BooleanOptionalAction`.
+
 ## Project layout
 
 ```text
@@ -424,7 +503,14 @@ note-maker/
 ├── outputs/                 # Generated notes, PDFs, and books
 ├── prompts/                 # ChatGPT prompt templates
 ├── note_maker/              # Supported Python package and unified CLI
-├── scripts/                 # Indexing, enrichment, PDF, and acceptance tools
+│   └── compat.py            #   scripts/ resolver (namespace-package safe)
+├── scripts/                 # Batch runtime, browser providers, parallel
+│   ├── browser_runtime/     #   Selenium/Patchright providers + selector registry
+│   ├── parallel_runtime/    #   Coordinator, workers, rest schedule, resilience
+│   └── ...                  #   Indexing, enrichment, PDF, and acceptance tools
+├── tests/
+│   ├── fixtures/            # Sanitized captured ChatGPT markup (with provenance)
+│   └── ...                  # 343 unit tests
 ├── setup.sh / setup.cmd     # Compatibility environment setup
 ├── run_login.*              # Compatibility login/snapshot entry points
 ├── run_pdf_to_notes.*       # Compatibility PDF/DOCX batch entry points
@@ -440,33 +526,46 @@ note-maker/
 
 - Do not commit browser profiles, cookies, login snapshots, credentials, or personal documents.
 - Project configuration may contain session aliases/snapshot references, never credentials or cookie material.
+- Test fixtures under `tests/fixtures/` are sanitized captures of ChatGPT markup only — no conversation content.
 - Review generated notes before relying on them for study, clinical, legal, or professional decisions.
-- Use conservative parallelism to reduce account challenges and rate-limit pressure.
-- Keep sensitive source material local and verify what is uploaded to ChatGPT.
+- Use conservative parallelism and the scheduled-rest feature to reduce account challenges and rate-limit pressure.
+- Keep sensitive source material local and verify what is uploaded to ChatGPT. With `NOTE_MAKER_INLINE_MARKDOWN=1`, source text is sent **in the prompt**, not as an upload — the same privacy considerations apply.
 
 ## Troubleshooting
 
-**The browser opens but is logged out**  
+**The browser opens but is logged out**
 Run `note-maker login --name NAME` to create a fresh immutable snapshot alias. Cookie markers are evidence only; a server-side session can expire independently.
 
-**ChatGPT responds with text instead of a file**  
+**ChatGPT responds with text instead of a file**
 Update the prompt so it explicitly requests a downloadable Markdown artifact.
 
-**Downloads are missing or incomplete**  
-Try Patchright, use one worker, increase download retries, and inspect the saved diagnostics.
+**Downloads are missing or incomplete**
+Try Patchright, use one worker, increase download retries, and inspect the saved diagnostics. Check `download_fallbacks` and `last_fallback_reason` in `summary.json`: a rising count means ChatGPT changed its download UI.
 
-**A worker remains busy on one file**  
-The coordinator now applies a 30-minute hard deadline to each assigned job. After the deadline it stops the worker and browser process tree, releases the claim, and requeues the file. If the worker restart budget is exhausted, rerun the batch with `--retry-failed`.
+**The composer says "This file type isn't supported"**
+ChatGPT's redesigned composer hides the document input behind the attach menu. Update to a version with composer-menu support, or set `NOTE_MAKER_INLINE_MARKDOWN=1` to bypass uploads entirely.
 
-**PDF rendering fails on Linux**  
+**A batch ran at the wrong reasoning effort**
+Set `CHATGPT_REQUIRED_EFFORT=high` (or your target level). Submissions are verified and blocked on mismatch. `note-maker doctor` confirms the flag is readable before the batch starts.
+
+**A worker remains busy on one file**
+The coordinator applies a 30-minute hard deadline to each assigned job. After the deadline it stops the worker and browser process tree, releases the claim, and requeues the file. If the worker restart budget is exhausted, rerun the batch with `--retry-failed`. `interrupted_at_stage` in `summary.json` shows where the run stopped.
+
+**`ValueError: invalid option name '--no-...' for BooleanOptionalAction`**
+You are running Python 3.14, which is not yet supported. Use Python 3.10–3.13.
+
+**Rate-limit modals keep appearing**
+The coordinator dismisses transient modals and continues; persistent ones raise a typed `RateLimitError` and trigger the global cooldown. If they recur every few files, lower `--parallel-runs`, or configure [scheduled rest](#scheduled-rest) to pace the batch.
+
+**PDF rendering fails on Linux**
 Install the required Cairo, Pango, font, and WeasyPrint system packages.
 
-**A batch was interrupted**  
-Run the same command again with resume enabled, or add `--retry-failed` to retry incomplete jobs.
+**A batch was interrupted**
+Run the same command again with resume enabled, or add `--retry-failed` to retry incomplete jobs. Check `interrupted_at_stage` in `summary.json` to see what was in flight.
 
 ## Contributing
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), keep changes focused, run the test suite, and avoid committing generated or sensitive runtime data.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), keep changes focused, run the test suite, and avoid committing generated or sensitive runtime data. When ChatGPT ships a UI change, the fix is usually a one-line edit in `scripts/browser_runtime/selectors.py` plus a fixture under `tests/fixtures/` — please include a sanitized fixture with provenance (capture date, sanitized flag) in any selector-related PR.
 
 ## License
 

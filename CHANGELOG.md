@@ -6,6 +6,47 @@ All notable changes to Note Maker are documented here.
 
 ### Added
 
+- Current-UI selector registry: assistant-message detection covers the new
+  markdown-text-style container alongside the legacy one for both browser
+  providers, with double-counting protection; new composer attach-menu
+  selectors and sanitized HTML fixtures with provenance.
+- Thinking-effort verification: `CHATGPT_REQUIRED_EFFORT` verifies the
+  composer's reasoning effort before every submission, adjusts it via the
+  slider with steps computed from the reported level, and fails closed on
+  mismatch.
+- Inline Markdown delivery: `NOTE_MAKER_INLINE_MARKDOWN=1` sends `.md`
+  sources in the prompt (BEGIN/END markers) instead of uploading, with a
+  `NOTE_MAKER_INLINE_MAX_CHARS` fallback (default 50,000) and prompt hashes
+  computed on the original prompt so resume matching is delivery-mode
+  independent.
+- Scheduled rest: `rest_every`/`rest_seconds`/`rest_state`/`rest_base_completed`
+  in `[runtime]` (env `NOTE_MAKER_REST_*`) pause new admissions after every N
+  completed files; state persists across restarts.
+- Bounded rate-limit re-check: transient modals are dismissed and the wait
+  continues; `RateLimitError` is raised only when dismissal fails or three
+  consecutive rate-limited observations occur. Download failures check for a
+  visible rate-limit modal before being classified as download errors.
+- Run observability: `summary.json` now records `download_fallbacks`,
+  `last_fallback_reason`, per-job `delivery_modes`, and
+  `interrupted_at_stage`.
+- Doctor batch-config preflight: rest-schedule validity (including state-file
+  writability), required-effort flag, and inline-delivery settings.
+- Diagnostics resilience: when the screenshot capture fails, the page source
+  is captured automatically so failures stay debuggable.
+- `docs/runtime-variables.md`: complete `NOTE_MAKER_*` reference.
+
+### Fixed
+
+- Redesigned composer uploads: the two-step attach menu is driven explicitly
+  (`expect_file_chooser`), photo-only accept lists are no longer treated as
+  document-input fallbacks, and the image-token set was extended (avif, bmp,
+  heic, heif).
+- `compat.py` now resolves the packaged `scripts/` directory
+  namespace-package safely; running the CLI from a checkout where `scripts`
+  lacks `__init__.py` no longer crashes with `TypeError`.
+- Rate-limit modals visible during download attempts are no longer
+  misclassified as download failures.
+- Deterministic per-slot queue cleanup on every coordinator shutdown path.
 - Integrated conservative profile ownership and scoped cleanup, stage events,
   live status snapshots, persistent event journals, structured worker logs,
   and detailed run summaries.
