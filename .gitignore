@@ -82,3 +82,11 @@ profile_templates*/
 # Local review artifacts (not part of the project)
 .local_uncommitted.patch
 .reference/
+
+# Session/config files that must never be committed
+note-maker.toml
+*.db
+*.sqlite
+*.sqlite3
+cookies*
+diagnostics/

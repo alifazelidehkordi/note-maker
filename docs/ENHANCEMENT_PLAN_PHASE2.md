@@ -42,4 +42,4 @@ Committed work on branch `enhancement/real-usage-hardening` (6 commits, all gree
 - Full suite green: **331 existing tests + the new tests from this phase (target ≥345 total)** under Python 3.11 in `.venv`.
 - The namespace-shadow subprocess test passes AND its sanity guard confirms the shadow condition held (critic issue 1's vacuous-pass risk is closed by construction).
 - ruff on all newly-touched files clean; baseline reduced by the documented fixable count, never increased.
-- `git status` on `~/projects/note-maker-download-fixed` unchanged before/after (8 dirty entries).
+- `git status` on `<local working checkout>` unchanged before/after (8 dirty entries).

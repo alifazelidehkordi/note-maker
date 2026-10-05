@@ -18,9 +18,9 @@ Create `note-maker.toml` with reusable input, output, prompt, format, browser-pr
 
 ```bash
 note-maker init \
-  --input-dir "/home/ali/Desktop/anatomy/Multi-Notes (1)" \
-  --output-dir /home/ali/Desktop/anatomy/outputs \
-  --prompt /home/ali/Desktop/anatomy/prompt \
+  --input-dir ~/Documents/study/anatomy/inputs \
+  --output-dir ~/Documents/study/anatomy/outputs \
+  --prompt ~/Documents/study/anatomy/prompt.md \
   --format md \
   --browser-provider patchright \
   --workers 2
