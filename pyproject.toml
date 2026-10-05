@@ -26,7 +26,7 @@ dependencies = [
   "Markdown>=3.6,<4",
   "mistune>=3.3,<4",
   "Pillow>=12,<13",
-  "WeasyPrint>=62,<70",
+  "WeasyPrint>=62,<71",
   "pypdf>=4,<7",
   "PyYAML>=6,<7",
   "patchright==1.61.2",

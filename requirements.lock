@@ -108,7 +108,7 @@ typing-extensions==4.16.0
     #   selenium
 urllib3==2.8.0
     # via selenium
-weasyprint==69.0
+weasyprint==70.0
     # via note-maker (pyproject.toml)
 webencodings==0.6.1
     # via

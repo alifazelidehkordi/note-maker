@@ -23,6 +23,11 @@ CONFIG_TEMPLATE = (
 )
 
 
+def _toml_path(path) -> str:
+    """Cross-platform TOML-safe path: forward slashes on every OS."""
+    return Path(path).resolve().as_posix()
+
+
 def run_doctor(config_text, tmp, *, extra_env=None, strict=True):
     toml = Path(tmp) / "note-maker.toml"
     toml.write_text(config_text)
@@ -55,7 +60,7 @@ class DoctorBatchConfigTests(unittest.TestCase):
             readonly.chmod(0o500)
             try:
                 config = CONFIG_TEMPLATE.format(
-                    rest_every=30, rest_state=readonly / "rest.json", tmp=tmp)
+                    rest_every=30, rest_state=_toml_path(readonly / "rest.json"), tmp=_toml_path(tmp))
                 r = run_doctor(config, tmp)
             finally:
                 readonly.chmod(0o700)
@@ -66,7 +71,7 @@ class DoctorBatchConfigTests(unittest.TestCase):
     def test_valid_rest_schedule_passes_doctor(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = CONFIG_TEMPLATE.format(
-                rest_every=30, rest_state=Path(tmp) / "rest.json", tmp=tmp)
+                rest_every=30, rest_state=_toml_path(Path(tmp) / "rest.json"), tmp=_toml_path(tmp))
             r = run_doctor(
                 config, tmp,
                 extra_env={"CHATGPT_REQUIRED_EFFORT": "high",
@@ -79,7 +84,7 @@ class DoctorBatchConfigTests(unittest.TestCase):
     def test_rest_state_without_interval_flags_a_problem(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = CONFIG_TEMPLATE.format(
-                rest_every=0, rest_state=Path(tmp) / "rest.json", tmp=tmp)
+                rest_every=0, rest_state=_toml_path(Path(tmp) / "rest.json"), tmp=_toml_path(tmp))
             r = run_doctor(config, tmp, strict=False)
             self.assertIn("rest_schedule", r.stdout)
             self.assertIn("rest_every is 0", r.stdout)
