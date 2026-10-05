@@ -35,6 +35,9 @@ def run_doctor(config_text, tmp, *, extra_env=None, strict=True):
     env = dict(os.environ)
     env.pop("CHATGPT_REQUIRED_EFFORT", None)
     env.pop("NOTE_MAKER_INLINE_MARKDOWN", None)
+    # Make the package importable without an editable install (CI installs
+    # requirements.txt only and the subprocess runs in a foreign cwd).
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     if extra_env:
         env.update(extra_env)
     args = [sys.executable, "-m", "note_maker.entrypoint", "--config", str(toml),
