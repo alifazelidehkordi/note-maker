@@ -13,6 +13,7 @@ vacuously (critic issue 1, phase-2 review round 1).
 
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -49,10 +50,27 @@ class NamespaceShadowTests(unittest.TestCase):
         break activate_legacy_imports; the sanity guard proves the shadow
         condition held."""
         with tempfile.TemporaryDirectory() as tmp:
-            shadow = Path(tmp) / "shadow"
-            (shadow / "scripts").mkdir(parents=True)  # NO __init__.py -> namespace pkg
             env = dict(os.environ)
-            env["PYTHONPATH"] = str(shadow) + os.pathsep + env.get("PYTHONPATH", "")
+            # Simulate the real-world condition: a checkout whose scripts/
+            # lacks __init__.py (namespace package). Copy the repo's
+            # scripts/note_maker dirs without the package marker, and hide
+            # any regular `scripts` package by pointing PYTHONPATH at the
+            # namespace copy FIRST. (A regular package anywhere on sys.path
+            # beats a namespace package, so the copy must not carry
+            # scripts/__init__.py and the real ROOT must not be importable.)
+            copy_root = Path(tmp) / "checkout"
+            shutil.copytree(ROOT / "scripts", copy_root / "scripts",
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            (copy_root / "scripts" / "__init__.py").unlink(missing_ok=True)
+            shutil.copytree(ROOT / "note_maker", copy_root / "note_maker",
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            (copy_root / "note_maker" / "__init__.py").write_text("")
+            env = dict(os.environ)
+            # REPLACE any inherited PYTHONPATH: the parent test run may carry
+            # the repo root (which holds a regular scripts package) on it,
+            # and a regular package anywhere on sys.path beats a namespace
+            # package. The subprocess must see only the namespace copy.
+            env["PYTHONPATH"] = str(copy_root)
             r = subprocess.run(
                 [sys.executable, "-c", SUBPROC_SCRIPT],
                 capture_output=True,
@@ -86,16 +104,18 @@ class NamespaceShadowTests(unittest.TestCase):
             decoy.mkdir(parents=True)  # exists but has no browser_runtime
             probe = textwrap.dedent(
                 """
-                import json, sys
-                sys.path.insert(0, %(repo)r)
+                import json
                 from note_maker.compat import resolve_scripts_dir
                 print(json.dumps({"resolved": str(resolve_scripts_dir())}))
                 """
-            ) % {"repo": str(ROOT)}
+            )
+            env = dict(os.environ)
+            env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
             r = subprocess.run(
                 [sys.executable, "-c", probe],
                 capture_output=True,
                 text=True,
+                env=env,
                 cwd=Path(tmp) / "decoy_cwd",
                 timeout=120,
             )

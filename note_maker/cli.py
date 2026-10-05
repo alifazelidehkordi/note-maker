@@ -523,10 +523,10 @@ def _doctor(args: argparse.Namespace) -> int:
         rest_state = getattr(runtime, "rest_state", None)
         rest_every = int(getattr(runtime, "rest_every", 0) or 0)
         if rest_every > 0:
-            state_ok = bool(rest_state)
+            state_ok = isinstance(rest_state, (str, Path)) and bool(str(rest_state))
             writable = False
             if state_ok:
-                state_path = Path(rest_state)
+                state_path = Path(str(rest_state))
                 try:
                     state_path.parent.mkdir(parents=True, exist_ok=True)
                     probe = state_path.with_suffix(".doctor-probe")
@@ -559,7 +559,8 @@ def _doctor(args: argparse.Namespace) -> int:
                 {
                     "name": "required_effort",
                     "ok": effort in {"low", "medium", "high"},
-                    "detail": effort if effort in {"low", "medium", "high"}
+                    "detail": effort
+                    if effort in {"low", "medium", "high"}
                     else f"unsupported value {effort!r}",
                 }
             )

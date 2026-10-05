@@ -118,7 +118,6 @@ _ENV_TYPES: dict[str, type] = {
     "rest_seconds": float,
     "rest_state": str,
     "rest_base_completed": int,
-    "retry_jitter_ratio": float,
     "input_dir": str,
     "output_dir": str,
     "prompt": str,

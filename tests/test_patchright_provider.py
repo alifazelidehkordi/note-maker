@@ -488,7 +488,13 @@ class PatchrightProviderTests(unittest.TestCase):
                 mock.patch.object(session, "_upload_error_text", return_value=""),
             ):
                 session.upload(UploadRequest(source))
-            chooser.set_files.assert_called_once_with(str(source))
+            # Windows temp paths may differ in short/long form (RUNNER~1 vs
+            # runneradmin); compare resolved paths.
+            actual = chooser.set_files.call_args.args[0]
+            self.assertEqual(
+                Path(actual).resolve(), source.resolve(),
+                "chooser must receive the source path",
+            )
             self.assertEqual(session._delivery_mode, "upload")
             self.assertEqual(session._inline_source_text, "")
 
@@ -525,7 +531,8 @@ class PatchrightProviderTests(unittest.TestCase):
                 mock.patch.object(session, "_upload_error_text", return_value=""),
             ):
                 session.upload(UploadRequest(source))
-            doc_input.set_input_files.assert_called_once_with(str(source))
+            actual = doc_input.set_input_files.call_args.args[0]
+            self.assertEqual(Path(actual).resolve(), source.resolve())
             image_input.set_input_files.assert_not_called()
 
     def test_close_path_emits_no_unawaited_coroutine_warnings(self):
