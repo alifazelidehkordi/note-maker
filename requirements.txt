@@ -1,1 +1,13 @@
--r requirements.lock
+# Runtime dependencies (kept in sync with requirements.lock by piptools).
+# This file exists so pip/Dependabot can see the runtime dependency set directly.
+# Regenerate the locks with: python -m piptools compile pyproject.toml
+markdown==3.11
+mistune==3.3.4
+patchright==1.61.2
+playwright-stealth==2.0.3
+pyautogui==0.9.54
+pypdf==6.19.0
+pyyaml==6.0.3
+selenium==4.50.0
+tomli==2.4.1
+weasyprint==70.0
