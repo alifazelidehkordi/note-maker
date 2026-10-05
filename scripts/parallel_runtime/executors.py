@@ -179,6 +179,10 @@ class _BrowserExecutorBase:
         download_fallbacks = int(getattr(driver_obj, "_download_fallbacks", 0) or 0)
         last_fallback_reason = getattr(driver_obj, "_last_fallback_reason", None)
         delivery_mode = getattr(driver_obj, "_delivery_mode", None)
+        reporter = self._stage_reporter
+        interrupted_at_stage = (
+            reporter.current_stage() if reporter is not None and not ok else None
+        )
         return WorkerExecutionResult(
             success=ok,
             error=None if ok else "No valid artifact was produced after all retry budgets were exhausted.",
@@ -194,6 +198,7 @@ class _BrowserExecutorBase:
                 str(last_fallback_reason) if last_fallback_reason else None
             ),
             delivery_mode=str(delivery_mode) if delivery_mode else None,
+            interrupted_at_stage=interrupted_at_stage,
             metadata={
                 "rate_limit_signaled": self.rate_limit_count > 0,
                 "auth_signaled": category == FailureCategory.AUTH.value,

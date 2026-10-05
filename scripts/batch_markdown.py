@@ -361,6 +361,7 @@ def run_batch(
             rest_every=runtime.rest_every,
             rest_seconds=runtime.rest_seconds,
             rest_state=runtime.rest_state,
+            rest_base_completed=runtime.rest_base_completed,
             worker_memory_limit_mb=runtime.worker_memory_limit_mb,
             content_attempts=max_section_attempts,
             network_retries=runtime.network_retries,

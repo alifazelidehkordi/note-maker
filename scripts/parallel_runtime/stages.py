@@ -35,6 +35,10 @@ class StageReporter:
     def set_attempt(self, attempt: int | None) -> None:
         self.attempt = None if attempt is None else max(1, int(attempt))
 
+    def current_stage(self) -> str | None:
+        """The stage in progress right now, for failure observability."""
+        return self._stage.value if self._stage is not None else None
+
     def browser_stage(self, stage: StageKind) -> None:
         self.transition(stage, attempt=None)
 

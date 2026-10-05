@@ -84,12 +84,12 @@ It was built for dense university and medical material, but the workflow works w
 - **Combined study books** with bookmarks, internal links, and continuous page numbering
 - **Legacy OPML/XMind workflows** for mind-map generation
 
-### Resilience features added in 0.9.0
+### Resilience features (current `main`, see the [changelog](CHANGELOG.md) `[Unreleased]` section)
 
 - **Current-UI selector registry** — assistant-message detection covers both the legacy and current ChatGPT markup (including the new markdown-text-style container) for *both* browser providers, with double-counting protection. Future UI changes are a one-line registry edit, not a code hunt.
 - **Bounded rate-limit re-check** — transient rate-limit modals are dismissed and the wait continues; a retry (with the proper cooldown) only happens when the modal cannot be dismissed or persists. Measured against 74 real rate-limit events.
 - **Thinking-effort verification** — set `CHATGPT_REQUIRED_EFFORT=high` and every submission verifies the composer's reasoning-effort setting first, adjusting it via the slider when needed, and fails closed on mismatch. No more batches silently generated at the wrong effort.
-- **Inline Markdown delivery** — set `NOTE_MAKER_INLINE_MARKDOWN=1` to deliver `.md` sources inline (wrapped in BEGIN/END markers) instead of uploading, bypassing the upload UI entirely. `NOTE_MAKER_INLINE_MAX_CHARS` (default 50,000) falls back to normal upload for oversized sources. Prompt hashes are computed on the original prompt only, so resume matching is unaffected by delivery mode.
+- **Inline Markdown delivery** — set `NOTE_MAKER_INLINE_MARKDOWN=1` to deliver `.md` sources inline (wrapped in BEGIN/END markers) instead of uploading, bypassing the upload UI entirely. **Patchright runs only.** `NOTE_MAKER_INLINE_MAX_CHARS` (default 50,000) falls back to normal upload for oversized sources. Prompt hashes are computed on the original prompt only, so resume matching is unaffected by delivery mode.
 - **Modernized composer uploads** — handles the redesigned two-step attach menu (the document input only exists after choosing "Upload from computer") and never feeds documents into photo-only inputs.
 - **Scheduled rest** — pause workers automatically after every N successful files (e.g. 30 minutes after each 30 files), with persistent state that survives restarts and a global completed-count offset for multi-subject batches. See [Scheduled rest](#scheduled-rest).
 - **Run observability** — `summary.json` now records `download_fallbacks`, `last_fallback_reason`, per-job `delivery_modes`, and `interrupted_at_stage`, so the next ChatGPT UI change is detectable from aggregate summaries instead of grep sessions.
@@ -156,17 +156,19 @@ Generated Markdown files are written to the configured output directory. The exi
 
 ### 5. Build PDFs and a combined book
 
-PDF/book export still uses the existing compatibility tools:
+PDF/book export uses the existing compatibility tools:
 
 ```bash
 NOTES_DIR=outputs/notes \
 PDF_DIR=outputs/notes/pdfs \
 CREATE_COMBINED=1 \
 COMBINED_OUTPUT=outputs/notes/COMBINED_NOTES.pdf \
-./run_notes_to_pdf.sh
+FONT_FILE=/path/to/regular.ttf \
+FONT_BOLD_FILE=/path/to/bold.ttf \
+./run_pdf_to_notes.sh
 ```
 
-Combined books use one continuous visible page-number sequence across the generated index and all topic PDFs.
+`FONT_FILE` is mandatory (the per-file PDF renderer needs it); `FONT_BOLD_FILE` defaults to `FONT_FILE` when omitted. Combined books use one continuous visible page-number sequence across the generated index and all topic PDFs. To render already-generated notes without re-running the batch, use `./run_notes_to_pdf.sh` with the same `FONT_FILE` variables.
 
 ## Requirements
 
@@ -441,8 +443,8 @@ python scripts/convert_md_to_pdf.py note.md --rtl --preset compact --theme emera
 # A directory
 python scripts/convert_md_to_pdf.py outputs/notes --batch --output outputs/notes/pdfs
 
-# Custom CSS
-CSS_FILE=~/.obsidian/print.css ./run_notes_to_pdf.sh
+# Custom CSS (run_pdf_to_notes.sh consumes CSS_FILE; run_notes_to_pdf.sh does not)
+CSS_FILE=~/.obsidian/print.css ./run_pdf_to_notes.sh
 ```
 
 The converter strips YAML frontmatter, styles important sections, detects RTL content, and returns exit code `2` when a batch completes with partial failures.
@@ -546,7 +548,7 @@ Update the prompt so it explicitly requests a downloadable Markdown artifact.
 Try Patchright, use one worker, increase download retries, and inspect the saved diagnostics. Check `download_fallbacks` and `last_fallback_reason` in `summary.json`: a rising count means ChatGPT changed its download UI.
 
 **The composer says "This file type isn't supported"**
-ChatGPT's redesigned composer hides the document input behind the attach menu. Update to a version with composer-menu support, or set `NOTE_MAKER_INLINE_MARKDOWN=1` to bypass uploads entirely.
+ChatGPT's redesigned composer hides the document input behind the attach menu. Update to a version with composer-menu support, or set `NOTE_MAKER_INLINE_MARKDOWN=1` to bypass uploads entirely (Patchright runs only).
 
 **A batch ran at the wrong reasoning effort**
 Set `CHATGPT_REQUIRED_EFFORT=high` (or your target level). Submissions are verified and blocked on mismatch. `note-maker doctor` confirms the flag is readable before the batch starts.

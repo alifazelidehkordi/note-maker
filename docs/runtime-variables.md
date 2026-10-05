@@ -1,6 +1,8 @@
 # Runtime environment variables
 
-Every supported runtime or command key has a `NOTE_MAKER_` environment form; key names are uppercased. Environment variables override `note-maker.toml`, which overrides built-in defaults (see [configuration precedence](configuration.md#configuration-precision)).
+Every supported runtime or command key has a `NOTE_MAKER_` environment form; key names are uppercased. Environment variables override `note-maker.toml`, which overrides built-in defaults (see [configuration precedence](configuration.md#configuration-precedence)).
+
+This reference covers the runtime keys most commonly tuned from the environment. Every runtime key in `RuntimeSettings` plus every command-level key (`input_dir`, `output_dir`, `prompt`, `max_attempts`, `download_timeout`, `close_delay`, `limit`, `model`, `sections`, `markdown_file`, `manifest`, `save_diagnostics`, `save_page_source`, `no_warm_up`, `keep_browser`, `chrome_profile_dir`, …) also has a `NOTE_MAKER_` form — see the `_ENV_TYPES` table in `note_maker/config.py` for the authoritative list.
 
 Boolean values accept `true`, `false`, `yes`, `no`, `on`, `off`, `1`, and `0`.
 
@@ -36,9 +38,16 @@ Boolean values accept `true`, `false`, `yes`, `no`, `on`, `off`, `1`, and `0`.
 | `NOTE_MAKER_WORKER_HEARTBEAT_INTERVAL` | float | `10.0` | Heartbeat period |
 | `NOTE_MAKER_WORKER_TIMEOUT` | float | `45.0` | Worker startup/liveness timeout |
 | `NOTE_MAKER_WORKER_READY_TIMEOUT` | float | `180.0` | Worker readiness timeout |
+| `NOTE_MAKER_WORKER_STARTUP_STAGGER` | float | `1.0` | Delay between worker startups |
+| `NOTE_MAKER_MAX_WORKER_RESTARTS` | int | `2` | Worker restart budget per run |
+| `NOTE_MAKER_SHUTDOWN_GRACE_SECONDS` | float | `10.0` | Grace period before force-stopping workers |
 | `NOTE_MAKER_ADAPTIVE_CONCURRENCY` | bool | `false` | Enable adaptive scale-down/up |
 | `NOTE_MAKER_ADAPTIVE_SCALE_DOWN_THRESHOLD` | int | `2` | Failures before scaling down |
 | `NOTE_MAKER_ADAPTIVE_RECOVERY_SECONDS` | float | `900.0` | Wait before scaling back up |
+| `NOTE_MAKER_AUTH_FAILURES_BEFORE_ABORT` | int | `2` | Auth failures before the circuit breaker trips |
+| `NOTE_MAKER_RATE_LIMIT_FAILURES_BEFORE_ABORT` | int | `6` | Rate-limit failures before aborting the run |
+| `NOTE_MAKER_RATE_LIMIT_WINDOW_SECONDS` | float | `300.0` | Window for counting rate-limit signals |
+| `NOTE_MAKER_RETRY_JITTER_RATIO` | float | `0.20` | Random jitter added to backoff delays (0–1) |
 
 ## Scheduled rest (0.9.0)
 
@@ -74,6 +83,8 @@ These are provider-level flags consumed directly by the browser runtime (not par
 | `LONG_GENERATION_STOP_SECONDS` | int | `900` | Generation length before the coordinator presses Stop |
 | `POST_STOP_GRACE_SECONDS` | int | `60` | Grace period after Stop for a late artifact |
 | `RATE_LIMIT_WAIT_SECONDS` | int | `180` | Cooldown used when a rate-limit modal survives the bounded re-check |
+
+Inline delivery is implemented in the **Patchright provider only**; selenium runs always upload. The size guard makes oversized sources fall back to the normal upload path.
 
 Example — a High-effort batch with inline delivery:
 

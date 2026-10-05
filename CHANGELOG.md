@@ -53,15 +53,13 @@ All notable changes to Note Maker are documented here.
 - Integrated project initialization, browser session aliases, provider-aware
   diagnostics, read-only execution previews, filename selection, and the
   interactive CLI. Setup scripts now install the console entry point.
-
-### Fixed
-
 - Combined competing console entry points so detailed status and execution
   previews coexist with interactive and legacy workflows.
 - Fixed strict typing and formatting errors in the integrated CLI modules.
 - Invalid Markdown section selectors and unreadable/non-UTF-8 preview inputs
   now produce usage errors instead of uncaught exceptions.
 - Documented Chromium installation for the manual Patchright setup path.
+
 
 ### Maintenance
 
