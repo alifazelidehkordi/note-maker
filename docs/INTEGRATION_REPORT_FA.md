@@ -4,12 +4,12 @@
 
 ## وضعیت اولیه
 
-- مخزن خصوصی `alifazelidehkordi/note-maker`، branch پیش‌فرض `main`، commit اولیه `a86ed6744841e38439c8433e45a15e36b11915cc`.
+- مخزن `alifazelidehkordi/note-maker`، branch پیش‌فرض `main`، commit اولیه `a86ed6744841e38439c8433e45a15e36b11915cc`.
 - نسخه پروژه 0.8.2؛ Python >=3.10، setuptools/wheel، argparse CLI و TOML configuration.
 - Selenium/Patchright برای مرورگر، Markdown/Mistune، WeasyPrint و pypdf برای PDF، OPML/XMind، multiprocessing و manifest برای پردازش قابل ادامه.
 - package.json فقط launcher دستورات تست/پذیرش است؛ پروژه frontend جاوااسکریپتی نیست.
 - وابستگی‌ها: pyproject.toml، requirements.lock و requirements-dev.lock؛ requirements.txt به lock زمان اجرا ارجاع می‌دهد.
-- CI اولیه main موفق بود: workflow runهای 33925664333 و 33925664326.
+- CI اولیه main موفق بود: workflow runهای <run-id> و <run-id>.
 - تست پایه محلی: 232 تست، موفق با یک skip؛ ادعایی مبنی بر خراب بودن اولیه main وجود ندارد.
 - clone مستقیم بدون credential در این محیط ممکن نبود. محتوای Git از اتصال مجاز GitHub دریافت شد؛ blobها، treeها و 80 commit موردنیاز با SHA اصلی بازسازی/تأیید شدند. ادغام‌ها با Git و استراتژی ort انجام شدند. تاریخچه محلی در مبنای 9109c6d shallow است؛ تاریخچه اصلی GitHub حذف یا بازنویسی نمی‌شود.
 
