@@ -78,3 +78,7 @@ profile_templates*/
 .note-maker-claims/
 *.claim.json
 .claude/
+
+# Local review artifacts (not part of the project)
+.local_uncommitted.patch
+.reference/
