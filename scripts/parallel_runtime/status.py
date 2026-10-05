@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Mapping
 from uuid import uuid4
 
 STATUS_SCHEMA_VERSION = 1
@@ -308,6 +308,6 @@ def install_manifest_status_tracking() -> None:
         except (OSError, ValueError, TypeError):
             pass
 
-    setattr(ManifestStore, "apply_plan", apply_plan_with_status)
-    setattr(ManifestStore, "finish_run", finish_run_with_status)
-    setattr(ManifestStore, "_part1c_status_tracking_installed", True)
+    ManifestStore.apply_plan = apply_plan_with_status
+    ManifestStore.finish_run = finish_run_with_status
+    ManifestStore._part1c_status_tracking_installed = True

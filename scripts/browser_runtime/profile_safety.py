@@ -6,10 +6,11 @@ import re
 import shutil
 import socket
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from process_liveness import pid_is_alive as _pid_alive
 from process_liveness import process_start_identity as _process_start_identity
@@ -156,7 +157,7 @@ class SafeProfileLease(_BaseProfileLease):
         del stale_after_seconds
         return _owner_state(payload) is OwnershipState.STALE
 
-    def acquire(self) -> "SafeProfileLease":
+    def acquire(self) -> SafeProfileLease:
         _legacy._ensure_private_directory(self.profile_dir)
         payload = {
             "schema_version": _legacy.PROFILE_METADATA_SCHEMA_VERSION,
@@ -561,4 +562,4 @@ def install_profile_safety() -> None:
     _legacy.ProfileActivity = ProfileActivity
     _legacy.ProfileLease = SafeProfileLease
     _legacy.ProfileManager = SafeProfileManager
-    setattr(_legacy, "_part1a_profile_safety_installed", True)
+    _legacy._part1a_profile_safety_installed = True

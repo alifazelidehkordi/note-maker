@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Callable, Iterable, TypeVar
+from typing import TypeVar
 
 from manifest import JobSpec
 
 from .models import PlanningCandidate
-
 
 S = TypeVar("S")
 
@@ -65,10 +65,10 @@ def build_section_candidates(
     candidates: list[PlanningCandidate[tuple[S, Path]]] = []
     for section in sections:
         section_file = section_file_writer(section, section_dir)
-        index = int(getattr(section, "index"))
-        title = str(getattr(section, "title"))
-        text = str(getattr(section, "text"))
-        output_stem = str(getattr(section, "output_stem"))
+        index = int(section.index)
+        title = str(section.title)
+        text = str(section.text)
+        output_stem = str(section.output_stem)
         label = f"section {index:02d} {title}"
         job = JobSpec.for_text(
             key=key_builder(markdown_file, section, ext),

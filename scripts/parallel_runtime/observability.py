@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
 
 from .event_journal import read_event_journal
 from .status import read_status_snapshot
 from .structured_logs import read_structured_log
-
 
 OBSERVABILITY_SCHEMA_VERSION = 1
 DEFAULT_RECENT_EVENTS = 8

@@ -5,8 +5,8 @@ import json
 import os
 import signal
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .event_bus import EventKind
 from .models import ExecutionJob, WorkerExecutionResult

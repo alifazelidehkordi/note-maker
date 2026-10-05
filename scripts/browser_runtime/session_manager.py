@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from .contracts import BrowserProvider, BrowserSession
-from .models import BrowserHealth, BrowserLaunchOptions, DownloadRequest, ResponseWaitRequest, UploadRequest
+from .models import (
+    BrowserHealth,
+    BrowserLaunchOptions,
+    DownloadRequest,
+    ResponseWaitRequest,
+    UploadRequest,
+)
 from .profile_manager import ProfileLease, ProfileManager, WorkerProfileContext
 
 

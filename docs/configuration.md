@@ -63,6 +63,9 @@ Example:
 [runtime]
 browser_provider = "selenium"
 parallel_runs = 1
+rest_every = 30          # scheduled rest: pause after every 30 completed files
+rest_seconds = 1800      # ... for 30 minutes
+rest_state = "logs/rest-state.json"
 
 [commands.pdf]
 input_dir = "inputs"
@@ -167,15 +170,20 @@ Markdown-section runs continue to use the existing `--sections` selector; `--inc
 
 ## Environment overrides
 
-Every supported runtime or command key has a `NOTE_MAKER_` environment form. Key names are uppercased.
+Every supported runtime or command key has a `NOTE_MAKER_` environment form. Key names are uppercased. The complete reference — including the scheduled-rest keys and the ChatGPT behavior flags — lives in [runtime-variables.md](runtime-variables.md).
 
 ```bash
 export NOTE_MAKER_BROWSER_PROVIDER=patchright
 export NOTE_MAKER_PARALLEL_RUNS=2
 export NOTE_MAKER_OUTPUT_DIR=outputs/notes
+export NOTE_MAKER_REST_EVERY=30
+export NOTE_MAKER_REST_SECONDS=1800
+export NOTE_MAKER_REST_STATE=logs/rest-state.json
 ```
 
 Boolean values accept `true`, `false`, `yes`, `no`, `on`, `off`, `1`, and `0`.
+
+Precedence for the rest keys follows the general rule: `NOTE_MAKER_REST_*` environment variables override `[runtime]` in `note-maker.toml`, which overrides built-in defaults (rest disabled).
 
 ## Diagnose the selected workflow
 
@@ -186,6 +194,18 @@ note-maker doctor --target markdown --strict
 ```
 
 `doctor` resolves the selected workflow and reports the relevant provider dependencies, resolved input/prompt/output paths, output writability, browser availability evidence, and configured snapshot/session availability. It does not launch a browser or make a live authenticated request, so it reports that limitation explicitly.
+
+Batch-behavior configuration is also preflighted (0.9.0):
+
+- **`rest_schedule`** — when `rest_every` > 0, verifies `rest_state` is set and its parent directory is writable; when `rest_state` is set but `rest_every` is 0, flags the inconsistent pair;
+- **`required_effort`** — when `CHATGPT_REQUIRED_EFFORT` is set, verifies it is one of `low`, `medium`, `high`;
+- **`inline_markdown`** — when `NOTE_MAKER_INLINE_MARKDOWN=1`, verifies `NOTE_MAKER_INLINE_MAX_CHARS` is an integer if provided.
+
+With `--strict`, any failed check exits non-zero. A good habit before starting an overnight batch:
+
+```bash
+note-maker --config note-maker.toml doctor --target pdf --strict
+```
 
 ## Process a directory
 

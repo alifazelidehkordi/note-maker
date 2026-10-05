@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 from collections import Counter, deque
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Mapping
 
 from browser_runtime.errors import (
     BrowserAuthenticationError,
@@ -13,12 +13,12 @@ from browser_runtime.errors import (
     BrowserDownloadError,
     BrowserNavigationError,
     BrowserResponseTimeout,
-    BrowserSendError,
-    BrowserUploadError,
-    PageStateError,
     BrowserRuntimeError,
+    BrowserSendError,
     BrowserStartupError,
+    BrowserUploadError,
     NetworkUnavailableError,
+    PageStateError,
     ProfileRuntimeError,
     RateLimitError,
 )
@@ -133,7 +133,7 @@ class RetryBudgetPolicy:
         values: Mapping[str, object] | None,
         *,
         content_attempts: int = 3,
-    ) -> "RetryBudgetPolicy":
+    ) -> RetryBudgetPolicy:
         source = dict(values or {})
         return cls(
             content_attempts=int(source.get("content_attempts", content_attempts)),

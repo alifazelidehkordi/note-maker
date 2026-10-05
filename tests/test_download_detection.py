@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_chatgpt_temporary_test as core
+from browser_runtime.selectors import ASSISTANT_MESSAGE_SELECTOR
 
 
 class FakeClickable:
@@ -48,7 +49,7 @@ class FakeDriver:
         self._assistants = assistants
 
     def find_elements(self, by, selector):
-        if selector == "[data-message-author-role='assistant']":
+        if selector == ASSISTANT_MESSAGE_SELECTOR:
             return list(self._assistants)
         return []
 

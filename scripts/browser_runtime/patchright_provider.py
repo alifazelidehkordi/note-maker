@@ -7,8 +7,9 @@ import re
 import shutil
 import time
 import urllib.request
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from .contracts import BrowserSession
 from .downloads import (
@@ -30,7 +31,6 @@ from .errors import (
     BrowserStartupError,
     BrowserUploadError,
     CloudflareChallengeError,
-    DownloadNotFoundError,
     GenerationStalledError,
     NetworkUnavailableError,
     PageStateError,
@@ -49,6 +49,7 @@ from .models import (
 from .selectors import (
     ASSISTANT_MESSAGE_SELECTOR,
     ATTACH_BUTTON_SELECTORS,
+    ATTACH_MENU_LABEL_PATTERNS,
     CHATGPT_URL,
     CLOUDFLARE_PHRASES,
     COOKIE_BUTTON_LABELS,
@@ -78,6 +79,19 @@ DEFAULT_DOWNLOAD_DIR = ROOT / "downloads"
 LONG_GENERATION_STOP_SECONDS = int(os.environ.get("LONG_GENERATION_STOP_SECONDS", "900"))
 POST_STOP_GRACE_SECONDS = int(os.environ.get("POST_STOP_GRACE_SECONDS", "60"))
 RATE_LIMIT_WAIT_SECONDS = int(os.environ.get("RATE_LIMIT_WAIT_SECONDS", "180"))
+# Cooldown used when a rate-limit modal survives the bounded re-check during a
+# response wait or blocks a download (see _await_response / download paths).
+RATE_LIMIT_RECHECK_RETRY_SECONDS = RATE_LIMIT_WAIT_SECONDS
+# Verify-and-set ChatGPT "thinking effort" before every submission (plan item 4).
+# Fail closed: a batch silently generated at Medium when High was required is
+# worse than an abort. ArrowRight steps per current level over the 3-level slider.
+CHATGPT_REQUIRED_EFFORT = os.environ.get("CHATGPT_REQUIRED_EFFORT", "").strip().lower()
+EFFORT_SLIDER_STEPS = {"low": 2, "medium": 1, "high": 0}
+# Inline Markdown source delivery (plan item 5): bypass the upload path by
+# appending the full source text to the prompt. The prompt hash is computed on
+# the ORIGINAL prompt only, so toggling inline mode never invalidates resume.
+INLINE_MARKDOWN_ENABLED = os.environ.get("NOTE_MAKER_INLINE_MARKDOWN", "0") == "1"
+INLINE_MARKDOWN_MAX_CHARS = int(os.environ.get("NOTE_MAKER_INLINE_MAX_CHARS", "50000"))
 
 
 def _load_patchright():
@@ -255,7 +269,7 @@ def _contains_any(text: str, phrases: Iterable[str]) -> bool:
 def _apply_stealth(context: Any) -> None:
     try:
         module = importlib.import_module("playwright_stealth")
-        stealth_type = getattr(module, "Stealth")
+        stealth_type = module.Stealth
         stealth = stealth_type(init_scripts_only=True)
         stealth.apply_stealth_sync(context)
     except ModuleNotFoundError as exc:
@@ -294,6 +308,10 @@ class PatchrightBrowserSession:
         self._last_send_assistant_count: int | None = None
         self._last_send_completed = False
         self._last_send_started_at: float | None = None
+        self._inline_source_text = ""
+        self._delivery_mode = "upload"
+        self._download_fallbacks = 0
+        self._last_fallback_reason: str | None = None
         self._bind_page(page)
 
     def _bind_page(self, page: Any) -> None:
@@ -559,6 +577,8 @@ class PatchrightBrowserSession:
             self._last_send_assistant_count = None
             self._last_send_completed = False
             self._last_send_started_at = None
+            self._inline_source_text = ""
+            self._delivery_mode = "upload"
             self._set_state(SessionState.READY)
         except BrowserRuntimeError:
             raise
@@ -615,6 +635,36 @@ class PatchrightBrowserSession:
     def upload(self, request: UploadRequest) -> None:
         if not request.file_path.exists():
             raise BrowserUploadError(f"Upload source does not exist: {request.file_path}")
+        self._inline_source_text = ""
+        if (
+            INLINE_MARKDOWN_ENABLED
+            and request.file_path.suffix.lower() == ".md"
+            and INLINE_MARKDOWN_MAX_CHARS > 0
+        ):
+            source = request.file_path.read_text(encoding="utf-8")
+            if not source.strip():
+                raise BrowserUploadError(f"Source Markdown is empty: {request.file_path.name}")
+            if len(source) > INLINE_MARKDOWN_MAX_CHARS:
+                # Too large for a single message; fall back to the upload path.
+                _log(
+                    "Source delivery: inline skipped, "
+                    f"{request.file_path.name} exceeds NOTE_MAKER_INLINE_MAX_CHARS "
+                    f"({len(source)} > {INLINE_MARKDOWN_MAX_CHARS}); uploading instead."
+                )
+            else:
+                self._inline_source_text = (
+                    f"\n\n--- BEGIN SOURCE DOCUMENT: {request.file_path.name} ---\n"
+                    + source
+                    + "\n--- END SOURCE DOCUMENT ---"
+                )
+                self._delivery_mode = "inline"
+                _log(
+                    "Source delivery: inline Markdown, "
+                    f"{request.file_path.name}, {len(source)} characters (complete)."
+                )
+                self._set_state(SessionState.READY)
+                return
+        self._delivery_mode = "upload"
         self._set_state(SessionState.UPLOADING)
         try:
             def compatible_file_input():
@@ -639,12 +689,19 @@ class PatchrightBrowserSession:
                         return candidate
                     # ChatGPT now keeps a separate image-only file input in
                     # the composer. Never feed Markdown/PDF documents to it.
-                    if all("image/" in token or token in {".gif", ".png", ".jpg", ".jpeg", ".webp", ".mpo"} for token in tokens):
+                    IMAGE_ONLY_TOKENS = {
+                        ".avif", ".bmp", ".gif", ".heic", ".heif",
+                        ".png", ".jpg", ".jpeg", ".webp", ".mpo",
+                    }
+                    if all("image/" in token or token in IMAGE_ONLY_TOKENS for token in tokens):
+                        # Photo-only control: feeding a document here produces
+                        # "This file type isn't supported". Never a fallback.
                         continue
                     fallback = fallback or candidate
                 return fallback
 
             file_input = compatible_file_input()
+            attached_via_chooser = False
             if file_input is None:
                 attach = _first_visible(self._page, ATTACH_BUTTON_SELECTORS, timeout_ms=800)
                 if attach is None:
@@ -653,13 +710,44 @@ class PatchrightBrowserSession:
                     attach.evaluate("(element) => element.click()")
                 except Exception:
                     attach.click()
+
+                # The redesigned composer opens a two-step menu: the document
+                # input is only created after selecting "Upload from computer"
+                # / "Add photos & files". Setting one of the image-only inputs
+                # already present in the DOM produces the misleading "This file
+                # type isn't supported" error, so drive the menu explicitly.
+                for pattern in ATTACH_MENU_LABEL_PATTERNS:
+                    menu_item = self._page.get_by_text(re.compile(pattern, re.I)).first
+                    try:
+                        visible = _locator_visible(menu_item, timeout_ms=800)
+                    except Exception:
+                        visible = False
+                    if not visible:
+                        continue
+                    try:
+                        with self._page.expect_file_chooser(timeout=3000) as chooser_info:
+                            menu_item.click()
+                        chooser_info.value.set_files(str(request.file_path))
+                        attached_via_chooser = True
+                        break
+                    except Exception:
+                        # Older composer variants expose a document input after
+                        # the menu opens without emitting a file-chooser event;
+                        # fall through to the polling path below.
+                        break
+
                 deadline = time.monotonic() + 3
-                while file_input is None and time.monotonic() < deadline:
+                while (
+                    not attached_via_chooser
+                    and file_input is None
+                    and time.monotonic() < deadline
+                ):
                     time.sleep(0.25)
                     file_input = compatible_file_input()
-            if file_input is None:
+            if file_input is None and not attached_via_chooser:
                 raise PageStateError("A document-compatible file input is unavailable.")
-            file_input.set_input_files(str(request.file_path))
+            if not attached_via_chooser:
+                file_input.set_input_files(str(request.file_path))
 
             deadline = time.monotonic() + request.timeout
             name_marker = request.file_path.name[:48]
@@ -717,11 +805,46 @@ class PatchrightBrowserSession:
             pass
         self._page.keyboard.insert_text(text)
 
+    def _verify_required_effort(self) -> None:
+        """Verify (and if needed set) the required thinking effort before a
+        submission. Fails closed on any mismatch after the adjustment attempt.
+
+        The ArrowRight step count is computed from the reported current level
+        via EFFORT_SLIDER_STEPS (low: 2, medium: 1, high: 0); an unknown level
+        still attempts the slider and relies on the post-condition check.
+        """
+        if not CHATGPT_REQUIRED_EFFORT:
+            return
+        control = self._page.locator("button[data-selected-reasoning-effort]").first
+        actual = str(control.get_attribute("data-selected-reasoning-effort") or "").lower()
+        if actual != CHATGPT_REQUIRED_EFFORT:
+            control.click()
+            slider = self._page.locator("[data-reasoning-slider]").first
+            if slider.count() and _locator_visible(slider):
+                steps = EFFORT_SLIDER_STEPS.get(actual, EFFORT_SLIDER_STEPS["high"])
+                for _ in range(max(steps, 1)):
+                    slider.press("ArrowRight")
+                try:
+                    self._page.keyboard.press("Escape")
+                except Exception:
+                    pass
+            actual = str(control.get_attribute("data-selected-reasoning-effort") or "").lower()
+        if actual != CHATGPT_REQUIRED_EFFORT:
+            raise BrowserConfigurationError(
+                f"Thinking effort must be {CHATGPT_REQUIRED_EFFORT!r}; "
+                f"composer reports {actual!r}. Submission blocked to avoid "
+                "generating at the wrong effort."
+            )
+        _log(f"Verified thinking effort before submission: {actual}")
+
     def send_message(self, text: str) -> None:
+        self._verify_required_effort()
         normalized = text.strip()
         if not normalized:
             raise BrowserSendError("Cannot send an empty prompt.")
         self._set_state(SessionState.SENDING)
+        # Prompt hash MUST be computed on the original prompt, before any
+        # inline source is appended (manifest/resume dedupe keys on it).
         prompt_hash = self._prompt_hash(normalized)
         before_count = self.assistant_message_count()
 
@@ -746,9 +869,10 @@ class PatchrightBrowserSession:
                 self._dismiss_rate_limit_modal()
                 _log("Rate-limit modal acknowledged; continuing send without cooldown.")
             editor = self._find_editor(timeout=self._options.action_timeout)
+            outgoing = normalized + getattr(self, "_inline_source_text", "")
             current = self._editor_text(editor)
-            if current != normalized:
-                self._fill_editor(editor, normalized)
+            if current != outgoing:
+                self._fill_editor(editor, outgoing)
             self._last_send_hash = prompt_hash
             self._last_send_assistant_count = before_count
             self._last_send_completed = False
@@ -918,6 +1042,14 @@ class PatchrightBrowserSession:
         )
         deadline = time.monotonic() + request.timeout
         extended = False
+        # Bounded re-check for transient rate-limit modals (plan item 3,
+        # critic-pinned semantics): the counter counts consecutive
+        # RATE_LIMITED observations WITHIN this _await_response call and
+        # resets on ANY non-RATE_LIMITED observation. Only dismissal failure
+        # or exhausting the bound raises; a successfully dismissed transient
+        # modal just continues the wait.
+        RATE_LIMIT_RECHECK_BOUND = 3
+        consecutive_rate_limited = 0
         while time.monotonic() < deadline:
             now = time.monotonic()
             rate_limited = self._rate_limit_visible()
@@ -933,9 +1065,23 @@ class PatchrightBrowserSession:
             )
 
             if state is ResponseState.RATE_LIMITED:
-                self._dismiss_rate_limit_modal()
+                consecutive_rate_limited += 1
+                dismissed = self._dismiss_rate_limit_modal()
+                detail = (
+                    "acknowledged"
+                    if dismissed
+                    else "remained visible after acknowledgement"
+                )
+                if not dismissed or consecutive_rate_limited >= RATE_LIMIT_RECHECK_BOUND:
+                    raise RateLimitError(
+                        f"ChatGPT response was blocked by a rate-limit dialog ({detail}).",
+                        retry_after=RATE_LIMIT_RECHECK_RETRY_SECONDS,
+                    )
                 time.sleep(1)
                 continue
+
+            # Any non-RATE_LIMITED observation resets the bounded re-check.
+            consecutive_rate_limited = 0
 
             if state in {ResponseState.DOWNLOAD_READY, ResponseState.STABLE}:
                 self._last_send_completed = True
@@ -1084,9 +1230,20 @@ class PatchrightBrowserSession:
             except Exception as exc:
                 # A click can navigate to a sandbox link without emitting a
                 # Playwright download event, or open ChatGPT's artifact preview
-                # in either the current tab or a newly-created tab.
+                # in either the current tab or a newly-created tab. A rate-limit
+                # modal also surfaces here; misclassifying it as a download
+                # failure burns retries, so check and raise first.
+                if self._rate_limit_visible():
+                    dismissed = self._dismiss_rate_limit_modal()
+                    detail = "acknowledged" if dismissed else "still visible"
+                    raise RateLimitError(
+                        f"ChatGPT blocked the artifact download with a rate-limit dialog ({detail}).",
+                        retry_after=RATE_LIMIT_RECHECK_RETRY_SECONDS,
+                    ) from exc
                 detail = str(exc).splitlines()[0].strip()
                 suffix = f" ({detail})" if detail else ""
+                self._download_fallbacks += 1
+                self._last_fallback_reason = detail or "download event not emitted"
                 _log(
                     "Patchright direct download event was not emitted; "
                     f"checking artifact preview/fallback{suffix}."

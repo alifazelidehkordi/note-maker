@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
 DEFAULT_BROWSER_PROVIDER = "selenium"
 DEFAULT_PARALLEL_RUNS = 1
 MAX_PARALLEL_RUNS = 16
@@ -67,6 +66,10 @@ class RuntimeSettings:
     retry_backoff_base: float = DEFAULT_RETRY_BACKOFF_BASE
     retry_backoff_cap: float = DEFAULT_RETRY_BACKOFF_CAP
     retry_jitter_ratio: float = DEFAULT_RETRY_JITTER_RATIO
+    rest_every: int = 0
+    rest_seconds: float = 1800.0
+    rest_state: str | None = None
+    rest_base_completed: int = 0
 
 
 def _finite_float(value: str) -> float:
@@ -310,6 +313,10 @@ def validate_runtime_settings(
     retry_backoff_base: float = DEFAULT_RETRY_BACKOFF_BASE,
     retry_backoff_cap: float = DEFAULT_RETRY_BACKOFF_CAP,
     retry_jitter_ratio: float = DEFAULT_RETRY_JITTER_RATIO,
+    rest_every: int = 0,
+    rest_seconds: float = 1800.0,
+    rest_state: str | Path | None = None,
+    rest_base_completed: int = 0,
 ) -> RuntimeSettings:
     """Validate the Level 6 process runtime contract and return normalized settings."""
     if browser_provider not in SUPPORTED_BROWSER_PROVIDERS:
@@ -379,6 +386,8 @@ def validate_runtime_settings(
         "browser_retries": browser_retries,
         "download_retries": download_retries,
         "rate_limit_retries": rate_limit_retries,
+        "rest_every": rest_every,
+        "rest_base_completed": rest_base_completed,
     }.items():
         if value < 0:
             raise RuntimeConfigurationError(f"{name} must not be negative.")
@@ -418,6 +427,10 @@ def validate_runtime_settings(
         retry_backoff_base=float(retry_backoff_base),
         retry_backoff_cap=float(retry_backoff_cap),
         retry_jitter_ratio=float(retry_jitter_ratio),
+        rest_every=int(rest_every),
+        rest_seconds=float(rest_seconds),
+        rest_state=str(rest_state) if rest_state is not None else None,
+        rest_base_completed=int(rest_base_completed),
     )
 
 

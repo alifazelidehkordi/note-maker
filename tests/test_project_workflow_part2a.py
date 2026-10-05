@@ -219,7 +219,12 @@ parallel_runs = 3
                 )
 
             self.assertEqual(code, 0)
-            self.assertEqual(calls["profile_dir"], (root / "chrome_profile_login" / "anatomy.v1"))
+            # Windows short-path (RUNNER~1) vs long-path (runneradmin): the
+            # CLI resolves the profile dir, so compare resolved paths.
+            self.assertEqual(
+                Path(calls["profile_dir"]).resolve(),
+                (root / "chrome_profile_login" / "anatomy.v1").resolve(),
+            )
             self.assertIs(calls["wait"], True)
             self.assertEqual(calls["snapshot_name"], "anatomy.v1")
             self.assertIn("dedicated Chromium", stderr.getvalue())

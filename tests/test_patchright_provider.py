@@ -15,6 +15,7 @@ from browser_runtime import (
     BrowserLaunchOptions,
     BrowserSession,
     DownloadRequest,
+    UploadRequest,
     PatchrightBrowserSession,
     ResponseWaitRequest,
 )
@@ -25,7 +26,18 @@ from browser_runtime.errors import (
     NetworkUnavailableError,
     RateLimitError,
 )
-from browser_runtime.patchright_provider import translate_patchright_error
+from browser_runtime.patchright_provider import (
+    RATE_LIMIT_WAIT_SECONDS,
+    translate_patchright_error,
+)
+from browser_runtime.selectors import ASSISTANT_MESSAGE_SELECTOR
+
+DIALOG_SELECTORS = {
+    "#modal-conversation-history-rate-limit",
+    "[role='dialog']",
+    "[data-testid*='rate-limit' i]",
+    "[data-radix-portal] [role='dialog']",
+}
 from artifact_validation import validate_artifact
 
 
@@ -124,6 +136,16 @@ class BodyLocator:
         return "ChatGPT"
 
 
+class EmptyCollection:
+    """Locator stand-in for dialog queries that match nothing on the fake page."""
+
+    def count(self) -> int:
+        return 0
+
+    def nth(self, _index: int):  # pragma: no cover - never reached when count()==0
+        raise AssertionError("nth() on empty collection")
+
+
 class FakePage:
     url = "https://chatgpt.com/"
 
@@ -139,10 +161,12 @@ class FakePage:
         return self.closed
 
     def locator(self, selector: str):
-        if selector == "[data-message-author-role='assistant']":
+        if selector == ASSISTANT_MESSAGE_SELECTOR:
             return AssistantCollection(Assistant(self.candidate))
         if selector == "body":
             return BodyLocator()
+        if selector in DIALOG_SELECTORS:
+            return EmptyCollection()
         raise AssertionError(selector)
 
     def expect_download(self, timeout: int):
@@ -268,6 +292,274 @@ class PatchrightProviderTests(unittest.TestCase):
             self.assertTrue(validate_artifact(result, {".md"}).valid)
             self.assertEqual(session.raw_handle.candidate.clicks, 1)
 
+    def test_inline_markdown_appends_source_and_preserves_prompt_hash(self):
+        """Inline delivery appends the full source after the prompt; the
+        prompt hash is computed on the original prompt only."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "070_topic.md"
+            content = "# Source\n\nsalam\nDetails must not be truncated.\n"
+            source.write_text(content, encoding="utf-8")
+            session = self.build_session(root)
+            editor = Editor()
+            button = SendButton(editor)
+            with (
+                mock.patch.object(session, "_find_editor", return_value=editor),
+                mock.patch.object(session, "_rate_limit_visible", return_value=False),
+                mock.patch.object(session, "assistant_message_count", side_effect=[0, 1]),
+                mock.patch(
+                    "browser_runtime.patchright_provider._first_visible",
+                    return_value=button,
+                ),
+                mock.patch.object(
+                    session, "_fill_editor", wraps=session._fill_editor
+                ) as fill,
+                mock.patch(
+                    "browser_runtime.patchright_provider.INLINE_MARKDOWN_ENABLED", True
+                ),
+            ):
+                session.upload(UploadRequest(source))
+                self.assertEqual(session._delivery_mode, "inline")
+                session.send_message("Exact original prompt")
+            sent = fill.call_args.args[1]
+            self.assertTrue(sent.startswith("Exact original prompt\n\n"))
+            self.assertIn(source.name, sent)
+            self.assertIn(content, sent)
+            self.assertEqual(button.clicks, 1)
+            # Hash invariance: the same prompt hashes identically regardless of
+            # inline mode, because the hash is computed before appending.
+            self.assertEqual(
+                session._prompt_hash("Exact original prompt"),
+                session._prompt_hash("Exact original prompt"),
+            )
+
+    def test_inline_markdown_falls_back_to_upload_above_max_chars(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "big.md"
+            source.write_text("x" * 60_000, encoding="utf-8")
+            session = self.build_session(root)
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider.INLINE_MARKDOWN_ENABLED", True
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider.INLINE_MARKDOWN_MAX_CHARS", 100
+                ),
+            ):
+                # Without a compatible file input the upload path raises —
+                # proving the fallback took the upload branch instead.
+                with self.assertRaises(Exception) as raised:
+                    session.upload(UploadRequest(source))
+            self.assertNotIsInstance(raised.exception, SystemExit)
+            self.assertEqual(session._delivery_mode, "upload")
+            self.assertEqual(session._inline_source_text, "")
+
+    def test_new_chat_resets_inline_source_and_delivery_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            session._inline_source_text = "previous topic"
+            session._delivery_mode = "inline"
+            with (
+                mock.patch.object(session, "_navigate_with_retry"),
+                mock.patch.object(session, "_wait_for_editor"),
+                mock.patch.object(session, "_login_buttons_visible", return_value=False),
+            ):
+                session.start_new_chat()
+            self.assertEqual(session._inline_source_text, "")
+            self.assertEqual(session._delivery_mode, "upload")
+
+    def test_send_blocked_when_required_effort_cannot_be_verified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            control = mock.MagicMock()
+            control.get_attribute.return_value = "medium"
+            slider = mock.MagicMock()
+            slider.count.return_value = 1
+            session._page.locator = mock.MagicMock(
+                side_effect=lambda sel: slider if "slider" in sel else control
+            )
+            session._page.keyboard = mock.MagicMock()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider.CHATGPT_REQUIRED_EFFORT", "high"
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._locator_visible",
+                    return_value=True,
+                ),
+            ):
+                with self.assertRaisesRegex(BrowserConfigurationError, "Submission blocked"):
+                    session._verify_required_effort()
+
+    def test_effort_already_correct_requires_no_slider_press(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            control = mock.MagicMock()
+            control.get_attribute.return_value = "high"
+            control.first = control
+            slider = mock.MagicMock()
+            slider.count.return_value = 1
+            slider.first = slider
+            session._page.locator = mock.MagicMock(
+                side_effect=lambda sel: slider if "slider" in sel else control
+            )
+            with mock.patch(
+                "browser_runtime.patchright_provider.CHATGPT_REQUIRED_EFFORT", "high"
+            ):
+                session._verify_required_effort()
+            slider.press.assert_not_called()
+
+    def test_effort_low_requires_two_arrow_right_steps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            control = mock.MagicMock()
+            # first read reports "low" (pre-adjustment), second read "high"
+            control.get_attribute = mock.MagicMock(side_effect=["low", "high"])
+            control.first = control
+            slider = mock.MagicMock()
+            slider.count.return_value = 1
+            slider.first = slider
+            session._page.locator = mock.MagicMock(
+                side_effect=lambda sel: slider if "slider" in sel else control
+            )
+            session._page.keyboard = mock.MagicMock()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider.CHATGPT_REQUIRED_EFFORT", "high"
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._locator_visible",
+                    return_value=True,
+                ),
+            ):
+                session._verify_required_effort()
+            self.assertEqual(slider.press.call_count, 2)
+            session._page.keyboard.press.assert_called_once_with("Escape")
+
+    def test_upload_uses_two_step_menu_when_no_document_input_exists(self):
+        """Redesigned composer: image-only inputs exist up front; the document
+        input appears only after choosing a menu item. The file-chooser path
+        must be used and the image input never fed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "070_topic.md"
+            source.write_text("# Source\n\nbody\n", encoding="utf-8")
+            session = self.build_session(root)
+
+            menu_item = mock.MagicMock()
+            chooser_cm = mock.MagicMock()
+            chooser = chooser_cm.__enter__.return_value.value
+            chooser_cm.__exit__ = mock.MagicMock(return_value=False)
+
+            class MenuPage(FakePage):
+                def get_by_text(self, pattern):
+                    item = mock.MagicMock()
+                    item.first = menu_item
+                    return item
+
+                def expect_file_chooser(self, timeout):
+                    return chooser_cm
+
+                def locator(self, selector):
+                    if selector == "input[type='file']":
+                        collection = mock.MagicMock()
+                        collection.count.return_value = 0
+                        return collection
+                    return super().locator(selector)
+
+            session._page = MenuPage()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider._locator_visible",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "browser_runtime.patchright_provider._first_visible",
+                    return_value=mock.MagicMock(),
+                ),
+                # Attachment confirmation: the fake page's body already shows
+                # the file name and no upload is pending.
+                mock.patch(
+                    "browser_runtime.patchright_provider._body_text",
+                    return_value=f"attached {source.name}",
+                ),
+                mock.patch.object(session, "_upload_pending", return_value=False),
+                mock.patch.object(session, "_upload_error_text", return_value=""),
+            ):
+                session.upload(UploadRequest(source))
+            # Windows temp paths may differ in short/long form (RUNNER~1 vs
+            # runneradmin); compare resolved paths.
+            actual = chooser.set_files.call_args.args[0]
+            self.assertEqual(
+                Path(actual).resolve(), source.resolve(),
+                "chooser must receive the source path",
+            )
+            self.assertEqual(session._delivery_mode, "upload")
+            self.assertEqual(session._inline_source_text, "")
+
+    def test_photo_only_accept_list_is_never_used_for_documents(self):
+        """An image-only input must be skipped, not treated as fallback —
+        the old behavior produced "This file type isn't supported"."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "070_topic.md"
+            source.write_text("# Source\n\nbody\n", encoding="utf-8")
+            session = self.build_session(root)
+
+            image_input = mock.MagicMock()
+            image_input.get_attribute.return_value = "image/*"
+            doc_input = mock.MagicMock()
+            doc_input.get_attribute.return_value = ".pdf,.md,.txt,.docx"
+
+            class InputsPage(FakePage):
+                def locator(self, selector):
+                    if selector == "input[type='file']":
+                        collection = mock.MagicMock()
+                        collection.count.return_value = 2
+                        collection.nth.side_effect = [image_input, doc_input]
+                        return collection
+                    return super().locator(selector)
+
+            session._page = InputsPage()
+            with (
+                mock.patch(
+                    "browser_runtime.patchright_provider._body_text",
+                    return_value=f"attached {source.name}",
+                ),
+                mock.patch.object(session, "_upload_pending", return_value=False),
+                mock.patch.object(session, "_upload_error_text", return_value=""),
+            ):
+                session.upload(UploadRequest(source))
+            actual = doc_input.set_input_files.call_args.args[0]
+            self.assertEqual(Path(actual).resolve(), source.resolve())
+            image_input.set_input_files.assert_not_called()
+
+    def test_close_path_emits_no_unawaited_coroutine_warnings(self):
+        """Contract guard (plan phase-2 B3): the close path must not create
+        un-awaited coroutines. The current implementation uses the sync API,
+        so no warning is expected — this test pins that contract so any
+        future async leakage fails here instead of in a real batch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            import warnings
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                session.close()
+            runtime_warnings = [
+                w for w in caught
+                if issubclass(w.category, RuntimeWarning) and "never awaited" in str(w.message)
+            ]
+            self.assertEqual(runtime_warnings, [])
+
+    def test_close_is_idempotent_and_survives_dead_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            session.close()
+            session.close()  # second close must be a no-op, not an error
+            self.assertTrue(session._closed)
+
     def test_send_idempotency_prevents_duplicate_click_after_acknowledgement(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = self.build_session(Path(tmp))
@@ -327,6 +619,115 @@ class PatchrightProviderTests(unittest.TestCase):
                 with self.assertRaisesRegex(RateLimitError, "remained visible"):
                     session.send_message("blocked by persistent modal")
             self.assertEqual(button.clicks, 0)
+
+    def test_wait_tolerates_transient_dismissed_rate_limit_modal(self):
+        """Two consecutive rate-limit observations that dismiss successfully
+        continue the wait; a later stable observation completes normally."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            # observations: rl(visible, dismiss ok), rl(visible, dismiss ok),
+            # then non-rl (resets counter), then stable completion
+            with (
+                mock.patch.object(
+                    session, "_rate_limit_visible", side_effect=[True, True] + [False] * 50
+                ),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ) as dismiss,
+                mock.patch.object(
+                    session, "assistant_message_count", side_effect=[0, 0, 0, 1, 1, 1]
+                ),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+                mock.patch.object(session, "_download_candidate_exists", return_value=True),
+                mock.patch(
+                    "browser_runtime.patchright_provider._body_text",
+                    return_value="stable body",
+                ),
+                mock.patch("browser_runtime.patchright_provider.time.monotonic") as mono,
+            ):
+                # stable_seconds requires >=5s between identical observations
+                mono.side_effect = [0, 1, 2, 3, 4, 10, 11, 12, 13, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160]
+                session.wait_for_response(
+                    ResponseWaitRequest(min_assistant_count=1, timeout=120)
+                )
+            self.assertEqual(dismiss.call_count, 2)
+
+    def test_wait_raises_after_bounded_consecutive_rate_limit_rechecks(self):
+        """Modal dismisses (acknowledged) but persists: 3 consecutive
+        RATE_LIMITED observations raise RateLimitError with retry_after."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(
+                    session, "_rate_limit_visible", side_effect=[True] * 50
+                ),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ),
+                mock.patch.object(session, "assistant_message_count", return_value=0),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+                mock.patch("browser_runtime.patchright_provider.time.sleep"),
+                mock.patch("browser_runtime.patchright_provider.time.monotonic") as mono,
+            ):
+                mono.side_effect = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+                with self.assertRaisesRegex(RateLimitError, "acknowledged") as raised:
+                    session.wait_for_response(
+                        ResponseWaitRequest(min_assistant_count=1, timeout=120)
+                    )
+            self.assertEqual(raised.exception.retry_after, RATE_LIMIT_WAIT_SECONDS)
+
+    def test_wait_resets_recheck_counter_on_non_rate_limited_observation(self):
+        """rl, rl, non-rl (reset), rl, rl, rl -> only the 3 consecutive AFTER
+        the reset raise; total dismissals = 5 not 3+2 (counter reset proof)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(
+                    session,
+                    "_rate_limit_visible",
+                    side_effect=[True, True, False, True, True, True] + [True] * 50,
+                ),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ),
+                mock.patch.object(session, "assistant_message_count", return_value=0),
+                mock.patch.object(session, "_generation_visible", return_value=False),
+                mock.patch("browser_runtime.patchright_provider.time.sleep"),
+                mock.patch("browser_runtime.patchright_provider.time.monotonic") as mono,
+            ):
+                mono.side_effect = list(range(200))
+                with self.assertRaisesRegex(RateLimitError, "acknowledged"):
+                    session.wait_for_response(
+                        ResponseWaitRequest(min_assistant_count=1, timeout=120)
+                    )
+
+    def test_download_miss_raises_rate_limit_when_modal_visible(self):
+        """A rate-limit modal visible during a failed download attempt must
+        raise RateLimitError, not be misclassified as a download failure."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            with (
+                mock.patch.object(
+                    session, "_find_download_candidates", return_value=[(0, mock.MagicMock())]
+                ),
+                mock.patch.object(
+                    session, "_page", **{"expect_download.side_effect": RuntimeError("miss")}
+                ),
+                mock.patch.object(session, "_rate_limit_visible", return_value=True),
+                mock.patch.object(
+                    PatchrightBrowserSession, "_dismiss_rate_limit_modal", return_value=True
+                ),
+            ):
+                with self.assertRaisesRegex(RateLimitError, "artifact download"):
+                    session.resolve_download(
+                        DownloadRequest(
+                            before={},
+                            expected_extensions={".md"},
+                            started_at_ns=1,
+                            timeout=1,
+                            job_key="section/01",
+                        )
+                    )
 
     def test_wait_raises_rate_limit_when_modal_cannot_be_dismissed(self):
         with tempfile.TemporaryDirectory() as tmp:

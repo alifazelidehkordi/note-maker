@@ -10,6 +10,15 @@ browser_retries = 3
 download_retries = 2
 rate_limit_retries = 2
 
+# Scheduled rest (0.9.0): pause new job admissions after every N completed
+# files. In-flight jobs finish first; state persists across restarts.
+# rest_every = 0 disables the feature. The state path's parent directory
+# must be writable (checked by `note-maker doctor`).
+# rest_every = 30
+# rest_seconds = 1800
+# rest_state = "logs/rest-state.json"
+# rest_base_completed = 0   # completed count from previous subjects/runs
+
 [commands.pdf]
 input_dir = "inputs"
 output_dir = "outputs/opml"
@@ -42,3 +51,11 @@ adaptive_concurrency = true
 
 [profiles.fast.commands.pdf]
 save_diagnostics = true
+
+# A paced long-batch preset: two workers with a scheduled rest.
+# [profiles.overnight.runtime]
+# browser_provider = "patchright"
+# parallel_runs = 2
+# rest_every = 30
+# rest_seconds = 1800
+# rest_state = "logs/rest-state.json"

@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import signal
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 
 def pid_alive(pid: int) -> bool:

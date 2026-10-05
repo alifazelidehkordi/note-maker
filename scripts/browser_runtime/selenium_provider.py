@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .contracts import BrowserSession
 from .errors import (
@@ -16,7 +17,14 @@ from .errors import (
     BrowserUploadError,
     TemporaryChatError,
 )
-from .models import BrowserHealth, BrowserHealthStatus, BrowserLaunchOptions, DownloadRequest, ResponseWaitRequest, UploadRequest
+from .models import (
+    BrowserHealth,
+    BrowserHealthStatus,
+    BrowserLaunchOptions,
+    DownloadRequest,
+    ResponseWaitRequest,
+    UploadRequest,
+)
 
 
 def _core():
@@ -73,7 +81,7 @@ class SeleniumBrowserSession:
 
     def is_alive(self) -> bool:
         try:
-            _ = getattr(self._handle, 'title')
+            _ = self._handle.title
             return True
         except Exception:
             return False
@@ -113,7 +121,7 @@ class SeleniumBrowserSession:
             self._call('navigate', method, width, height)
 
     def navigate(self, url: str) -> None:
-        self._call('navigate', getattr(self._handle, 'get'), url)
+        self._call('navigate', self._handle.get, url)
 
     def wait_until_logged_in(self, timeout: int = 600) -> None:
         self._call('authenticate', _core().wait_until_logged_in, self._handle, timeout=timeout)
@@ -189,7 +197,7 @@ class SeleniumBrowserSession:
 
     def get_page_source(self) -> str:
         try:
-            return str(getattr(self._handle, 'page_source'))
+            return str(self._handle.page_source)
         except Exception as exc:
             raise translate_legacy_error('diagnostics', exc) from exc
 

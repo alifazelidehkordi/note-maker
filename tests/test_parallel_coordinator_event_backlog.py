@@ -83,7 +83,10 @@ class ParallelCoordinatorEventBacklogTests(unittest.TestCase):
                         "default_duration": 0.02,
                     },
                     heartbeat_interval=0.02,
-                    worker_timeout=0.12,
+                    # 0.12s was flaky on loaded CI runners (a 0.30s first-
+                    # completion delay plus scheduling jitter exceeded it).
+                    # 0.5s keeps the test tight while absorbing jitter.
+                    worker_timeout=0.5,
                     worker_ready_timeout=3.0,
                     startup_stagger=0.0,
                     max_worker_restarts=2,

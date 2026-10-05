@@ -515,6 +515,65 @@ def _doctor(args: argparse.Namespace) -> int:
             }
         )
 
+    # Batch-config health (phase-2 item C): rest / effort / inline surfaces
+    # must be visible to the preflight check so a bad configuration is caught
+    # before a long batch, not discovered mid-run.
+    if resolved is not None:
+        runtime = resolved.runtime
+        rest_state = getattr(runtime, "rest_state", None)
+        rest_every = int(getattr(runtime, "rest_every", 0) or 0)
+        if rest_every > 0:
+            state_ok = isinstance(rest_state, (str, Path)) and bool(str(rest_state))
+            writable = False
+            if state_ok:
+                state_path = Path(str(rest_state))
+                try:
+                    state_path.parent.mkdir(parents=True, exist_ok=True)
+                    probe = state_path.with_suffix(".doctor-probe")
+                    probe.write_text("")
+                    probe.unlink(missing_ok=True)
+                    writable = True
+                except OSError:
+                    writable = False
+            checks.append(
+                {
+                    "name": "rest_schedule",
+                    "ok": state_ok and writable,
+                    "detail": (
+                        f"every {rest_every} files, state {rest_state!r}"
+                        + ("" if writable else " (path not writable)")
+                    ),
+                }
+            )
+        elif rest_state:
+            checks.append(
+                {
+                    "name": "rest_schedule",
+                    "ok": False,
+                    "detail": f"rest_state set to {rest_state!r} but rest_every is 0",
+                }
+            )
+        effort = os.environ.get("CHATGPT_REQUIRED_EFFORT", "").strip().lower()
+        if effort:
+            checks.append(
+                {
+                    "name": "required_effort",
+                    "ok": effort in {"low", "medium", "high"},
+                    "detail": effort
+                    if effort in {"low", "medium", "high"}
+                    else f"unsupported value {effort!r}",
+                }
+            )
+        inline = os.environ.get("NOTE_MAKER_INLINE_MARKDOWN", "0") == "1"
+        if inline:
+            max_chars = os.environ.get("NOTE_MAKER_INLINE_MAX_CHARS", "")
+            detail = "enabled"
+            ok = True
+            if max_chars and not max_chars.isdigit():
+                detail = f"NOTE_MAKER_INLINE_MAX_CHARS={max_chars!r} is not an integer"
+                ok = False
+            checks.append({"name": "inline_markdown", "ok": ok, "detail": detail})
+
     if resolved is not None:
         values = resolved.values
         if args.target == "pdf":

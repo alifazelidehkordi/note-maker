@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .models import DownloadSnapshot, normalize_extensions
 from .selectors import NON_FILE_DOWNLOAD_PHRASES
