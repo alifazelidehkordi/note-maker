@@ -98,7 +98,7 @@ It was built for dense university and medical material, but the workflow works w
 
 ## Quick start
 
-The supported entry point for new generation workflows is the installed `note-maker` command on Python 3.10 or newer. Existing shell/CMD launchers remain compatibility entry points.
+The supported entry point for new generation workflows is the installed `note-maker` command on Python 3.11 or newer. Existing shell/CMD launchers remain compatibility entry points.
 
 > [!TIP]
 > Use **Python 3.10–3.13**. Python 3.14 currently breaks the CLI's argument parser (`BooleanOptionalAction` rejects `--no-*` option names) and is not yet supported.
@@ -172,7 +172,7 @@ Combined books use one continuous visible page-number sequence across the genera
 
 | Requirement | Notes |
 |---|---|
-| Python 3.10–3.13 | 3.14 is not yet supported (CLI argument parser incompatibility) |
+| Python 3.11–3.13 | 3.10: current dependency locks require ≥3.11; 3.14: CLI parser incompatibility |
 | Google Chrome or Chromium | Required for ChatGPT web automation |
 | ChatGPT account | Required for authenticated browser sessions |
 | Linux or Windows | Supported runtime platforms; legacy shell/CMD launchers remain available |
@@ -479,6 +479,9 @@ Run the main test suite (343 tests):
 ```bash
 npm test        # or: ./run_tests.sh
 ```
+
+> [!NOTE]
+> CI runs the suite on Python 3.11 and 3.12.
 
 Run acceptance checks:
 
