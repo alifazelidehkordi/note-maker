@@ -54,16 +54,18 @@ def run_doctor(config_text, tmp, *, extra_env=None, strict=True):
 
 class DoctorBatchConfigTests(unittest.TestCase):
     def test_unwritable_rest_state_fails_strict_doctor(self):
+        # Deterministic unwritable path on every OS: a directory component
+        # that is a FILE makes parent creation raise NotADirectoryError
+        # (an OSError), unlike chmod bits which runners may ignore.
         with tempfile.TemporaryDirectory() as tmp:
-            readonly = Path(tmp) / "readonly"
-            readonly.mkdir()
-            readonly.chmod(0o500)
-            try:
-                config = CONFIG_TEMPLATE.format(
-                    rest_every=30, rest_state=_toml_path(readonly / "rest.json"), tmp=_toml_path(tmp))
-                r = run_doctor(config, tmp)
-            finally:
-                readonly.chmod(0o700)
+            blocker = Path(tmp) / "blocker"
+            blocker.write_text("not a directory")
+            config = CONFIG_TEMPLATE.format(
+                rest_every=30,
+                rest_state=_toml_path(blocker / "rest.json"),
+                tmp=_toml_path(tmp),
+            )
+            r = run_doctor(config, tmp)
             self.assertNotEqual(r.returncode, 0, "bad rest_state must fail --strict doctor")
             self.assertIn("rest_schedule", r.stdout)
             self.assertIn("not writable", r.stdout)
