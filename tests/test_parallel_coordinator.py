@@ -141,7 +141,7 @@ class ParallelCoordinatorTests(unittest.TestCase):
                 self.assertEqual(set(result.succeeded), {job.key for job in jobs})
                 records = [
                     json.loads(line)
-                    for line in (root / "execution.jsonl").read_text(encoding="utf-8").splitlines()
+                    for line in (root / "execution.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()
                 ]
                 self.assertEqual(len(records), len(jobs))
                 self.assertEqual(len({record["job"] for record in records}), len(jobs))
@@ -359,7 +359,7 @@ class ParallelCoordinatorTests(unittest.TestCase):
 
             records = [
                 json.loads(line)
-                for line in (root / "execution.jsonl").read_text(encoding="utf-8").splitlines()
+                for line in (root / "execution.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()
             ]
             self.assertEqual(len(records), len(jobs))
             self.assertEqual(len({record["job"] for record in records}), len(jobs))
