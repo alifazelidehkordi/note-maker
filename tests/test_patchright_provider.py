@@ -276,21 +276,54 @@ class PatchrightProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             session = self.build_session(root)
-            result = session.resolve_download(
-                DownloadRequest(
-                    before={},
-                    expected_extensions={".md"},
-                    started_at_ns=1,
-                    timeout=1,
-                    job_key="section/01",
+            with mock.patch.object(session.raw_handle, "expect_download", wraps=session.raw_handle.expect_download) as expect:
+                result = session.resolve_download(
+                    DownloadRequest(
+                        before={},
+                        expected_extensions={".md"},
+                        started_at_ns=1,
+                        timeout=300,
+                        job_key="section/01",
+                    )
                 )
-            )
+            expect.assert_called_once_with(timeout=250)
             self.assertIsNotNone(result)
             assert result is not None
             self.assertEqual(result.parent.name, "section_01")
             self.assertTrue(result.exists())
             self.assertTrue(validate_artifact(result, {".md"}).valid)
             self.assertEqual(session.raw_handle.candidate.clicks, 1)
+
+    def test_download_rechecks_for_late_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            candidates = [(1, session.raw_handle.candidate)]
+            with mock.patch.object(session, "_find_download_candidates", side_effect=[[], candidates]):
+                result = session.resolve_download(
+                    DownloadRequest(before={}, expected_extensions={".md"}, started_at_ns=1, timeout=2)
+                )
+            self.assertIsNotNone(result)
+            self.assertEqual(session.raw_handle.candidate.clicks, 1)
+
+    def test_missing_candidate_respects_download_deadline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = self.build_session(Path(tmp))
+            clock = [0.0]
+
+            def sleep(seconds):
+                clock[0] += seconds
+
+            with (
+                mock.patch("browser_runtime.patchright_provider.time.monotonic", side_effect=lambda: clock[0]),
+                mock.patch("browser_runtime.patchright_provider.time.sleep", side_effect=sleep),
+                mock.patch.object(session, "_find_download_candidates", return_value=[]) as find,
+            ):
+                result = session.resolve_download(
+                    DownloadRequest(before={}, expected_extensions={".md"}, started_at_ns=1, timeout=2)
+                )
+            self.assertIsNone(result)
+            self.assertEqual(clock[0], 2)
+            self.assertGreater(find.call_count, 1)
 
     def test_inline_markdown_appends_source_and_preserves_prompt_hash(self):
         """Inline delivery appends the full source after the prompt; the

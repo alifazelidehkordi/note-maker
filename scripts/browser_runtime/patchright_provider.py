@@ -1204,12 +1204,16 @@ class PatchrightBrowserSession:
             )
         return candidate.resolve()
 
-    def _event_download(self, request: DownloadRequest) -> Path | None:
+    def _event_download(self, request: DownloadRequest, deadline: float) -> Path | None:
         candidates = self._find_download_candidates(request.expected_extensions)
         if not candidates:
             return None
-        per_candidate_timeout = max(1000, min(5_000, request.timeout * 1000))
+        # ChatGPT often opens a preview instead of emitting a direct download.
+        # Check that preview promptly while allowing a direct event to arrive.
+        per_candidate_timeout = 250
         for _score, element in candidates:
+            if time.monotonic() >= deadline:
+                break
             before_pages = tuple(getattr(self._context, "pages", (self._page,)))
             _text, candidate_href, _title, _aria = self._candidate_fields(element)
             _log(f"Patchright activating download candidate href={candidate_href[:240]!r}")
@@ -1218,7 +1222,8 @@ class PatchrightBrowserSession:
             except Exception:
                 pass
             try:
-                with self._page.expect_download(timeout=per_candidate_timeout) as pending:
+                event_timeout = max(1, min(per_candidate_timeout, int((deadline - time.monotonic()) * 1000)))
+                with self._page.expect_download(timeout=event_timeout) as pending:
                     try:
                         element.evaluate("(candidate) => candidate.click()")
                     except Exception:
@@ -1256,7 +1261,7 @@ class PatchrightBrowserSession:
                 "[role='button'][title*='Download' i]",
                 "a[download]",
             )
-            preview_deadline = time.monotonic() + min(30, request.timeout)
+            preview_deadline = min(deadline, time.monotonic() + 5)
             while time.monotonic() < preview_deadline:
                 current_pages = tuple(getattr(self._context, "pages", (self._page,)))
                 # Newly-created preview tabs are searched first, followed by
@@ -1276,6 +1281,8 @@ class PatchrightBrowserSession:
                     except Exception:
                         pass
                     for selector in selectors:
+                        if time.monotonic() >= preview_deadline:
+                            break
                         try:
                             preview = preview_root.locator(selector).last
                             if not _locator_visible(preview):
@@ -1287,9 +1294,8 @@ class PatchrightBrowserSession:
                             ).strip()
                             if "download" not in label.lower() and selector != "a[download]":
                                 continue
-                            with preview_page.expect_download(
-                                timeout=max(1000, min(30_000, request.timeout * 1000))
-                            ) as pending:
+                            event_timeout = max(1, min(5_000, int((preview_deadline - time.monotonic()) * 1000)))
+                            with preview_page.expect_download(timeout=event_timeout) as pending:
                                 try:
                                     preview.evaluate("(element) => element.click()")
                                 except Exception:
@@ -1298,24 +1304,37 @@ class PatchrightBrowserSession:
                         except Exception as exc:
                             _log(f"Patchright preview download miss: {exc}")
                             continue
-                time.sleep(0.5)
+                time.sleep(0.2)
         return None
 
     def resolve_download(self, request: DownloadRequest) -> Path | None:
         self._set_state(SessionState.DOWNLOADING)
         try:
-            if request.click:
-                event_result = self._event_download(request)
-                if event_result is not None:
-                    self._set_state(SessionState.READY)
-                    return event_result
-            fallback = salvage_download(
-                self._download_dir,
-                request.before,
-                expected_extensions=request.expected_extensions,
-                started_at_ns=request.started_at_ns,
-                timeout=request.timeout,
-            )
+            deadline = time.monotonic() + request.timeout
+            fallback = None
+            while time.monotonic() < deadline:
+                fallback = salvage_download(
+                    self._download_dir,
+                    request.before,
+                    expected_extensions=request.expected_extensions,
+                    started_at_ns=request.started_at_ns,
+                    timeout=0,
+                )
+                if fallback is not None:
+                    break
+                if request.click:
+                    fallback = self._event_download(request, deadline)
+                    if fallback is not None:
+                        break
+                time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+            if fallback is None:
+                fallback = salvage_download(
+                    self._download_dir,
+                    request.before,
+                    expected_extensions=request.expected_extensions,
+                    started_at_ns=request.started_at_ns,
+                    timeout=0,
+                )
             self._set_state(SessionState.READY)
             return fallback
         except Exception as exc:
