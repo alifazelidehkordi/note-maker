@@ -8,9 +8,9 @@ attrs==26.1.0
     # via
     #   outcome
     #   trio
-brotli==1.2.0
+brotli==1.2.1
     # via fonttools
-certifi==2026.7.22
+certifi==2026.10.18
     # via selenium
 cffi==2.1.1
     # via weasyprint
@@ -36,9 +36,9 @@ outcome==1.3.0.post0
     # via
     #   trio
     #   trio-websocket
-patchright==1.61.2
+patchright==1.63.0
     # via note-maker (pyproject.toml)
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   note-maker (pyproject.toml)
     #   weasyprint
@@ -60,7 +60,7 @@ pygetwindow==0.0.9
     # via pyautogui
 pymsgbox==2.0.1
     # via pyautogui
-pypdf==6.19.0
+pypdf==6.21.4
     # via note-maker (pyproject.toml)
 pyperclip==1.11.0
     # via
@@ -94,7 +94,7 @@ tinycss2==1.5.1
     #   weasyprint
 tinyhtml5==2.1.0
     # via weasyprint
-tomli==2.4.1
+tomli==2.5.0
     # via note-maker (pyproject.toml)
 trio==0.34.0
     # via

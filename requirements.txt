@@ -3,11 +3,12 @@
 # Regenerate the locks with: python -m piptools compile pyproject.toml
 markdown==3.11
 mistune==3.3.4
-patchright==1.61.2
+patchright==1.63.0
+pillow==13.0.0
 playwright-stealth==2.0.3
 pyautogui==0.9.54
-pypdf==6.19.0
+pypdf==6.21.4
 pyyaml==6.0.3
 selenium==4.50.0
-tomli==2.4.1
+tomli==2.5.0
 weasyprint==70.0

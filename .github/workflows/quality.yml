@@ -63,14 +63,15 @@ jobs:
           python -m pip install -r requirements-dev.lock
       - name: Verify dependency locks are current
         run: |
-          python -m piptools compile pyproject.toml --resolver backtracking --strip-extras --output-file /tmp/requirements.lock
-          python -m piptools compile pyproject.toml --extra dev --resolver backtracking --strip-extras --output-file /tmp/requirements-dev.lock
-          sed '/^#    pip-compile /d' requirements.lock > /tmp/expected-runtime.lock
-          sed '/^#    pip-compile /d' /tmp/requirements.lock > /tmp/actual-runtime.lock
-          sed '/^#    pip-compile /d' requirements-dev.lock > /tmp/expected-dev.lock
-          sed '/^#    pip-compile /d' /tmp/requirements-dev.lock > /tmp/actual-dev.lock
-          diff -u /tmp/expected-runtime.lock /tmp/actual-runtime.lock
-          diff -u /tmp/expected-dev.lock /tmp/actual-dev.lock
+          lock_dir=$(mktemp -d)
+          # Seed pip-compile with the committed versions so new releases do not
+          # change the resolved set during verification.
+          cp requirements.lock requirements-dev.lock "$lock_dir/"
+          python -m piptools compile pyproject.toml --resolver backtracking --strip-extras --output-file "$lock_dir/requirements.lock"
+          python -m piptools compile pyproject.toml --extra dev --resolver backtracking --strip-extras --output-file "$lock_dir/requirements-dev.lock"
+          for lock in requirements.lock requirements-dev.lock; do
+            diff -u <(sed '/^#    pip-compile /d' "$lock") <(sed '/^#    pip-compile /d' "$lock_dir/$lock")
+          done
       - name: Verify version synchronization
         run: |
           python - <<'PY'
