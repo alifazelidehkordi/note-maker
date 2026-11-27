@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75,<82", "wheel>=0.44,<1"]
+requires = ["setuptools>=75,<85", "wheel>=0.44,<1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -25,11 +25,11 @@ dependencies = [
   "pyperclip>=1.8.2,<2",
   "Markdown>=3.6,<4",
   "mistune>=3.3,<4",
-  "Pillow>=12,<13",
+  "Pillow>=13,<14",
   "WeasyPrint>=62,<71",
-  "pypdf>=4,<7",
+  "pypdf>=6.21.4,<7",
   "PyYAML>=6,<7",
-  "patchright==1.61.2",
+  "patchright==1.63.0",
   "playwright-stealth==2.0.3",
   "tomli>=2,<3",
 ]
@@ -38,11 +38,11 @@ dependencies = [
 dev = [
   "build>=1.2,<2",
   "coverage[toml]>=7.6,<8",
-  "mypy>=1.11,<2",
+  "mypy>=1.11,<3",
   "pip-audit>=2.7,<3",
   "pip-tools>=7.4,<8",
   "ruff>=0.8,<1",
-  "twine>=5.1,<7",
+  "twine>=5.1,<8",
   "types-PyYAML>=6.0,<7",
 ]
 
